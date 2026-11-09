@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <defs>
+    <linearGradient id="cxBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#081420"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+    <linearGradient id="cxHair" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E0F2FE"/>
+      <stop offset="60%" stop-color="#BAE6FD"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" fill="url(#cxBg)"/>
+  <polygon points="0,115 160,82 160,132 0,152" fill="#38BDF8" opacity="0.78"/>
+  <polygon points="8,8 152,4 148,152 4,148" fill="none" stroke="#FFFFFF" stroke-width="5"/>
+  <!-- Dragon Horns -->
+  <path d="M 48 38 C 36 14, 48 8, 58 20 L 60 36 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="3.5"/>
+  <path d="M 112 38 C 124 14, 112 8, 102 20 L 100 36 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="3.5"/>
+  <!-- Hair Back -->
+  <path d="M 32 54 C 20 90, 20 138, 30 156 L 130 156 C 140 138, 140 90, 128 54 Z" fill="url(#cxHair)" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Face -->
+  <path d="M 42 60 C 42 34, 118 34, 118 60 C 120 94, 102 118, 80 120 C 58 118, 40 94, 42 60 Z" fill="#FFF5EE" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Bangs -->
+  <path d="M 38 66 C 36 34, 62 26, 80 26 C 98 26, 124 34, 122 66 C 112 52, 104 60, 98 70 C 92 54, 84 52, 80 66 C 74 52, 66 54, 60 70 C 52 58, 46 52, 38 66 Z" fill="url(#cxHair)" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Sleepy Closed Eyes -->
+  <path d="M 52 82 Q 62 88 72 82" fill="none" stroke="#0A0A0C" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M 88 82 Q 98 88 108 82" fill="none" stroke="#0A0A0C" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Sleepy Yawn Dot Mouth -->
+  <circle cx="80" cy="99" r="4" fill="#F43F5E" stroke="#0A0A0C" stroke-width="2.5"/>
+  <!-- >_ Terminal Sticky Note -->
+  <g transform="translate(106, 88) rotate(8)">
+    <rect x="0" y="0" width="38" height="28" fill="#FEF08A" stroke="#0A0A0C" stroke-width="3"/>
+    <text x="19" y="19" font-family="monospace" font-size="15" font-weight="900" fill="#0A0A0C" text-anchor="middle">&gt;_</text>
+  </g>
+  <!-- Corner Tag -->
+  <polygon points="4,126 98,122 92,152 4,152" fill="#0A0A0C" stroke="#FFFFFF" stroke-width="2.5"/>
+  <text x="48" y="142" font-family="Impact, sans-serif" font-size="16" font-weight="900" fill="#38BDF8" text-anchor="middle">CODEX</text>
+</svg>

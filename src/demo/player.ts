@@ -1,13 +1,17 @@
 import type { StageEvent } from '../shared/stage-events';
 import {
   buildAllowBranchSteps,
+  buildInitialBootEvents,
   buildPrePermissionSteps,
   buildRejectBranchSteps,
-  INITIAL_BOOT_EVENTS,
   type ScriptStep,
   type StageEventPayload,
 } from './script';
-import { DEFAULT_CHARACTER_ID } from '../stage/reactions';
+import {
+  DEFAULT_CHARACTER_ID,
+  getCachedCharacterPack,
+  pickReactionForEvent,
+} from '../stage/characterLoader';
 
 export type PlayerListener = (event: StageEvent) => void;
 
@@ -33,6 +37,19 @@ export class ScriptPlayer {
 
   public setCharacterId(characterId: string): void {
     this.characterId = characterId;
+    // Update any queued character_line events to reflect the newly switched character
+    this.queue = this.queue.map((step) => {
+      if (step.event.type === 'character_line') {
+        return {
+          ...step,
+          event: {
+            ...step.event,
+            characterId,
+          },
+        };
+      }
+      return step;
+    });
   }
 
   public boot(): void {
@@ -41,12 +58,10 @@ export class ScriptPlayer {
     this.waitingForPermission = false;
     this.queue = [];
     const now = Date.now();
-    INITIAL_BOOT_EVENTS.forEach((payload, index) => {
+    const bootEvents = buildInitialBootEvents(this.characterId);
+    bootEvents.forEach((payload, index) => {
       const event = {
         ...payload,
-        ...(payload.type === 'character_line'
-          ? { characterId: this.characterId }
-          : {}),
         at: now + index,
       } as StageEvent;
       this.listener(event);
@@ -64,7 +79,6 @@ export class ScriptPlayer {
   public setFastForward(fast: boolean): void {
     if (this.fastForward === fast) return;
     this.fastForward = fast;
-    // Dynamically reschedule active timer if one is pending
     if (this.timerId !== null && this.queue.length > 0) {
       window.clearTimeout(this.timerId);
       this.timerId = null;
@@ -75,9 +89,6 @@ export class ScriptPlayer {
     }
   }
 
-  /**
-   * 用户发出第一条消息（或新一轮消息）时启动剧本播放
-   */
   public startTurn(userText: string): void {
     this.clearTimers();
     this.running = true;
@@ -93,9 +104,6 @@ export class ScriptPlayer {
     this.scheduleNext();
   }
 
-  /**
-   * 剧本运行中，用户发消息 -> 立即发出 steer_queued，稍后剧本返回 steer_acked
-   */
   public sendSteer(text: string): void {
     const steerId = `steer_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     this.emit({
@@ -103,6 +111,24 @@ export class ScriptPlayer {
       id: steerId,
       text,
     });
+
+    const pack = getCachedCharacterPack(this.characterId);
+    const queuedReaction = pickReactionForEvent(pack, {
+      type: 'steer_queued',
+      id: steerId,
+      text,
+      at: Date.now(),
+    });
+    if (queuedReaction) {
+      this.emit({
+        type: 'character_line',
+        lineId: `line_steer_q_${steerId}`,
+        source: 'preset',
+        characterId: this.characterId,
+        emotion: queuedReaction.emotion,
+        text: queuedReaction.text,
+      });
+    }
 
     const ackDelay = this.fastForward ? 320 : 1350;
     const tId = window.setTimeout(() => {
@@ -115,9 +141,6 @@ export class ScriptPlayer {
     this.steerTimers.add(tId);
   }
 
-  /**
-   * 用户在权限选择肢中选择「允许」或「拒绝」
-   */
   public resolvePermission(allowed: boolean): void {
     if (!this.waitingForPermission) return;
     this.waitingForPermission = false;
@@ -125,6 +148,39 @@ export class ScriptPlayer {
       ? buildAllowBranchSteps(this.characterId)
       : buildRejectBranchSteps(this.characterId);
     this.scheduleNext();
+  }
+
+  public stop(): void {
+    if (!this.running) return;
+    this.clearTimers();
+    this.running = false;
+    this.waitingForPermission = false;
+    this.queue = [];
+    this.emit({
+      type: 'interrupted',
+      reason: '用户主动喊停',
+    });
+    const pack = getCachedCharacterPack(this.characterId);
+    const reaction = pickReactionForEvent(pack, {
+      type: 'interrupted',
+      reason: '用户主动喊停',
+      at: Date.now(),
+    });
+    if (reaction) {
+      this.emit({
+        type: 'character_line',
+        lineId: `line_stop_${Date.now()}`,
+        source: 'preset',
+        characterId: this.characterId,
+        emotion: reaction.emotion,
+        text: reaction.text,
+      });
+    }
+    this.emit({
+      type: 'turn_done',
+      ok: false,
+      summary: '用户已喊停本轮演出',
+    });
   }
 
   public dispose(): void {

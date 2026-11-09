@@ -1,3 +1,7 @@
+/**
+ * @deprecated 已废弃（Phase 1 起事件反应表与角色配置全部迁移至 `public/characters/<id>/character.json`）。
+ * 本文件仅作为 Phase 0 历史参考保留，UI 与剧本运行时不再引用本文件。
+ */
 // TODO(owner): 由产品负责人重写台词与表情映射
 
 import type { Emotion, StageEventType } from '../shared/stage-events';

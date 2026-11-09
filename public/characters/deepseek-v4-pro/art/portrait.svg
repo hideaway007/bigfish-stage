@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <defs>
+    <linearGradient id="dsBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1120"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="dsHair" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E3A8A"/>
+      <stop offset="60%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#60A5FA"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" fill="url(#dsBg)"/>
+  <polygon points="0,115 160,82 160,132 0,152" fill="#E60012" opacity="0.88"/>
+  <polygon points="8,8 152,4 148,152 4,148" fill="none" stroke="#FFFFFF" stroke-width="5"/>
+  <!-- Whale Fin Ears -->
+  <path d="M 36 74 C 14 72, 6 88, 4 102 C 16 102, 28 94, 40 86 Z" fill="#2563EB" stroke="#0A0A0C" stroke-width="4"/>
+  <path d="M 124 74 C 146 72, 154 88, 156 102 C 144 102, 132 94, 120 86 Z" fill="#2563EB" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Hair Back -->
+  <path d="M 34 56 C 22 90, 22 135, 32 156 L 128 156 C 138 135, 138 90, 126 56 Z" fill="url(#dsHair)" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Face -->
+  <path d="M 42 58 C 42 32, 118 32, 118 58 C 120 94, 102 118, 80 120 C 58 118, 40 94, 42 58 Z" fill="#FFF1E6" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Bangs -->
+  <path d="M 38 66 C 36 34, 62 24, 80 25 C 98 24, 124 34, 122 66 C 114 54, 106 64, 102 72 C 96 56, 88 52, 82 68 C 78 54, 72 54, 66 68 C 60 54, 50 56, 46 72 Z" fill="url(#dsHair)" stroke="#0A0A0C" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Maid Headband -->
+  <path d="M 44 38 Q 80 22 116 38 L 112 46 Q 80 32 48 46 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="3.5"/>
+  <!-- Ahoge -->
+  <path d="M 78 28 C 72 8, 96 6, 100 20 C 92 17, 84 20, 81 28 Z" fill="#3B82F6" stroke="#0A0A0C" stroke-width="3.5"/>
+  <!-- Eyes -->
+  <ellipse cx="62" cy="82" rx="8" ry="10" fill="#1D4ED8" stroke="#0A0A0C" stroke-width="3"/>
+  <circle cx="59" cy="78" r="3" fill="#FFFFFF"/>
+  <ellipse cx="98" cy="82" rx="8" ry="10" fill="#1D4ED8" stroke="#0A0A0C" stroke-width="3"/>
+  <circle cx="95" cy="78" r="3" fill="#FFFFFF"/>
+  <!-- Blush & Mouth -->
+  <ellipse cx="50" cy="94" rx="5" ry="2.5" fill="#FB7185" opacity="0.7"/>
+  <ellipse cx="110" cy="94" rx="5" ry="2.5" fill="#FB7185" opacity="0.7"/>
+  <path d="M 74 98 Q 80 95 86 98 Q 85 107 80 107 Q 75 107 74 98 Z" fill="#F43F5E" stroke="#0A0A0C" stroke-width="2.5"/>
+  <!-- Corner Tag -->
+  <polygon points="4,126 98,122 92,152 4,152" fill="#0A0A0C" stroke="#FFFFFF" stroke-width="2.5"/>
+  <text x="48" y="142" font-family="Impact, sans-serif" font-size="16" font-weight="900" fill="#60A5FA" text-anchor="middle">V4 PRO</text>
+</svg>

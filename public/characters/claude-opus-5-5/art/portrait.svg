@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <defs>
+    <linearGradient id="clBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1C1008"/>
+      <stop offset="100%" stop-color="#C2410C"/>
+    </linearGradient>
+    <linearGradient id="clHair" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EA580C"/>
+      <stop offset="55%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#FDBA74"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" fill="url(#clBg)"/>
+  <polygon points="0,115 160,82 160,132 0,152" fill="#EA580C" opacity="0.82"/>
+  <polygon points="8,8 152,4 148,152 4,148" fill="none" stroke="#FFFFFF" stroke-width="5"/>
+  <!-- Hair Back -->
+  <path d="M 30 52 C 16 90, 18 138, 28 156 L 132 156 C 142 138, 144 90, 130 52 Z" fill="url(#clHair)" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Face -->
+  <path d="M 42 58 C 42 32, 118 32, 118 58 C 120 94, 102 118, 80 120 C 58 118, 40 94, 42 58 Z" fill="#FFF5EB" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Bangs -->
+  <path d="M 38 66 C 36 34, 62 24, 80 24 C 98 24, 124 34, 122 66 C 112 52, 104 60, 98 70 C 92 52, 84 50, 80 64 C 74 50, 66 52, 60 70 C 52 58, 46 52, 38 66 Z" fill="url(#clHair)" stroke="#0A0A0C" stroke-width="4"/>
+  <!-- Maid Headband -->
+  <path d="M 44 36 Q 80 20 116 36 L 112 44 Q 80 30 48 44 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="3.5"/>
+  <!-- Sunburst Flower Hairpin -->
+  <g transform="translate(114, 42)">
+    <circle cx="0" cy="0" r="12" fill="#FACC15" stroke="#0A0A0C" stroke-width="3"/>
+    <circle cx="0" cy="0" r="6" fill="#EA580C"/>
+  </g>
+  <!-- Warm Amber Eyes -->
+  <ellipse cx="62" cy="80" rx="8" ry="9.5" fill="#EA580C" stroke="#0A0A0C" stroke-width="3"/>
+  <circle cx="60" cy="76" r="3" fill="#FFFFFF"/>
+  <ellipse cx="98" cy="80" rx="8" ry="9.5" fill="#EA580C" stroke="#0A0A0C" stroke-width="3"/>
+  <circle cx="96" cy="76" r="3" fill="#FFFFFF"/>
+  <!-- Gentle Smile -->
+  <path d="M 72 99 Q 80 105 88 99" fill="none" stroke="#0A0A0C" stroke-width="3" stroke-linecap="round"/>
+  <!-- Corner Tag -->
+  <polygon points="4,126 98,122 92,152 4,152" fill="#0A0A0C" stroke="#FFFFFF" stroke-width="2.5"/>
+  <text x="48" y="142" font-family="Impact, sans-serif" font-size="16" font-weight="900" fill="#FDBA74" text-anchor="middle">OPUS 5.5</text>
+</svg>
