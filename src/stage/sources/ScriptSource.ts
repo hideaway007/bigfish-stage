@@ -1,6 +1,7 @@
 import {
   PROTOCOL_VERSION,
   type SessionInfo,
+  type SessionSummary,
 } from '../../shared/wire';
 import {
   DEFAULT_SETTINGS,
@@ -10,6 +11,7 @@ import {
 } from '../../shared/settings';
 import type { CharacterSummary } from '../../shared/character-pack';
 import type { StageEvent } from '../../shared/stage-events';
+import { SessionListFeed } from './SessionListFeed';
 import { ScriptPlayer } from '../../demo/player';
 import { DEFAULT_FIRST_USER_PROMPT } from '../../demo/script';
 import {
@@ -83,6 +85,13 @@ export class ScriptSource implements StageDataSource {
   private history: StageEvent[] = [];
   private session: SessionInfo;
   private disposed = false;
+  private sessionList = new SessionListFeed();
+  public subscribeSessions = this.sessionList.subscribe;
+  private sessions: SessionSummary[] = [
+    { sessionId: 'ses_dafeiyu_v4_01', title: '登录页面与主题按钮', model: 'gpt-6.1-sol', cwd: '/workspace/bigfish-login-app', updatedAt: Date.now(), turnCount: 1 },
+    { sessionId: 'ses_demo_pond', title: '鱼塘核心 · 整理工具记录', model: 'deepseek-v4-pro', cwd: '/workspace/bigfish-pond-core', updatedAt: Date.now() - 3600000, turnCount: 4 },
+    { sessionId: 'ses_demo_theme', title: '深色模式的边框对比度', model: 'gpt-6.1-sol', cwd: '/workspace/bigfish-login-app', updatedAt: Date.now() - 86400000, turnCount: 2 },
+  ];
 
   constructor(callbacks: StageDataSourceCallbacks) {
     this.callbacks = callbacks;
@@ -96,6 +105,9 @@ export class ScriptSource implements StageDataSource {
     };
     this.player = new ScriptPlayer((event) => {
       if (this.disposed) return;
+      if (event.type === 'session_started') {
+        event = { ...event, sessionId: this.session.sessionId, model: this.session.model, cwd: this.session.cwd };
+      }
       this.history.push(event);
       if (event.type === 'user_message') {
         this.session = { ...this.session, turnActive: true };
@@ -141,11 +153,16 @@ export class ScriptSource implements StageDataSource {
   public dispose(): void {
     this.disposed = true;
     this.player.dispose();
+    this.sessionList.dispose();
   }
 
   public send(text: string): void {
     const prompt = text.trim() || DEFAULT_FIRST_USER_PROMPT;
+    this.sessions = this.sessions.map((session) => session.sessionId === this.session.sessionId
+      ? { ...session, title: session.turnCount ? session.title : prompt.slice(0, 48), turnCount: (session.turnCount ?? 0) + 1, updatedAt: Date.now() }
+      : session);
     this.player.startTurn(prompt);
+    this.listSessions();
   }
 
   public steer(text: string): void {
@@ -162,6 +179,10 @@ export class ScriptSource implements StageDataSource {
     this.player.resolvePermission(allowed);
   }
 
+  public listSessions(): void {
+    this.sessionList.receive({ type: 'sessions', sessions: this.sessions.map((session) => ({ ...session, current: session.sessionId === this.session.sessionId })) });
+  }
+
   public newSession(): void {
     const newId = `ses_demo_${Date.now().toString(36)}`;
     this.session = {
@@ -171,23 +192,31 @@ export class ScriptSource implements StageDataSource {
       cwd: this.settings.projectDir ?? '/workspace/bigfish-login-app',
       turnActive: false,
     };
+    this.player.dispose();
+    this.sessions.unshift({ ...this.session, title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), turnCount: 0 });
     this.history = [];
     this.callbacks.onServerMessage({
       type: 'session',
       session: this.session,
     });
-    this.player.boot();
+    this.resetDemoSession();
+    this.listSessions();
   }
 
   public resumeSession(sessionId: string): void {
-    this.session = {
-      ...this.session,
-      sessionId,
-    };
-    this.callbacks.onServerMessage({
-      type: 'session',
-      session: this.session,
-    });
+    const target = this.sessions.find((session) => session.sessionId === sessionId);
+    if (!target) return;
+    this.player.dispose();
+    this.session = { ...this.session, sessionId, model: target.model ?? this.session.model, cwd: target.cwd ?? this.session.cwd, turnActive: false };
+    this.callbacks.onServerMessage({ type: 'session', session: this.session });
+    this.resetDemoSession();
+    this.listSessions();
+  }
+
+  private resetDemoSession(): void {
+    this.history = [];
+    this.player.boot();
+    this.callbacks.onServerMessage({ type: 'welcome', protocolVersion: PROTOCOL_VERSION, settings: this.settings, characters: this.characters, workerAdapters: DEMO_ADAPTERS, session: this.session, history: this.history });
   }
 
   public switchCharacter(characterId: string): void {

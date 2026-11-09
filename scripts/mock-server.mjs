@@ -7,11 +7,12 @@
  * - Replays `bridge/samples/app-full.stage.jsonl` on `send`, pausing at
  *   `permission_request` until the client sends `permission_decision`.
  * - Responds to `switch_character`, `update_settings`, `steer`, `stop`,
- *   `list_models`, `test_connection`, `new_session`.
- * - Persists state to a temp file (unless `--fresh` is passed) so stopping
- *   and restarting the mock server restores `welcome.history` and `settings`.
+ *   `list_models`, `test_connection`, `new_session`, `list_sessions`, `resume_session`.
+ * - Persists sessions, their histories, and settings under os.tmpdir() (unless
+ *   `--fresh` is passed). MOCK_DISABLE_LIST_SESSIONS=1 simulates an older server.
  */
 import http from 'node:http';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +31,9 @@ const CHARACTERS_DIR = path.join(ROOT_DIR, 'public', 'characters');
 const PORT = Number(process.env.PORT || 5300);
 const HOST = '127.0.0.1';
 const STATE_FILE =
-  process.env.MOCK_STATE_FILE || '/tmp/bigfish-mock-server-state.json';
+  process.env.MOCK_STATE_FILE || path.join(os.tmpdir(), `bigfish-mock-${PORT}-${crypto.createHash('sha256').update(ROOT_DIR).digest('hex').slice(0, 8)}.json`);
+// 设为 1 可模拟尚未实现会话列表的旧服务。
+const SESSIONS_DISABLED = process.env.MOCK_DISABLE_LIST_SESSIONS === '1';
 const IS_FRESH = process.argv.includes('--fresh');
 const SPEED_SCALE = Number(process.env.MOCK_SPEED_SCALE || 0.08);
 
@@ -192,14 +195,46 @@ function loadPersistedState() {
 }
 
 const serverState = loadPersistedState();
+serverState.sessions ??= [];
+
+function snapshotCurrentSession() {
+  if (!serverState.session) return;
+  const existing = serverState.sessions.find((item) => item.session.sessionId === serverState.session.sessionId);
+  const messages = serverState.history.filter((event) => event.type === 'user_message');
+  const record = {
+    session: { ...serverState.session },
+    history: serverState.history.slice(-2000),
+    title: existing?.title ?? messages[0]?.text?.slice(0, 48),
+    characterId: existing?.characterId ?? serverState.settings.activeCharacterId,
+    createdAt: existing?.createdAt ?? serverState.history[0]?.at ?? Date.now(),
+    updatedAt: serverState.history.at(-1)?.at ?? Date.now(),
+    turnCount: Math.max(existing?.turnCount ?? 0, messages.length),
+  };
+  serverState.sessions = [record, ...serverState.sessions.filter((item) => item.session.sessionId !== record.session.sessionId)];
+}
+snapshotCurrentSession();
+
+function sessionSummaries(limit = 100) {
+  snapshotCurrentSession();
+  return serverState.sessions.map(({ session, history, ...summary }) => ({
+    ...summary,
+    sessionId: session.sessionId,
+    adapter: session.adapter,
+    model: session.model,
+    cwd: session.cwd,
+    current: session.sessionId === serverState.session?.sessionId,
+  })).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, Math.max(0, Math.min(100, Number.isFinite(limit) ? limit : 100)));
+}
 
 function savePersistedState() {
+  snapshotCurrentSession();
   try {
     fs.writeFileSync(
       STATE_FILE,
       JSON.stringify(
         {
           settings: serverState.settings,
+          sessions: serverState.sessions,
           session: serverState.session,
           history: serverState.history.slice(-2000),
         },
@@ -397,6 +432,10 @@ function scheduleReplaySlice(startIndex, endIndexInclusive, onReachedEnd) {
 }
 
 function handleStartTurn(userMsgId, userText) {
+  snapshotCurrentSession();
+  const record = serverState.sessions.find((item) => item.session.sessionId === serverState.session.sessionId);
+  record.turnCount += 1;
+  record.title ??= userText.slice(0, 48);
   clearReplayTimers();
   pendingPermissionIndex = null;
   serverState.session.turnActive = true;
@@ -652,9 +691,10 @@ function handleClientCommand(socket, cmd) {
     }
 
     case 'new_session': {
+      savePersistedState();
       clearReplayTimers();
       pendingPermissionIndex = null;
-      const newSessionId = `ses_mock_${Date.now().toString(36)}`;
+      const newSessionId = `ses_mock_${crypto.randomUUID()}`;
       serverState.session = {
         sessionId: newSessionId,
         adapter: serverState.settings.worker.adapter,
@@ -683,13 +723,33 @@ function handleClientCommand(socket, cmd) {
           text: r.text,
         });
       }
+      broadcast({ type: 'welcome', protocolVersion: 1, settings: serverState.settings, characters: characterSummaries, workerAdapters, session: serverState.session, history: serverState.history });
+      break;
+    }
+
+    case 'list_sessions': {
+      if (SESSIONS_DISABLED) break;
+      sendToSocket(socket, { type: 'sessions', sessions: sessionSummaries(cmd.limit) });
       break;
     }
 
     case 'resume_session': {
-      serverState.session.sessionId = cmd.sessionId;
+      const record = serverState.sessions.find((item) => item.session.sessionId === cmd.sessionId);
+      if (!record) {
+        sendToSocket(socket, { type: 'command_error', commandType: 'resume_session', message: '这段会话已不在鱼塘里，请刷新列表后重试。' });
+        break;
+      }
       savePersistedState();
+      clearReplayTimers();
+      pendingPermissionIndex = null;
+      serverState.session = { ...record.session, turnActive: false };
+      serverState.history = [...record.history];
+      if (record.characterId) serverState.settings.activeCharacterId = record.characterId;
+      serverState.settings.projectDir = record.session.cwd;
+      // 先更新当前会话，再用 welcome 重放其历史，避免串入上个会话的记录。
       broadcast({ type: 'session', session: serverState.session });
+      broadcast({ type: 'welcome', protocolVersion: 1, settings: serverState.settings, characters: characterSummaries, workerAdapters, session: serverState.session, history: serverState.history });
+      savePersistedState();
       break;
     }
 
