@@ -265,7 +265,7 @@ function appendOrMergeEvent(
     const targetId = event.replacesLineId;
     let replaced = false;
     const next = existingEvents.map((ev) => {
-      if (ev.type === 'character_line' && ev.lineId === targetId) {
+      if (ev.type === 'character_line' && ev.lineId === targetId && ev.characterId === event.characterId) {
         replaced = true;
         return {
           ...event,
@@ -359,9 +359,11 @@ function applySingleStageEvent(
       const isReplacement = Boolean(
         event.replacesLineId &&
           state.currentLine &&
-          (state.currentLine.lineKey === event.replacesLineId ||
-            state.currentLine.source === 'preset')
+          state.currentLine.lineKey === event.replacesLineId &&
+          state.currentLine.characterId === event.characterId
       );
+      // A delayed model response may update history, but cannot replace another line/character.
+      if (event.replacesLineId && !isReplacement) return nextStateBase;
 
       const lineKey =
         event.lineId ??
@@ -617,9 +619,7 @@ export function stageReducer(
         characterId: action.characterId,
         characterSwitchKey: state.characterSwitchKey + 1,
         emotionSwitchKey: state.emotionSwitchKey + 1,
-        currentLine: state.currentLine
-          ? { ...state.currentLine, characterId: action.characterId }
-          : null,
+        currentLine: state.currentLine,
       };
     }
 
@@ -821,10 +821,7 @@ export function stageReducer(
             emotionSwitchKey: charChanged
               ? state.emotionSwitchKey + 1
               : state.emotionSwitchKey,
-            currentLine:
-              charChanged && state.currentLine
-                ? { ...state.currentLine, characterId: nextCharId }
-                : state.currentLine,
+            currentLine: state.currentLine,
             modelName: !state.turnActive
               ? message.settings.worker.model || state.modelName
               : state.modelName,

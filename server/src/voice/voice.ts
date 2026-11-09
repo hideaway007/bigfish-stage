@@ -36,10 +36,16 @@ export class Voice {
   private completedSuccessfully = false;
   constructor(private emit: (event: StageEvent) => void, private silenceMs = 15_000) {}
   configure(pack: CharacterPack | undefined, settings: VoiceSettings) {
+    const switched = !!this.pack && this.pack.id !== pack?.id;
     if (this.pack?.id !== pack?.id || JSON.stringify(this.settings) !== JSON.stringify(settings)) {
       this.cancel(); this.cooldown.clear();
     }
     this.pack = pack; this.settings = structuredClone(settings);
+    if (switched && pack) {
+      const text = pack.reactions.session_started?.lines[0] ?? pack.persona.catchphrases[0];
+      if (text) this.emit({ type: 'character_line', at: Date.now(), characterId: pack.id,
+        emotion: 'happy', text, lineId: randomUUID(), source: 'preset' });
+    }
   }
   private cancel() { this.generation++; for (const c of this.controllers) c.abort(); this.controllers.clear(); }
   reset() {

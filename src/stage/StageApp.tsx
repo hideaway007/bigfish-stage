@@ -126,6 +126,7 @@ export const StageApp: React.FC = () => {
 
   const character = getCachedCharacterPack(state.characterId);
   const shortNickname = character.name.split('（')[0];
+  const dialogueCharacter = getCachedCharacterPack(state.currentLine?.characterId ?? state.characterId);
 
   // Connect data source on mount
   useEffect(() => {
@@ -833,16 +834,16 @@ export const StageApp: React.FC = () => {
                   className="speaker-zh"
                   data-testid="dialogue-speaker-name"
                 >
-                  {shortNickname}
+                  {dialogueCharacter.name.split('（')[0]}
                 </span>
                 <span
                   className="speaker-en"
                   data-testid="dialogue-speaker-codename"
                 >
-                  {character.codename}
+                  {dialogueCharacter.codename}
                 </span>
                 <span className="speaker-emotion">
-                  [{state.currentEmotion.toUpperCase()}]
+                  [{(state.currentLine?.emotion ?? state.currentEmotion).toUpperCase()}]
                 </span>
                 {state.currentLine?.source && (
                   <span

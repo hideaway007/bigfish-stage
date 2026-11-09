@@ -5,6 +5,8 @@ import { createInterface } from 'node:readline';
 import { mkdir, realpath } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
+import { approvalPresentation, displayCommand, displayPath, fileKey, uncoveredGitDiff } from './presentation';
 import type { StageEvent, ToolKind } from '../../../src/shared/stage-events';
 import { DEFAULT_SETTINGS, type WorkerSettings } from '../../../src/shared/settings';
 import type { ModelList, StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
@@ -57,12 +59,13 @@ export class CodexEventMapper {
   private fileStarts = new Set<string>();
   private steers = new Set<string>();
   private buffer: SentenceBuffer;
-  constructor(private output: (event: StageEvent) => void) {
+  readonly structuredDiffFiles = new Set<string>();
+  constructor(private output: (event: StageEvent) => void, private cwd = '', private home = '') {
     this.buffer = new SentenceBuffer((text, final) => this.emit({ type: 'worker_text', text, ...(final ? { final } : {}) }));
   }
   private emit(event: Payload<StageEvent>) { this.output({ at: Date.now(), ...event } as StageEvent); }
   registerSteer(id: string) { this.steers.add(id); }
-  begin() { this.active = true; this.started = Date.now(); this.streamed.clear(); this.fileStarts.clear(); }
+  begin() { this.active = true; this.started = Date.now(); this.streamed.clear(); this.fileStarts.clear(); this.structuredDiffFiles.clear(); }
   end(ok: boolean, summary: string, interrupted = false) {
     if (!this.active) return;
     this.active = false;
@@ -86,14 +89,20 @@ export class CodexEventMapper {
       this.buffer.flush(item.phase === 'final_answer');
     }
     if (item.type === 'commandExecution') {
-      if (begin) { this.openTools.add(item.id); this.emit({ type: 'tool_start', toolUseId: item.id, tool: 'bash', rawName: item.type, summary: item.command }); }
-      if (end) { this.openTools.delete(item.id); this.emit({ type: 'tool_end', toolUseId: item.id, ok: item.exitCode === 0, summary: item.command, output: String(item.aggregatedOutput ?? '').slice(0, 4000) }); }
+      const summary = displayCommand(item.command ?? '', this.cwd, this.home);
+      if (begin) { this.openTools.add(item.id); this.emit({ type: 'tool_start', toolUseId: item.id, tool: 'bash', rawName: item.type, summary }); }
+      if (end) { this.openTools.delete(item.id); this.emit({ type: 'tool_end', toolUseId: item.id, ok: item.exitCode === 0, summary, output: String(item.aggregatedOutput ?? '').slice(0, 4000) }); }
     }
     if (item.type === 'fileChange') {
       for (const [index, change] of (item.changes ?? []).entries()) {
         const id = `${item.id}:${index}`, tool: ToolKind = change.kind?.type === 'add' ? 'write' : 'edit';
-        if (!this.fileStarts.has(id)) { this.fileStarts.add(id); this.openTools.add(id); this.emit({ type: 'tool_start', toolUseId: id, tool, rawName: item.type, summary: `${tool} ${change.path}`, file: change.path }); }
-        if (end) { this.openTools.delete(id); this.emit({ type: 'tool_end', toolUseId: id, ok: item.status === 'completed', summary: change.path, ...(typeof change.diff === 'string' ? { diff: change.diff } : {}) }); }
+        const file = displayPath(change.path, this.cwd, this.home);
+        if (!this.fileStarts.has(id)) { this.fileStarts.add(id); this.openTools.add(id); this.emit({ type: 'tool_start', toolUseId: id, tool, rawName: item.type, summary: `${tool} ${file}`, file }); }
+        if (end) {
+          this.openTools.delete(id);
+          if (item.status === 'completed' && typeof change.diff === 'string' && change.diff.trim()) this.structuredDiffFiles.add(fileKey(change.path, this.cwd));
+          this.emit({ type: 'tool_end', toolUseId: id, ok: item.status === 'completed', summary: file, ...(typeof change.diff === 'string' ? { diff: change.diff } : {}) });
+        }
       }
     }
   }
@@ -124,7 +133,7 @@ class CodexSession implements WorkerSession {
       : Array.isArray(value) ? value.map(redact)
       : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redact(v)])) : value;
     this.emit = key ? event => options.onEvent(redact(event) as StageEvent) : options.onEvent;
-    this.mapper = new CodexEventMapper(this.emit);
+    this.mapper = new CodexEventMapper(this.emit, options.cwd, homedir());
     const { args, env } = buildCodexLaunch(options, home, process.env);
     this.child = spawn(options.extra?.executable ?? 'codex', args, { cwd: options.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     createInterface({ input: this.child.stdout! }).on('line', line => {
@@ -175,7 +184,7 @@ class CodexSession implements WorkerSession {
         const requestId = `${this.approvalPrefix}:${message.id}`;
         this.approvals.set(requestId, message);
         this.emit({ type: 'permission_request', at: Date.now(), requestId, tool: message.method.includes('fileChange') ? 'edit' : 'bash', rawName: message.method,
-          summary: p.command ?? p.reason ?? '审批请求', detail: JSON.stringify(p, null, 2) });
+          ...approvalPresentation(p, this.options.cwd, homedir()) });
       } else this.sendWire({ id: message.id, error: { code: -32601, message: 'Unsupported client request' } });
       return;
     }
@@ -195,15 +204,15 @@ class CodexSession implements WorkerSession {
     }
   }
   private async gitDiff(): Promise<string> {
-    try { return (await runFile('git', ['-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--'], { cwd: this.options.cwd, timeout: 5000, maxBuffer: 2 * 1024 * 1024 })).stdout; }
+    try { return (await runFile('git', ['-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'diff', '--relative', '--no-ext-diff', '--no-textconv', 'HEAD', '--'], { cwd: this.options.cwd, timeout: 5000, maxBuffer: 2 * 1024 * 1024 })).stdout; }
     catch { return ''; } // Non-git directories and repositories without HEAD have no diff fallback.
   }
   private async finish(ok: boolean, summary: string, interrupted = false) {
     clearTimeout(this.interruptTimer);
-    const diff = await this.gitDiff();
-    if (diff && diff !== this.beforeDiff) {
+    const diff = uncoveredGitDiff(this.beforeDiff, await this.gitDiff(), this.mapper.structuredDiffFiles, this.options.cwd);
+    if (diff) {
       const id = `git-diff-${Date.now()}`;
-      this.emit({ type: 'tool_start', at: Date.now(), toolUseId: id, tool: 'edit', rawName: 'git_diff', summary: '本轮结束时的 Git 文件差异（含现有未提交改动）' });
+      this.emit({ type: 'tool_start', at: Date.now(), toolUseId: id, tool: 'edit', rawName: 'git_diff', summary: '本轮补充的 Git 文件差异' });
       this.emit({ type: 'tool_end', at: Date.now(), toolUseId: id, ok: true, summary: 'Git diff HEAD', diff });
     }
     for (const id of this.approvals.keys()) this.resolvePermission(id, false);
