@@ -1,0 +1,1 @@
+{"source":"exec persisted turn_context","approval_policy":"never","sandbox_policy":{"type":"workspace-write","network_access":false,"exclude_tmpdir_env_var":false,"exclude_slash_tmp":false},"cwd":"/private/tmp/p5-bridge-sandbox"}

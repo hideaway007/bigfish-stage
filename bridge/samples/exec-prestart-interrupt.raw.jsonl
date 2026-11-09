@@ -1,0 +1,4 @@
+{"at":1794217442607,"direction":"out","message":{"args":["-c","model_provider=\"local\"","-c","model_providers.local.name=\"Local magpie\"","-c","model_providers.local.base_url=\"http://127.0.0.1:3425/v1\"","-c","model_providers.local.wire_api=\"responses\"","-c","model_providers.local.requires_openai_auth=false","-c","sandbox_mode=\"workspace-write\"","-c","approval_policy=\"on-request\"","exec","--json","--skip-git-repo-check","-m","gpt-6-luna","Run node -e \"setTimeout(()=>console.log(\"EXEC_LONG_FINISHED\"),20000)\"; then reply done. Remember marker EXEC_OTTER_17."],"cwd":"/private/tmp/p5-bridge-sandbox"}}
+{"at":1794217442642,"direction":"stderr","message":"Reading additional input from stdin...\n"}
+{"at":1794217447610,"direction":"control","message":{"action":"SIGINT"}}
+{"at":1794217447620,"direction":"result","message":{}}

@@ -1,0 +1,46 @@
+{"at":1794217441943,"type":"session_started","sessionId":"01a1bfb1-7a89-7d41-bb44-5ce95dc40ca8","model":"gpt-6-luna","cwd":"/private/tmp/p5-bridge-sandbox"}
+{"type":"user_message","at":1794217441943,"id":"86df14cb-9a9b-4937-8bc9-8c706bc76892","text":"Remember marker BLUE_BADGER_73. Run node -e \"setTimeout(()=>console.log(\"LONG_COMMAND_FINISHED\"),20000)\" and then report. Do not run anything else."}
+{"at":1794217441950,"type":"thinking"}
+{"at":1794217446879,"type":"worker_text","text":"I"}
+{"at":1794217446880,"type":"worker_text","text":"’ll"}
+{"at":1794217446920,"type":"worker_text","text":" run"}
+{"at":1794217446921,"type":"worker_text","text":" the"}
+{"at":1794217446922,"type":"worker_text","text":" requested"}
+{"at":1794217446939,"type":"worker_text","text":" Node"}
+{"at":1794217446974,"type":"worker_text","text":" command"}
+{"at":1794217446976,"type":"worker_text","text":" exactly"}
+{"at":1794217447047,"type":"worker_text","text":","}
+{"at":1794217447049,"type":"worker_text","text":" then"}
+{"at":1794217447049,"type":"worker_text","text":" report"}
+{"at":1794217447049,"type":"worker_text","text":" its"}
+{"at":1794217447065,"type":"worker_text","text":" output"}
+{"at":1794217447093,"type":"worker_text","text":" and"}
+{"at":1794217447102,"type":"worker_text","text":" remember"}
+{"at":1794217447158,"type":"worker_text","text":" the"}
+{"at":1794217447159,"type":"worker_text","text":" marker"}
+{"at":1794217447160,"type":"worker_text","text":" for"}
+{"at":1794217447230,"type":"worker_text","text":" this"}
+{"at":1794217447232,"type":"worker_text","text":" conversation"}
+{"at":1794217447232,"type":"worker_text","text":"."}
+{"at":1794217448863,"type":"tool_start","toolUseId":"exec-e598a76f-3192-41dd-97a3-7360478e56f9","tool":"bash","rawName":"commandExecution","summary":"/bin/zsh -lc 'node -e \"setTimeout(()=>console.log(\"LONG_COMMAND_FINISHED\"),20000)\"'"}
+{"at":1794217448869,"type":"tool_end","toolUseId":"exec-e598a76f-3192-41dd-97a3-7360478e56f9","ok":false,"summary":"No completion received before turn interrupted"}
+{"at":1794217448869,"type":"interrupted","reason":"Codex turn interrupted"}
+{"at":1794217448869,"type":"turn_done","ok":false,"summary":"interrupted","durationMs":6919}
+{"type":"user_message","at":1794217448869,"id":"152bddfa-a422-4751-a7f3-231a0001ab9d","text":"What context marker did I ask you to remember? Reply only the marker, no tools."}
+{"at":1794217448874,"type":"thinking"}
+{"at":1794217452806,"type":"worker_text","text":"BLUE"}
+{"at":1794217452807,"type":"worker_text","text":"_BAD"}
+{"at":1794217452807,"type":"worker_text","text":"GER"}
+{"at":1794217452807,"type":"worker_text","text":"_"}
+{"at":1794217452807,"type":"worker_text","text":"73"}
+{"at":1794217453618,"type":"worker_text","text":"","final":true}
+{"at":1794217453818,"type":"turn_done","ok":true,"summary":"completed","durationMs":4944}
+{"type":"user_message","at":1794217453901,"id":"b9596aee-323f-489a-81e5-66a1b7de5acc","text":"Again, what context marker did I ask you to remember? No tools."}
+{"at":1794217453905,"type":"thinking"}
+{"at":1794217457194,"type":"worker_text","text":"BLUE"}
+{"at":1794217457195,"type":"worker_text","text":"_BAD"}
+{"at":1794217457238,"type":"worker_text","text":"GER"}
+{"at":1794217457239,"type":"worker_text","text":"_"}
+{"at":1794217457239,"type":"worker_text","text":"73"}
+{"at":1794217457368,"type":"worker_text","text":"","final":true}
+{"at":1794217457583,"type":"turn_done","ok":true,"summary":"completed","durationMs":3678}

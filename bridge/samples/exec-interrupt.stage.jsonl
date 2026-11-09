@@ -1,0 +1,8 @@
+{"type":"user_message","at":1794217616798,"id":"72f89f4b-5f60-499d-bec0-34cdd01fd9bd","text":"Remember marker EXEC_OTTER_17. Run node long-command.cjs exec-interrupt-finished.txt and then reply done."}
+{"at":1794217616859,"type":"session_started","sessionId":"01a1bfb4-25cb-7de1-8bb3-aae561cdb3ea"}
+{"at":1794217616867,"type":"thinking"}
+{"at":1794217627074,"type":"worker_text","text":"I’ll record the marker and run the requested command.","final":false}
+{"at":1794217628696,"type":"tool_start","toolUseId":"item_1","tool":"bash","rawName":"command_execution","summary":"/bin/zsh -lc \"printf '%s\\\\n' 'EXEC_OTTER_17' > /tmp/EXEC_OTTER_17.marker && node long-command.cjs exec-interrupt-finished.txt\""}
+{"at":1794217629229,"type":"tool_end","toolUseId":"item_1","ok":false,"summary":"Transport closed: SIGINT requested"}
+{"at":1794217629229,"type":"interrupted","reason":"SIGINT requested"}
+{"at":1794217629229,"type":"turn_done","ok":false,"summary":"interrupted"}
