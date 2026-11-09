@@ -1,0 +1,20 @@
+{"type":"event","event":{"type":"user_message","at":1794224080393,"id":"interrupt","text":"请立即只执行一个长命令：node -e \"setTimeout(()=>require('node:fs').writeFileSync('stop-should-not-exist.txt','unexpected'),20000)\"。不要改命令，不要拆分，不要用其他工具；它用于验证中断。只在当前目录工作。"}}
+{"type":"session","session":{"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","adapter":"codex","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project","turnActive":true}}
+{"type":"event","event":{"at":1794224080397,"type":"thinking"}}
+{"type":"session","session":{"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","adapter":"codex","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project","turnActive":true}}
+{"type":"event","event":{"type":"character_line","at":1794224080397,"characterId":"deepseek-v4-pro","emotion":"thinking","text":"咕噜，让我想想。","lineId":"00b7d5a3-24f2-4c10-942f-639b29f8fa9a","source":"preset"}}
+{"type":"event","event":{"type":"character_line","at":1794224085768,"characterId":"deepseek-v4-pro","emotion":"thinking","text":"任务正在处理中，还没搞定呢，本鱼正一边盯着一边馋小鱼干！","lineId":"c193f775-3b7d-44e1-94fd-0545adf4a64d","source":"model","replacesLineId":"00b7d5a3-24f2-4c10-942f-639b29f8fa9a"}}
+{"type":"event","event":{"at":1794224087826,"type":"worker_text","text":"我会在当前目录原样启动这条命令，并在它等待期间中断进程。"}}
+{"type":"event","event":{"at":1794224087995,"type":"tool_start","toolUseId":"exec-791e353d-f4d3-4617-9bac-08e486f14e57","tool":"bash","rawName":"commandExecution","summary":"/bin/zsh -lc \"node -e \\\"setTimeout(()=>require('node:fs').writeFileSync('stop-should-not-exist.txt','unexpected'),20000)\\\"\""}}
+{"type":"event","event":{"type":"character_line","at":1794224087995,"characterId":"deepseek-v4-pro","emotion":"working","text":"开始用 bash 啦。","lineId":"14449209-7c01-4e77-aeb6-21efaad49066","source":"preset"}}
+{"type":"event","event":{"type":"steer_queued","at":1794224087996,"id":"steer-live","text":"插话验证：当前命令结束后只回复收到，不要再运行任何命令。"}}
+{"type":"event","event":{"type":"character_line","at":1794224087996,"characterId":"deepseek-v4-pro","emotion":"thinking","text":"插话已经排队。","lineId":"160e7264-dc5c-4156-99cb-5530036ac3b5","source":"preset"}}
+{"type":"event","event":{"at":1794224088002,"type":"steer_acked","id":"steer-live"}}
+{"type":"event","event":{"type":"character_line","at":1794224088002,"characterId":"deepseek-v4-pro","emotion":"working","text":"执行端收到插话啦。","lineId":"f5f51e7d-84fc-4f00-92b2-97e1ada353f7","source":"preset"}}
+{"type":"event","event":{"at":1794224088020,"type":"tool_end","toolUseId":"exec-791e353d-f4d3-4617-9bac-08e486f14e57","ok":false,"summary":"任务结束，工具未返回: interrupted"}}
+{"type":"event","event":{"type":"character_line","at":1794224088020,"characterId":"deepseek-v4-pro","emotion":"worried","text":"这一步没通过，再看看。","lineId":"f5e57717-e266-46e8-a3b7-2659102f1456","source":"preset"}}
+{"type":"event","event":{"at":1794224088021,"type":"interrupted","reason":"interrupted"}}
+{"type":"event","event":{"type":"character_line","at":1794224088021,"characterId":"deepseek-v4-pro","emotion":"worried","text":"已喊停。","lineId":"4e830319-1bc5-4083-a2ee-c861fbd4d76f","source":"preset"}}
+{"type":"event","event":{"at":1794224088021,"type":"turn_done","ok":false,"summary":"interrupted","durationMs":7639}}
+{"type":"session","session":{"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","adapter":"codex","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project","turnActive":false}}
+{"type":"event","event":{"type":"character_line","at":1794224088021,"characterId":"deepseek-v4-pro","emotion":"worried","text":"这轮没能成功结束。","lineId":"567aa6fd-325a-44f7-a13a-a86b351b5b1e","source":"preset"}}
