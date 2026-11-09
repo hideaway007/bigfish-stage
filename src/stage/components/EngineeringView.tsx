@@ -2,6 +2,7 @@ import React from 'react';
 import type { StageEvent } from '../../shared/stage-events';
 import type { PendingPermission, SteerItem } from '../stageReducer';
 import { DiffViewer } from './DiffViewer';
+import { ShortcutHelp } from './ShortcutHelp';
 
 interface EngineeringViewProps {
   events: StageEvent[];
@@ -36,6 +37,7 @@ export const EngineeringView: React.FC<EngineeringViewProps> = ({
 }) => {
   return (
     <div className="eng-view-root" data-testid="engineering-view">
+      <ShortcutHelp />
       <header className="eng-view-header">
         <div className="eng-view-header-left">
           <span className="eng-badge-mode">ENGINEERING VIEW // 朴素工程视图</span>
