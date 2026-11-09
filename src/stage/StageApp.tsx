@@ -25,6 +25,7 @@ import { ArchiveModal } from './components/ArchiveModal';
 import { PermissionModal } from './components/PermissionModal';
 import { BacklogModal } from './components/BacklogModal';
 import { EngineeringView } from './components/EngineeringView';
+import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
 import type { Emotion, ToolKind } from '../shared/stage-events';
 import type { SettingsPatch } from '../shared/settings';
@@ -283,6 +284,8 @@ export const StageApp: React.FC = () => {
   // Global keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.metaKey || e.altKey || (e.ctrlKey && e.key !== 'Control') || e.repeat) return;
+      if (isTypingTarget(e.target) && e.key !== 'Escape') return;
       if (e.key === 'Control') {
         dispatch({ type: 'SET_FAST_FORWARD', fast: true });
       }
@@ -320,7 +323,7 @@ export const StageApp: React.FC = () => {
         }
       }
 
-      if (state.pendingPermission && !state.systemMenuOpen) {
+      if (state.pendingPermission && !state.systemMenuOpen && !state.backlogOpen && state.selectedToolUseId === null) {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
           e.preventDefault();
           dispatch({ type: 'SET_PERMISSION_CHOICE', choice: 'allow' });
@@ -344,7 +347,7 @@ export const StageApp: React.FC = () => {
         activeTag === 'textarea' ||
         activeTag === 'select';
 
-      if (!isTypingInInput && !state.systemMenuOpen) {
+      if (!isTypingInInput && !state.systemMenuOpen && !state.engineeringView) {
         if (e.key === 'l' || e.key === 'L') {
           e.preventDefault();
           dispatch({ type: 'TOGGLE_BACKLOG' });
@@ -1269,6 +1272,10 @@ export const StageApp: React.FC = () => {
         </aside>
       </div>
 
+      <ShortcutHelp
+        archiveAvailable={state.skillCards.length > 0 && !state.backlogOpen && !state.systemMenuOpen && !state.pendingPermission && !selectedCard}
+        onOpenArchive={() => dispatch({ type: 'SELECT_SKILL_CARD', toolUseId: state.skillCards[state.skillCards.length - 1].toolUseId })}
+      />
       {/* ── OVERLAYS: 权限选择肢 / 档案层 / BACKLOG / SYSTEM 菜单 ── */}
       <PermissionModal
         permission={state.pendingPermission}
