@@ -156,6 +156,23 @@ const BOOTSTRAP_FALLBACK_PACK: CharacterPack = {
       ],
     },
   },
+  emotionLabels: {
+    idle: { en: 'IDLE', zh: '待机 · 傻敷敷' },
+    thinking: { en: 'THINKING', zh: '思考 · MAX / LOW?' },
+    working: { en: 'WORKING', zh: '行动 · 挥舞 HARNESS' },
+    happy: { en: 'HAPPY', zh: '大胜利 · 蒸汽机车!' },
+    worried: { en: 'WORRIED', zh: '慌张 · 抱箱跑路?!' },
+    shocked: { en: 'SHOCKED', zh: '决断 · 权限请求!' },
+  },
+  uiCopy: {
+    userTitle: '店长',
+    inputTitle: 'FEED THE FISH // 投喂大肥鱼',
+    inputPlaceholder: '输入投喂任务并按 Enter 发送…',
+    inputTag: 'FEED // 投喂指令',
+    sendLabel: '扔进鱼塘 ▶',
+    idleHint: '待命舞台：发送右下角投喂指令后，大肥鱼的工具调用将在此演出，随后收进右侧「水花记录」。',
+    stageSubtitle: '大肥鱼 · 深海工作台',
+  },
   recommendedModels: ['deepseek-v4-pro', 'gpt-6.1-sol'],
   art: {
     renderer: 'sprites',
@@ -284,6 +301,14 @@ export function getCachedCharacterPack(characterId: string): CharacterPack {
     tagline: meta.tagline,
     themeColor: meta.themeColor,
     accentColor: meta.accentColor,
+    // 其他角色的首屏不能继承大肥鱼的人设、台词或界面文案。
+    ...(characterId !== DEFAULT_CHARACTER_ID ? {
+      persona: { systemPrompt: '', speechStyle: '', catchphrases: [] },
+      reactions: {},
+      recommendedModels: undefined,
+      emotionLabels: undefined,
+      uiCopy: undefined,
+    } : {}),
   };
 }
 

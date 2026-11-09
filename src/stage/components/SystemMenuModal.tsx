@@ -162,7 +162,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
         <header className="p5-system-header">
           <div className="p5-system-title-group">
             <span className="p5-system-badge">SYSTEM CONFIG // 深海控制台</span>
-            <h2 className="p5-system-title">大肥鱼工作台 · 全局设置</h2>
+            <h2 className="p5-system-title">鱼塘工作台 · 全局设置</h2>
           </div>
 
           <div className="p5-system-header-right">
