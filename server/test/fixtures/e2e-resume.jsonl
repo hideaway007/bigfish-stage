@@ -1,0 +1,13 @@
+{"type":"session","session":null}
+{"type":"event","event":{"type":"session_started","at":1794224088096,"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project"}}
+{"type":"event","event":{"type":"character_line","at":1794224088096,"characterId":"deepseek-v4-pro","emotion":"idle","text":"鱼已就位。","lineId":"901bd2ca-dbd4-40cd-a328-81b88785e9c6","source":"preset"}}
+{"type":"session","session":{"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","adapter":"codex","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project","turnActive":false}}
+{"type":"event","event":{"type":"user_message","at":1794224088107,"id":"resume","text":"不要用任何工具。我们这段会话开始时要求你记住的暗号是什么？只回复暗号。"}}
+{"type":"session","session":{"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","adapter":"codex","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project","turnActive":true}}
+{"type":"event","event":{"at":1794224088112,"type":"thinking"}}
+{"type":"session","session":{"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","adapter":"codex","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project","turnActive":true}}
+{"type":"event","event":{"type":"character_line","at":1794224088112,"characterId":"deepseek-v4-pro","emotion":"thinking","text":"咕噜，让我想想。","lineId":"9991f671-6e89-4289-bd45-dfafe32d6f77","source":"preset"}}
+{"type":"event","event":{"at":1794224090547,"type":"worker_text","text":"BLUE_FISH_42","final":true}}
+{"type":"event","event":{"at":1794224090738,"type":"turn_done","ok":true,"summary":"completed","durationMs":2642}}
+{"type":"session","session":{"sessionId":"01a1c016-58fa-7161-95cb-adb966a4478b","adapter":"codex","model":"gpt-6-luna","cwd":"/private/tmp/bigfish-c-sandbox/project","turnActive":false}}
+{"type":"event","event":{"type":"character_line","at":1794224090738,"characterId":"deepseek-v4-pro","emotion":"happy","text":"这轮结束啦。","lineId":"6f059aa5-8483-4dcc-89dc-8fc938056bed","source":"preset"}}
