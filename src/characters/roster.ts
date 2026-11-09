@@ -1,3 +1,7 @@
+/**
+ * @deprecated 已废弃（Phase 1 起角色数据全部迁移至 `public/characters/<id>/character.json`）。
+ * 本文件仅作为 Phase 0 原始设定与口癖的历史参考保留，UI 与剧本运行时不再引用本文件。
+ */
 export type AgentBehaviorState =
   | 'idle'
   | 'thinking'

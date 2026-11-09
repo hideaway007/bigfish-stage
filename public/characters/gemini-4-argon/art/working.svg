@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900" width="720" height="900">
+  <defs>
+    <linearGradient id="hairGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="55%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#EC4899"/>
+    </linearGradient>
+    <linearGradient id="dressGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3B0764"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+  <polygon points="95,95 625,55 660,815 55,845" fill="#0A0A0C" opacity="0.9"/>
+  <polygon points="110,110 610,72 642,800 72,828" fill="#3B0764" opacity="0.55" stroke="#A855F7" stroke-width="6"/>
+  <polygon points="80,220 655,160 620,250 65,300" fill="#A855F7" opacity="0.85"/>
+  <g>
+    <path d="M 205 235 C 135 360, 125 560, 170 725 L 550 725 C 595 560, 585 360, 515 235 Z" fill="url(#hairGrad)" stroke="#0A0A0C" stroke-width="7"/>
+    <path d="M 235 425 L 485 425 L 555 785 L 165 785 Z" fill="url(#dressGrad)" stroke="#FFFFFF" stroke-width="12" stroke-linejoin="round"/>
+    <path d="M 235 425 L 485 425 L 555 785 L 165 785 Z" fill="url(#dressGrad)" stroke="#0A0A0C" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M 272 430 L 448 430 L 488 740 L 232 740 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="6"/>
+    <rect x="332" y="385" width="56" height="50" rx="14" fill="#FFF1E6" stroke="#0A0A0C" stroke-width="6"/>
+    <path d="M 232 230 C 232 150, 488 150, 488 230 C 492 325, 435 402, 360 406 C 285 402, 228 325, 232 230 Z" fill="#FFF1E6" stroke="#0A0A0C" stroke-width="7"/>
+    <path d="M 220 255 C 215 155, 300 125, 360 128 C 420 125, 505 155, 500 255 C 475 215, 455 245, 440 275 C 425 225, 395 210, 375 265 C 360 215, 340 220, 325 265 C 305 215, 275 225, 265 275 C 245 240, 235 220, 220 255 Z" fill="url(#hairGrad)" stroke="#0A0A0C" stroke-width="6.5" stroke-linejoin="round"/>
+    
+      <polygon points="210,190 165,75 295,145" fill="url(#hairGrad)" stroke="#0A0A0C" stroke-width="7" stroke-linejoin="round"/>
+      <polygon points="220,175 188,102 275,148" fill="#F472B6"/>
+      <polygon points="510,190 555,75 425,145" fill="url(#hairGrad)" stroke="#0A0A0C" stroke-width="7" stroke-linejoin="round"/>
+      <polygon points="500,175 532,102 445,148" fill="#F472B6"/>
+      <rect x="235" y="148" width="250" height="48" rx="14" fill="#1E293B" stroke="#0A0A0C" stroke-width="6"/>
+      <circle cx="298" cy="172" r="24" fill="#38BDF8" stroke="#FACC15" stroke-width="6"/>
+      <circle cx="422" cy="172" r="24" fill="#E879F9" stroke="#FACC15" stroke-width="6"/>
+    
+    
+        <ellipse cx="304" cy="308" rx="22" ry="26" fill="#0A0A0C"/>
+        <ellipse cx="304" cy="310" rx="18" ry="22" fill="#EF4444"/>
+        <circle cx="296" cy="298" r="7" fill="#FFFFFF"/>
+        <ellipse cx="416" cy="308" rx="22" ry="26" fill="#0A0A0C"/>
+        <ellipse cx="416" cy="310" rx="18" ry="22" fill="#FACC15"/>
+        <circle cx="408" cy="298" r="7" fill="#FFFFFF"/>
+      
+    <ellipse cx="268" cy="342" rx="15" ry="7" fill="#FB7185" opacity="0.65"/>
+    <ellipse cx="452" cy="342" rx="15" ry="7" fill="#FB7185" opacity="0.65"/>
+    <path d="M 340 356 Q 360 374 380 356" fill="none" stroke="#0A0A0C" stroke-width="5" stroke-linecap="round"/>
+    
+      <g transform="translate(500, 480) rotate(-25)">
+        <rect x="-20" y="-15" width="140" height="32" rx="8" fill="#334155" stroke="#0A0A0C" stroke-width="6"/>
+        <polygon points="120,-8 165,1 120,10" fill="#FACC15" stroke="#0A0A0C" stroke-width="5"/>
+        <circle cx="178" cy="1" r="28" fill="#E879F9" opacity="0.85"/>
+        <path d="M 165 1 L 220 -35 M 165 1 L 230 5 M 165 1 L 215 42" stroke="#FACC15" stroke-width="6" stroke-linecap="round"/>
+      </g>
+    
+  </g>
+  <g transform="translate(36, 755) rotate(-3)">
+    <polygon points="0,18 635,0 620,108 15,118" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="8"/>
+    <polygon points="14,30 622,12 608,98 26,106" fill="#0B0B0E"/>
+    <polygon points="14,30 225,24 208,101 26,106" fill="#A855F7"/>
+    <text x="118" y="78" font-family="Impact, Anton, sans-serif" font-size="38" font-weight="900" fill="#FFFFFF" text-anchor="middle">WORKING</text>
+    <text x="415" y="64" font-family="sans-serif" font-size="26" font-weight="900" fill="#FFFFFF" text-anchor="middle">行动 · 全力施工</text>
+    <text x="415" y="90" font-family="monospace" font-size="14" font-weight="700" fill="#EC4899" text-anchor="middle">GEMINI 4 · ARGON // 哈基米</text>
+  </g>
+</svg>

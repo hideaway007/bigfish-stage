@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "check:characters": "node scripts/check-characters.mjs",
+    "mock:server": "node scripts/mock-server.mjs",
     "preview": "vite preview",
     "start": "vite build && npm --prefix server run start",
     "dev:server": "npm --prefix server run dev"

@@ -1,5 +1,9 @@
 import type { StageEvent } from '../shared/stage-events';
-import { DEFAULT_CHARACTER_ID, HUD_MODEL_DISPLAY_NAME } from '../stage/reactions';
+import {
+  DEFAULT_CHARACTER_ID,
+  getCachedCharacterPack,
+  pickReactionForEvent,
+} from '../stage/characterLoader';
 
 export type DistributiveOmit<T, K extends keyof T> = T extends unknown
   ? Omit<T, K>
@@ -15,20 +19,40 @@ export interface ScriptStep {
 export const DEFAULT_FIRST_USER_PROMPT =
   '帮我把登录页的按钮颜色改成主题色，然后跑一下测试';
 
-export const INITIAL_BOOT_EVENTS: StageEventPayload[] = [
-  {
+export function buildInitialBootEvents(
+  characterId: string = DEFAULT_CHARACTER_ID
+): StageEventPayload[] {
+  const pack = getCachedCharacterPack(characterId);
+  const bootReaction = pickReactionForEvent(pack, {
     type: 'session_started',
     sessionId: 'ses_dafeiyu_v4_01',
-    model: HUD_MODEL_DISPLAY_NAME[DEFAULT_CHARACTER_ID],
-    cwd: '/workspace/bigfish-login-app',
-  },
-  {
-    type: 'character_line',
-    characterId: DEFAULT_CHARACTER_ID,
-    emotion: 'idle',
-    text: '远看肥鱼大，近看大肥鱼，鱼之大，一锅炖不下～今天要炖哪个任务捏？（按 Enter 发送右下角指令即可开演！）',
-  },
-];
+    at: 0,
+  });
+
+  const modelLabel = pack.recommendedModels?.[0] ?? 'gpt-6.1-sol';
+
+  return [
+    {
+      type: 'session_started',
+      sessionId: 'ses_dafeiyu_v4_01',
+      model: modelLabel,
+      cwd: '/workspace/bigfish-login-app',
+    },
+    {
+      type: 'character_line',
+      lineId: `line_boot_${characterId}`,
+      source: 'preset',
+      characterId,
+      emotion: bootReaction?.emotion ?? 'idle',
+      text:
+        bootReaction?.text ??
+        '远看肥鱼大，近看大肥鱼，鱼之大，一锅炖不下～今天要炖哪个任务捏？',
+    },
+  ];
+}
+
+export const INITIAL_BOOT_EVENTS: StageEventPayload[] =
+  buildInitialBootEvents(DEFAULT_CHARACTER_ID);
 
 const LOGIN_TSX_READ_OUTPUT = `// src/pages/Login.tsx
 import React, { useState } from 'react';
@@ -41,7 +65,7 @@ export const Login: React.FC = () => {
 
   return (
     <main className="login-stage">
-      <form className="login-card" aria-label="Phantom Login">
+      <form className="login-card" aria-label="Big Fish Login">
         <h1>BIG FISH LOGIN</h1>
         <input
           type="email"
@@ -153,29 +177,59 @@ Test Files  1 passed (1)
   Duration  412ms (transform 48ms, setup 0ms, collect 112ms, tests 148ms)`;
 
 /**
- * 第一阶段剧本：从用户发消息后到弹出 permission_request 之前
+ * 第一阶段剧本：从用户发消息后到弹出 permission_request 之前（从角色包读取预置反应）
  */
 export function buildPrePermissionSteps(
   characterId: string = DEFAULT_CHARACTER_ID
 ): ScriptStep[] {
+  const pack = getCachedCharacterPack(characterId);
+  const startReaction = pickReactionForEvent(pack, {
+    type: 'user_message',
+    id: 'msg_1',
+    text: '',
+    at: 0,
+  });
+  const editReaction = pickReactionForEvent(pack, {
+    type: 'tool_start',
+    toolUseId: 'tool_edit_login_01',
+    tool: 'edit',
+    rawName: 'Edit',
+    summary: 'Edit src/pages/Login.tsx',
+    file: 'src/pages/Login.tsx',
+    at: 0,
+  });
+  const permReaction = pickReactionForEvent(pack, {
+    type: 'permission_request',
+    requestId: 'perm_bash_login_test_01',
+    tool: 'bash',
+    rawName: 'Bash',
+    summary: '执行登录页单元测试',
+    detail: 'npm test -- Login',
+    at: 0,
+  });
+
   return [
     {
-      delayMs: 350,
+      delayMs: 320,
       event: {
         type: 'character_line',
+        lineId: 'demo_line_start',
+        source: 'preset',
         characterId,
-        emotion: 'thinking',
-        text: '（左手举起 max 牌子，右手举起 low 牌子，歪着脑袋一脸懵……）唔……为什么 max 的思考强度有时候还不如 low 捏？不管啦，大肥鱼马上帮你改登录页按钮捏！',
+        emotion: startReaction?.emotion ?? 'thinking',
+        text:
+          startReaction?.text ??
+          '（左手举起 max 牌子，右手举起 low 牌子，歪着脑袋一脸懵……）收到指令捏！',
       },
     },
     {
-      delayMs: 900,
+      delayMs: 650,
       event: {
         type: 'thinking',
       },
     },
     {
-      delayMs: 750,
+      delayMs: 700,
       event: {
         type: 'worker_text',
         text: 'Inspecting `src/pages/Login.tsx` to locate the submit button color styles and theme tokens.',
@@ -193,7 +247,7 @@ export function buildPrePermissionSteps(
       },
     },
     {
-      delayMs: 1100,
+      delayMs: 950,
       event: {
         type: 'tool_end',
         toolUseId: 'tool_read_login_01',
@@ -203,7 +257,7 @@ export function buildPrePermissionSteps(
       },
     },
     {
-      delayMs: 700,
+      delayMs: 600,
       event: {
         type: 'tool_start',
         toolUseId: 'tool_edit_login_01',
@@ -214,16 +268,20 @@ export function buildPrePermissionSteps(
       },
     },
     {
-      delayMs: 1200,
+      delayMs: 450,
       event: {
         type: 'character_line',
+        lineId: 'demo_line_edit',
+        source: 'preset',
         characterId,
-        emotion: 'working',
-        text: '如何使用 V4 Pro？很简单！首先，握住 Harness 娘，然后用力挥舞吧！把灰扑扑的按钮统统刷成深海主题色捏！',
+        emotion: editReaction?.emotion ?? 'working',
+        text:
+          editReaction?.text ??
+          '如何使用 V4 Pro？很简单！首先，握住 Harness 娘，然后用力挥舞吧！',
       },
     },
     {
-      delayMs: 950,
+      delayMs: 850,
       event: {
         type: 'tool_end',
         toolUseId: 'tool_edit_login_01',
@@ -233,14 +291,27 @@ export function buildPrePermissionSteps(
       },
     },
     {
-      delayMs: 650,
+      delayMs: 550,
       event: {
         type: 'worker_text',
         text: 'Replaced hardcoded `#64748B` button background with `themeColor || var(--color-theme-primary, #2563EB)` in `src/pages/Login.tsx`. Requesting permission to run unit tests.',
       },
     },
     {
-      delayMs: 550,
+      delayMs: 300,
+      event: {
+        type: 'character_line',
+        lineId: 'demo_line_perm',
+        source: 'preset',
+        characterId,
+        emotion: permReaction?.emotion ?? 'shocked',
+        text:
+          permReaction?.text ??
+          '店长店长！前面要跑终端命令了捏，快帮大肥鱼拍板：到底是【允许】还是【拒绝】捏？',
+      },
+    },
+    {
+      delayMs: 250,
       event: {
         type: 'permission_request',
         requestId: 'perm_bash_login_test_01',
@@ -255,11 +326,25 @@ export function buildPrePermissionSteps(
 
 /**
  * 分支一：用户选择「允许」执行测试
- * 测试 1 个失败 -> worried -> edit 修复 -> bash 全部通过 -> happy -> turn_done ok
  */
 export function buildAllowBranchSteps(
   characterId: string = DEFAULT_CHARACTER_ID
 ): ScriptStep[] {
+  const pack = getCachedCharacterPack(characterId);
+  const failReaction = pickReactionForEvent(pack, {
+    type: 'tool_end',
+    toolUseId: 'tool_bash_test_01',
+    ok: false,
+    summary: '1 failed, 2 passed (Login.test.tsx)',
+    at: 0,
+  });
+  const doneReaction = pickReactionForEvent(pack, {
+    type: 'turn_done',
+    ok: true,
+    summary: '登录页按钮已改为主题色，3 项单元测试全部通过',
+    at: 0,
+  });
+
   return [
     {
       delayMs: 120,
@@ -270,7 +355,7 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 350,
+      delayMs: 320,
       event: {
         type: 'tool_start',
         toolUseId: 'tool_bash_test_01',
@@ -280,7 +365,7 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 1300,
+      delayMs: 1100,
       event: {
         type: 'tool_end',
         toolUseId: 'tool_bash_test_01',
@@ -290,23 +375,27 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 400,
+      delayMs: 320,
       event: {
         type: 'character_line',
+        lineId: 'demo_line_fail',
+        source: 'preset',
         characterId,
-        emotion: 'worried',
-        text: '呜哇，报错了捏……1 个测试挂掉了，我先抱起纸箱收拾东西跑路了捏！……诶不对，只是少了个 data-variant 属性，再挥两下 Harness 娘肯定能跑通！',
+        emotion: failReaction?.emotion ?? 'worried',
+        text:
+          failReaction?.text ??
+          '呜哇，报错了捏……1 个测试挂掉了，我先抱起纸箱收拾东西跑路了捏！',
       },
     },
     {
-      delayMs: 900,
+      delayMs: 800,
       event: {
         type: 'worker_text',
         text: 'Test `exposes data-variant="theme-primary"` failed because `Login.tsx` is missing `data-variant="theme-primary"`. Patching `src/pages/Login.tsx` and re-running tests.',
       },
     },
     {
-      delayMs: 350,
+      delayMs: 320,
       event: {
         type: 'tool_start',
         toolUseId: 'tool_edit_login_02',
@@ -317,7 +406,7 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 1050,
+      delayMs: 900,
       event: {
         type: 'tool_end',
         toolUseId: 'tool_edit_login_02',
@@ -327,7 +416,7 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 500,
+      delayMs: 450,
       event: {
         type: 'tool_start',
         toolUseId: 'tool_bash_test_02',
@@ -337,7 +426,7 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 1150,
+      delayMs: 950,
       event: {
         type: 'tool_end',
         toolUseId: 'tool_bash_test_02',
@@ -347,7 +436,7 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 450,
+      delayMs: 400,
       event: {
         type: 'worker_text',
         final: true,
@@ -355,16 +444,20 @@ export function buildAllowBranchSteps(
       },
     },
     {
-      delayMs: 350,
+      delayMs: 300,
       event: {
         type: 'character_line',
+        lineId: 'demo_line_done',
+        source: 'preset',
         characterId,
-        emotion: 'happy',
-        text: '搞定啦！3 个测试全部绿灯通过，不管怎么说，小鲸鱼是没有错的捏！走，我再给你叭叭叭介绍一整下午的蒸汽机车！',
+        emotion: doneReaction?.emotion ?? 'happy',
+        text:
+          doneReaction?.text ??
+          '搞定啦！3 个测试全部绿灯通过，不管怎么说，小鲸鱼是没有错的捏！',
       },
     },
     {
-      delayMs: 600,
+      delayMs: 500,
       event: {
         type: 'turn_done',
         ok: true,
@@ -378,11 +471,17 @@ export function buildAllowBranchSteps(
 
 /**
  * 分支二：用户选择「拒绝」执行测试
- * permission_resolved false -> character_line worried -> turn_done ok
  */
 export function buildRejectBranchSteps(
   characterId: string = DEFAULT_CHARACTER_ID
 ): ScriptStep[] {
+  const pack = getCachedCharacterPack(characterId);
+  const rejectReaction = pickReactionForEvent(pack, {
+    type: 'interrupted',
+    reason: 'user rejected bash test',
+    at: 0,
+  });
+
   return [
     {
       delayMs: 120,
@@ -404,13 +503,19 @@ export function buildRejectBranchSteps(
       delayMs: 350,
       event: {
         type: 'character_line',
+        lineId: 'demo_line_reject',
+        source: 'preset',
         characterId,
         emotion: 'worried',
-        text: '唔……明白捏！既然店长拒绝了终端权限，那大肥鱼就乖乖放下 Harness 娘、不跑 `npm test -- Login` 啦。不过登录页按钮的主题色已经改好保存了捏！',
+        text:
+          characterId === 'deepseek-v4-pro'
+            ? '唔……明白捏！既然店长拒绝了终端权限，那大肥鱼就乖乖放下 Harness 娘、不跑 `npm test -- Login` 啦。不过登录页按钮的主题色已经改好保存了捏！'
+            : rejectReaction?.text ??
+              '明白，已按店长要求跳过终端测试，代码修改已妥善保存。',
       },
     },
     {
-      delayMs: 650,
+      delayMs: 600,
       event: {
         type: 'turn_done',
         ok: true,

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900" width="720" height="900">
+  <defs>
+    <linearGradient id="hairGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#BAE6FD"/>
+      <stop offset="55%" stop-color="#7DD3FC"/>
+      <stop offset="100%" stop-color="#E0F2FE"/>
+    </linearGradient>
+    <linearGradient id="dressGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0C4A6E"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+  </defs>
+  <polygon points="95,95 625,55 660,815 55,845" fill="#0A0A0C" opacity="0.9"/>
+  <polygon points="110,110 610,72 642,800 72,828" fill="#0C4A6E" opacity="0.55" stroke="#38BDF8" stroke-width="6"/>
+  <polygon points="80,220 655,160 620,250 65,300" fill="#38BDF8" opacity="0.85"/>
+  <g>
+    <path d="M 205 235 C 135 360, 125 560, 170 725 L 550 725 C 595 560, 585 360, 515 235 Z" fill="url(#hairGrad)" stroke="#0A0A0C" stroke-width="7"/>
+    <path d="M 235 425 L 485 425 L 555 785 L 165 785 Z" fill="url(#dressGrad)" stroke="#FFFFFF" stroke-width="12" stroke-linejoin="round"/>
+    <path d="M 235 425 L 485 425 L 555 785 L 165 785 Z" fill="url(#dressGrad)" stroke="#0A0A0C" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M 272 430 L 448 430 L 488 740 L 232 740 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="6"/>
+    <rect x="332" y="385" width="56" height="50" rx="14" fill="#FFF1E6" stroke="#0A0A0C" stroke-width="6"/>
+    <path d="M 232 230 C 232 150, 488 150, 488 230 C 492 325, 435 402, 360 406 C 285 402, 228 325, 232 230 Z" fill="#FFF1E6" stroke="#0A0A0C" stroke-width="7"/>
+    <path d="M 220 255 C 215 155, 300 125, 360 128 C 420 125, 505 155, 500 255 C 475 215, 455 245, 440 275 C 425 225, 395 210, 375 265 C 360 215, 340 220, 325 265 C 305 215, 275 225, 265 275 C 245 240, 235 220, 220 255 Z" fill="url(#hairGrad)" stroke="#0A0A0C" stroke-width="6.5" stroke-linejoin="round"/>
+    
+      <path d="M 265 155 C 235 78, 275 58, 305 98 L 310 148 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="6"/>
+      <path d="M 455 155 C 485 78, 445 58, 415 98 L 410 148 Z" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="6"/>
+    
+    
+        <ellipse cx="304" cy="308" rx="22" ry="26" fill="#0A0A0C"/>
+        <ellipse cx="304" cy="310" rx="18" ry="22" fill="#0284C7"/>
+        <circle cx="296" cy="298" r="7" fill="#FFFFFF"/>
+        <ellipse cx="416" cy="308" rx="22" ry="26" fill="#0A0A0C"/>
+        <ellipse cx="416" cy="310" rx="18" ry="22" fill="#0284C7"/>
+        <circle cx="408" cy="298" r="7" fill="#FFFFFF"/>
+      
+    <ellipse cx="268" cy="342" rx="15" ry="7" fill="#FB7185" opacity="0.65"/>
+    <ellipse cx="452" cy="342" rx="15" ry="7" fill="#FB7185" opacity="0.65"/>
+    <ellipse cx="360" cy="364" rx="14" ry="16" fill="#F43F5E" stroke="#0A0A0C" stroke-width="5"/>
+    
+      <g transform="translate(445, 495) rotate(8)">
+        <rect x="-65" y="-50" width="130" height="100" fill="#FEF08A" stroke="#0A0A0C" stroke-width="6"/>
+        <text x="0" y="15" font-family="monospace" font-size="48" font-weight="900" fill="#0A0A0C" text-anchor="middle">&gt;_</text>
+      </g>
+    
+  </g>
+  <g transform="translate(36, 755) rotate(-3)">
+    <polygon points="0,18 635,0 620,108 15,118" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="8"/>
+    <polygon points="14,30 622,12 608,98 26,106" fill="#0B0B0E"/>
+    <polygon points="14,30 225,24 208,101 26,106" fill="#38BDF8"/>
+    <text x="118" y="78" font-family="Impact, Anton, sans-serif" font-size="38" font-weight="900" fill="#FFFFFF" text-anchor="middle">SHOCKED</text>
+    <text x="415" y="64" font-family="sans-serif" font-size="26" font-weight="900" fill="#FFFFFF" text-anchor="middle">决断 · 权限请求!</text>
+    <text x="415" y="90" font-family="monospace" font-size="14" font-weight="700" fill="#FEF08A" text-anchor="middle">OPENAI · CODEX // Codex 娘</text>
+  </g>
+</svg>

@@ -1,7 +1,7 @@
 # 任务 A 验收报告：假数据交互原型（Scripted Prototype）
 
 - **分支**：`task-a-prototype`
-- **工作目录**：`/Users/d2/Desktop/p5-task-a`
+- **工作目录**：`.`（仓库根目录）
 - **共享契约**：原样复用 `src/shared/stage-events.ts`（零修改）与 `src/characters/roster.ts`（只读引用，零修改）
 - **首发登场角色**：**大肥鱼**（`id: 'deepseek-v4-pro'`，HUD 模型名 `DeepSeek V4 Pro`）
 
