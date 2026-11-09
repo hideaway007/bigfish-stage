@@ -316,11 +316,11 @@ export const StageApp: React.FC = () => {
       <header className="p5-topbar">
         <div className="p5-topbar-left">
           <div className="p5-logo-plate">
-            <span className="p5-logo-phantom">PHANTOM STAGE</span>
-            <span className="p5-logo-sub">P5 AGENT TERMINAL</span>
+            <span className="p5-logo-phantom">BIG FISH STAGE</span>
+            <span className="p5-logo-sub">大肥鱼 · 深海工作台</span>
           </div>
           <div className="p5-cwd-pill" title={state.cwd}>
-            <span className="p5-cwd-prefix">TARGET //</span> {state.cwd}
+            <span className="p5-cwd-prefix">鱼塘 //</span> {state.cwd}
           </div>
         </div>
 
@@ -429,7 +429,7 @@ export const StageApp: React.FC = () => {
           {/* RPG HUD Status Card (Model Name, Current Status, Elapsed Time) */}
           <div className="p5-hud-card" data-testid="hud-status-card">
             <div className="p5-hud-header">
-              <span className="p5-hud-label">PARTY LEADER HUD // 会话状态</span>
+              <span className="p5-hud-label">WHALE STATUS // 鲸鱼状态</span>
               <span
                 className={`p5-hud-live-dot status-${state.hudStatus}`}
               />
@@ -480,7 +480,7 @@ export const StageApp: React.FC = () => {
           <section className="p5-dialogue-section" data-testid="dialogue-layer">
             {/* Active user mission strip */}
             <div className="p5-mission-strip">
-              <span className="p5-mission-tag">ORDER // 委托指令</span>
+              <span className="p5-mission-tag">FEED // 投喂指令</span>
               <span className="p5-mission-text">
                 {latestUserMsg && latestUserMsg.type === 'user_message'
                   ? latestUserMsg.text
@@ -488,7 +488,7 @@ export const StageApp: React.FC = () => {
               </span>
               {state.lastTurnOk !== null && !state.turnActive && (
                 <span className="p5-mission-done-stamp" data-testid="turn-done-badge">
-                  MISSION COMPLETE // 回合完成
+                  FULL! // 吃饱啦
                 </span>
               )}
             </div>
@@ -542,7 +542,7 @@ export const StageApp: React.FC = () => {
           <section className="p5-action-section" data-testid="action-layer">
             <div className="p5-action-section-header">
               <span className="p5-action-kicker">
-                SKILL CUT-IN // 行动层（工具调用不进聊天流，点击卡片展开档案层）
+                SPLASH // 甩尾行动（工具调用不进聊天流，点击卡片展开档案层）
               </span>
               {state.turnActive && (
                 <span className="p5-action-live-indicator">
@@ -568,7 +568,7 @@ export const StageApp: React.FC = () => {
                   >
                     <div className="p5-skill-cutin-slash">
                       <span className="p5-skill-type-tag">
-                        SKILL ACTIVATED // 技能发动
+                        SPLASH! // 甩尾发动
                       </span>
                       <span className="p5-skill-status-badge">
                         {card.status === 'running'
@@ -607,7 +607,7 @@ export const StageApp: React.FC = () => {
                       <span className="p5-placeholder-star">★</span>
                       <span>
                         待命舞台：发送右下角指令后，{shortNickname}的每次工具调用将以
-                        <strong>「技能发动」切入卡</strong>在此演出，随后收进右侧「行动记录」条。
+                        <strong>「技能发动」切入卡</strong>在此演出，随后收进右侧「水花记录」条。
                       </span>
                     </div>
                   ) : (
@@ -627,7 +627,7 @@ export const StageApp: React.FC = () => {
                       <span className="p5-placeholder-star">✔</span>
                       <span>
                         本轮共发动 <strong>{state.skillCards.length}</strong> 次技能，已全部收入右侧
-                        <strong>「行动记录」</strong>条（点击此处或右侧条目可随时打开档案层查看 Diff / 终端输出）。
+                        <strong>「水花记录」</strong>条（点击此处或右侧条目可随时打开档案层查看 Diff / 终端输出）。
                       </span>
                     </div>
                   )}
@@ -664,8 +664,8 @@ export const StageApp: React.FC = () => {
             <div className="p5-input-quick-row">
               <span className="p5-input-mode-tag">
                 {state.turnActive
-                  ? 'LIVE STEER // 演出中随时插话'
-                  : 'PHANTOM ORDER // 玩家指令输入'}
+                  ? 'SHOUT // 游动中随时喊话'
+                  : 'FEED THE FISH // 投喂大肥鱼'}
               </span>
 
               <div className="p5-quick-chips">
@@ -675,7 +675,7 @@ export const StageApp: React.FC = () => {
                     className="p5-chip-btn"
                     onClick={() => setInputValue(DEFAULT_FIRST_USER_PROMPT)}
                   >
-                    填入示例委托指令
+                    填入示例投喂指令
                   </button>
                 ) : (
                   <button
@@ -714,21 +714,21 @@ export const StageApp: React.FC = () => {
                 data-testid="stage-send-btn"
               >
                 <span className="send-en">
-                  {state.turnActive ? 'STEER' : 'TAKE HEART'}
+                  {state.turnActive ? 'SHOUT' : 'FEED'}
                 </span>
                 <span className="send-zh">
-                  {state.turnActive ? '插话传达 ▶' : '发送出击 ▶'}
+                  {state.turnActive ? '喊一嗓子 ▶' : '扔进鱼塘 ▶'}
                 </span>
               </button>
             </form>
           </section>
         </main>
 
-        {/* ══ RIGHT SIDEBAR STRIP: 「行动记录」 (COLLAPSED SKILL LOG) ══ */}
+        {/* ══ RIGHT SIDEBAR STRIP: 「水花记录」 (COLLAPSED SKILL LOG) ══ */}
         <aside className="p5-right-action-log" data-testid="action-log-strip">
           <div className="p5-log-header">
-            <span className="p5-log-title-en">ACTION LOG</span>
-            <span className="p5-log-title-zh">行动记录 ({state.skillCards.length})</span>
+            <span className="p5-log-title-en">SPLASH LOG</span>
+            <span className="p5-log-title-zh">水花记录 ({state.skillCards.length})</span>
           </div>
           <div className="p5-log-sub">点击任一技能条展开【档案层】</div>
 

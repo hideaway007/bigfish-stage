@@ -20,7 +20,7 @@ export const INITIAL_BOOT_EVENTS: StageEventPayload[] = [
     type: 'session_started',
     sessionId: 'ses_dafeiyu_v4_01',
     model: HUD_MODEL_DISPLAY_NAME[DEFAULT_CHARACTER_ID],
-    cwd: '/workspace/phantom-login-app',
+    cwd: '/workspace/bigfish-login-app',
   },
   {
     type: 'character_line',
@@ -42,12 +42,12 @@ export const Login: React.FC = () => {
   return (
     <main className="login-stage">
       <form className="login-card" aria-label="Phantom Login">
-        <h1>PHANTOM ACCESS</h1>
+        <h1>BIG FISH LOGIN</h1>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="agent@phantom.dev"
+          placeholder="fish@bigfish.dev"
         />
         <input
           type="password"
@@ -100,10 +100,10 @@ const LOGIN_EDIT_DIFF_1 = `--- a/src/pages/Login.tsx
 
 const BASH_TEST_FAIL_OUTPUT = `$ npm test -- Login
 
-> phantom-login-app@0.1.0 test
+> bigfish-login-app@0.1.0 test
 > vitest run Login
 
- RUN  v2.1.4 /workspace/phantom-login-app
+ RUN  v2.1.4 /workspace/bigfish-login-app
 
  ❯ src/pages/__tests__/Login.test.tsx (3 tests | 1 failed) 184ms
    ✓ renders email and password fields (42ms)
@@ -138,10 +138,10 @@ const LOGIN_EDIT_DIFF_2 = `--- a/src/pages/Login.tsx
 
 const BASH_TEST_PASS_OUTPUT = `$ npm test -- Login
 
-> phantom-login-app@0.1.0 test
+> bigfish-login-app@0.1.0 test
 > vitest run Login
 
- RUN  v2.1.4 /workspace/phantom-login-app
+ RUN  v2.1.4 /workspace/bigfish-login-app
 
  ✓ src/pages/__tests__/Login.test.tsx (3 tests) 148ms
    ✓ renders email and password fields (35ms)

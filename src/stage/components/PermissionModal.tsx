@@ -29,7 +29,7 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
       <div className="p5-permission-cutin">
         {/* Top warning slash */}
         <div className="p5-permission-ribbon">
-          <span>PHANTOM DECISION // 权限选择肢</span>
+          <span>MAX or LOW? // 举牌决定</span>
           <span className="p5-permission-kbd-hint">
             键盘 [← / →] 切换 · [ENTER] 决断
           </span>
@@ -73,7 +73,7 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
                 {selectedChoice === 'allow' ? '▶' : ' '}
               </span>
               <div className="p5-choice-text-wrap">
-                <span className="p5-choice-en">ALLOW // GO AHEAD</span>
+                <span className="p5-choice-en">MAX // 冲！</span>
                 <span className="p5-choice-zh">允许执行</span>
               </div>
               <span className="p5-choice-sub">挥舞 Harness 跑单元测试</span>
@@ -92,7 +92,7 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
                 {selectedChoice === 'reject' ? '▶' : ' '}
               </span>
               <div className="p5-choice-text-wrap">
-                <span className="p5-choice-en">REJECT // HOLD OFF</span>
+                <span className="p5-choice-en">LOW // 先别</span>
                 <span className="p5-choice-zh">拒绝执行</span>
               </div>
               <span className="p5-choice-sub">跳过测试直接收工</span>

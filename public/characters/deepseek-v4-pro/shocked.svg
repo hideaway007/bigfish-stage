@@ -15,7 +15,7 @@
     </pattern>
   </defs>
 
-  <!-- P5 Slanted Backing Card / Comic Shadow -->
+  <!-- Slanted Backing Card / Comic Shadow -->
   <polygon points="95,95 625,55 660,815 55,845" fill="#0A0A0C" opacity="0.88"/>
   <polygon points="110,110 610,72 642,800 72,828" fill="url(#halftone)" stroke="#E60012" stroke-width="6"/>
   <polygon points="80,220 655,160 620,250 65,300" fill="#E60012" opacity="0.85"/>
@@ -130,7 +130,7 @@
     
   </g>
 
-  <!-- P5 Style Slanted Character & Emotion Stamp at Bottom -->
+  <!-- Slanted Character & Emotion Stamp at Bottom -->
   <g transform="translate(36, 755) rotate(-3)">
     <polygon points="0,18 635,0 620,108 15,118" fill="#FFFFFF" stroke="#0A0A0C" stroke-width="8"/>
     <polygon points="14,30 622,12 608,98 26,106" fill="#991B1B"/>

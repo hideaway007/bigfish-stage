@@ -118,7 +118,7 @@ export function createInitialStageState(
     characterId,
     sessionId: 'ses_dafeiyu_v4_01',
     modelName: HUD_MODEL_DISPLAY_NAME[characterId],
-    cwd: '/workspace/phantom-login-app',
+    cwd: '/workspace/bigfish-login-app',
     hudStatus: 'idle',
     turnActive: false,
     turnStartedAt: null,

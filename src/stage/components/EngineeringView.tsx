@@ -67,7 +67,7 @@ export const EngineeringView: React.FC<EngineeringViewProps> = ({
             onClick={onExitEngineeringView}
             data-testid="exit-engineering-view-btn"
           >
-            [`] 返回 P5 舞台视图
+            [`] 返回鱼塘舞台
           </button>
         </div>
       </header>
