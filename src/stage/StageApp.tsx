@@ -27,6 +27,7 @@ import { BacklogModal } from './components/BacklogModal';
 import { EngineeringView } from './components/EngineeringView';
 import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
+import { OnboardingCard } from './components/OnboardingCard';
 import type { Emotion, ToolKind } from '../shared/stage-events';
 import type { SettingsPatch } from '../shared/settings';
 import type { ServerMessage } from '../shared/wire';
@@ -383,6 +384,7 @@ export const StageApp: React.FC = () => {
 
   const handleSubmitInput = (e: React.FormEvent) => {
     e.preventDefault();
+    if (needsOnboarding) return;
     const trimmed = inputValue.trim();
 
     if (state.turnActive) {
@@ -483,6 +485,8 @@ export const StageApp: React.FC = () => {
 
   const isDisconnected =
     sourceMode === 'live' && connStatus.state !== 'connected';
+  const needsOnboarding =
+    sourceMode === 'live' && !state.serverSettings.projectDir;
 
   const viewportStyle = {
     '--char-theme-color': character.themeColor,
@@ -909,7 +913,7 @@ export const StageApp: React.FC = () => {
 
             <div className="p5-active-skills-zone">
               {/* Friendly non-scary Error Notice Banner */}
-              {state.lastError && (
+              {state.lastError && !needsOnboarding && (
                 <div
                   className="p5-error-notice-card"
                   data-testid="stage-error-banner"
@@ -1091,6 +1095,22 @@ export const StageApp: React.FC = () => {
                     )}
                   </div>
                 </div>
+              ) : needsOnboarding ? (
+                <OnboardingCard
+                  character={character}
+                  settings={state.serverSettings}
+                  workerAdapters={state.workerAdapters}
+                  lastError={state.lastError}
+                  onStartWithDir={handleStartNewSessionWithDir}
+                  onOpenSystemMenu={(tab) =>
+                    dispatch({
+                      type: 'TOGGLE_SYSTEM_MENU',
+                      open: true,
+                      tab: tab ?? 'pond',
+                    })
+                  }
+                  onDismissError={() => dispatch({ type: 'DISMISS_ERROR' })}
+                />
               ) : (
                 <div className="p5-skill-idle-stage">
                   <div className="p5-skill-placeholder">
@@ -1140,7 +1160,14 @@ export const StageApp: React.FC = () => {
               </span>
 
               <div className="p5-quick-chips">
-                {!state.turnActive ? (
+                {needsOnboarding ? (
+                  <span
+                    className="p5-input-onboarding-hint"
+                    data-testid="stage-input-disabled-hint"
+                  >
+                    ▲ 请先在上方引导卡选定项目文件夹后再投喂任务
+                  </span>
+                ) : !state.turnActive ? (
                   <button
                     type="button"
                     className="p5-chip-btn"
@@ -1181,10 +1208,13 @@ export const StageApp: React.FC = () => {
                 type="text"
                 className="p5-command-input"
                 data-testid="stage-input"
+                disabled={needsOnboarding}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder={
-                  state.turnActive
+                  needsOnboarding
+                    ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
+                    : state.turnActive
                     ? '任务进行中：输入消息并回车立即插话（触发 steer_queued -> 已传达，待接收）...'
                     : '输入投喂任务并按 Enter 发送...'
                 }
@@ -1193,6 +1223,7 @@ export const StageApp: React.FC = () => {
                 type="submit"
                 className="p5-send-btn"
                 data-testid="stage-send-btn"
+                disabled={needsOnboarding}
               >
                 <span className="send-en">
                   {state.turnActive ? 'SHOUT' : 'FEED'}
