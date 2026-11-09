@@ -1,0 +1,12 @@
+{
+  "name": "p5-agent-stage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Persona 5 style interactive AI Agent stage connected to local running CLI/Agent sessions (Opus 5.5, Gemini 4, Codex)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "node -e \"console.log('P5 Agent Stage blueprint ready')\"",
+    "preview": "vite preview"
+  }
+}
