@@ -47,6 +47,26 @@ export type ArtManifest =
       portrait?: string;
     };
 
+/** 情绪徽章文案：左上角表情标签。缺省时 UI 用通用文案 */
+export type EmotionLabels = Partial<Record<Emotion, { en?: string; zh: string }>>;
+/** 随角色变化的舞台文案，全部可选；缺省时 UI 用中性通用文案 */
+export interface CharacterUiCopy {
+  /** 角色对用户的称呼，如「店长」 */
+  userTitle?: string;
+  /** 输入框标题，如「FEED THE FISH // 投喂大肥鱼」 */
+  inputTitle?: string;
+  /** 输入框占位文字 */
+  inputPlaceholder?: string;
+  /** 输入区左侧小标签，如「FEED // 投喂指令」 */
+  inputTag?: string;
+  /** 发送按钮文字 */
+  sendLabel?: string;
+  /** 舞台待命时的提示 */
+  idleHint?: string;
+  /** 顶部 logo 副标题，如「大肥鱼 · 深海工作台」 */
+  stageSubtitle?: string;
+}
+
 export interface CharacterPack {
   schemaVersion: 1;
   id: string;
@@ -67,6 +87,8 @@ export interface CharacterPack {
   /** 推荐搭配的模型（仅提示，不强制） */
   recommendedModels?: string[];
   art: ArtManifest;
+  emotionLabels?: EmotionLabels;
+  uiCopy?: CharacterUiCopy;
 }
 
 /** 服务端发给 UI 的角色列表条目 */
