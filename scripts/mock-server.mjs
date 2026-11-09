@@ -228,13 +228,46 @@ const workerAdapters = [
 ];
 
 const availableModels = [
-  'gpt-6.1-sol',
-  'gpt-6-luna',
+  'codex/gpt-6.1-sol',
+  'codex/codex-mini-latest',
   'remote-magpie/antigravity/gemini-3.8-flash',
   'remote-magpie/antigravity/gemini-4-argon',
+  'gpt-6.1-sol',
+  'gpt-6-luna',
   'deepseek-v4-pro',
   'claude-opus-5-5',
 ];
+
+const MOCK_CONN_FAIL = process.env.MOCK_CONN_FAIL || '';
+const MOCK_MODELS_FAIL = process.env.MOCK_MODELS_FAIL || '';
+
+function resolveMockConnFailMessage(mode, target) {
+  const normalized = String(mode).trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'econnrefused') {
+    const url =
+      target === 'voice'
+        ? serverState.settings.voice.endpoint.baseUrl
+        : serverState.settings.worker.endpoint.baseUrl;
+    return `TypeError: fetch failed (connect ECONNREFUSED 127.0.0.1:3425 -> ${url}/chat/completions)`;
+  }
+  if (normalized === '401' || normalized === '403') {
+    return `模型接口 HTTP ${normalized} Unauthorized: invalid_api_key`;
+  }
+  if (normalized === '404') {
+    const model =
+      target === 'voice'
+        ? serverState.settings.voice.endpoint.model
+        : serverState.settings.worker.model;
+    return `模型接口 HTTP 404 Not Found: The model '${model}' does not exist`;
+  }
+  if (normalized === 'timeout') {
+    return 'TimeoutError: The operation was aborted due to timeout (12000 ms)';
+  }
+  if (normalized === 'codex') {
+    return '找不到可用的 codex 可执行文件 (spawn codex ENOENT)';
+  }
+  return String(mode).trim();
+}
 
 const clients = new Set();
 let replayTimers = [];
@@ -694,6 +727,18 @@ function handleClientCommand(socket, cmd) {
     }
 
     case 'list_models': {
+      if (MOCK_MODELS_FAIL) {
+        sendToSocket(socket, {
+          type: 'models',
+          target: cmd.target,
+          models: [],
+          error:
+            MOCK_MODELS_FAIL === '1'
+              ? '无法读取模型列表，请检查接口地址与凭据 (connect ECONNREFUSED 127.0.0.1:3425)'
+              : MOCK_MODELS_FAIL,
+        });
+        break;
+      }
       sendToSocket(socket, {
         type: 'models',
         target: cmd.target,
@@ -703,6 +748,25 @@ function handleClientCommand(socket, cmd) {
     }
 
     case 'test_connection': {
+      const targetEndpointUrl =
+        cmd.target === 'voice'
+          ? serverState.settings.voice.endpoint.baseUrl
+          : serverState.settings.worker.endpoint.baseUrl;
+      const failMode =
+        MOCK_CONN_FAIL ||
+        (/fail|:9999/i.test(targetEndpointUrl) ? 'econnrefused' : '');
+
+      if (failMode) {
+        sendToSocket(socket, {
+          type: 'connection_test',
+          target: cmd.target,
+          ok: false,
+          message: resolveMockConnFailMessage(failMode, cmd.target),
+          latencyMs: 9,
+        });
+        break;
+      }
+
       sendToSocket(socket, {
         type: 'connection_test',
         target: cmd.target,
