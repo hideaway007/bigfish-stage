@@ -2,13 +2,15 @@
   "name": "p5-agent-stage",
   "version": "0.1.0",
   "private": true,
-  "description": "Persona 5 style interactive AI Agent stage connected to local running CLI/Agent sessions (Opus 5.5, Gemini 4, Codex)",
+  "description": "Big Fish Stage: a game-styled chat client for coding agents (pluggable worker agents, character packs, local web app)",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "vite build && npm --prefix server run start",
+    "dev:server": "npm --prefix server run dev"
   },
   "dependencies": {
     "react": "^18.3.1",

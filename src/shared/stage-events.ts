@@ -78,7 +78,18 @@ export type StageEvent = Base &
     | { type: 'error'; message: string }
 
     // ── 前台角色（任务 A 手写；以后由前台人设模型生成，B 不产生）──
-    | { type: 'character_line'; characterId: string; emotion: Emotion; text: string }
+    | {
+        type: 'character_line';
+        characterId: string;
+        emotion: Emotion;
+        text: string;
+        /** 台词唯一 ID（Phase 1 起由服务端填写；剧本模式可省略） */
+        lineId?: string;
+        /** preset = 角色包预置台词（即时）；model = 台词模型生成（稍后） */
+        source?: 'preset' | 'model';
+        /** 若存在：用本句替换之前那句 preset 台词（UI 原地替换，不新增一条） */
+        replacesLineId?: string;
+      }
   );
 
 export type StageEventType = StageEvent['type'];
