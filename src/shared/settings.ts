@@ -5,19 +5,23 @@
  * 发给 UI 的是 PublicSettings：所有 apiKey 都被替换成 apiKeySet: boolean。
  */
 
-/** 任意 OpenAI 兼容接口（/v1/chat/completions、/v1/models） */
-export interface ModelEndpoint {
+/** 任意 OpenAI 兼容接口的连接信息 */
+export interface ProviderEndpoint {
   /** 例如 http://127.0.0.1:3425/v1 */
   baseUrl: string;
   apiKey?: string;
-  model: string;
 }
+
+export type ModelEndpoint = ProviderEndpoint & { model: string };
 
 export interface WorkerSettings {
   /** 执行 Agent 适配器 ID。Phase 1 只有 'codex'，以后加 'claude-code' 等 */
   adapter: string;
   /** 执行 Agent 使用的模型，由用户自选（传给适配器） */
   model: string;
+  /** 自定义 OpenAI 兼容接口，或沿用本机 Agent 的登录与配置 */
+  connection: 'endpoint' | 'agent-default';
+  endpoint: ProviderEndpoint;
   sandbox: 'read-only' | 'workspace-write';
   /** 适配器专属的额外选项（如 codex 可执行文件路径） */
   extra?: Record<string, string>;
@@ -47,7 +51,7 @@ export interface AppSettings {
   performance: PerformanceSettings;
 }
 
-type Publicize<T> = T extends ModelEndpoint
+type Publicize<T> = T extends ProviderEndpoint
   ? Omit<T, 'apiKey'> & { apiKeySet: boolean }
   : T extends object
     ? { [K in keyof T]: Publicize<T[K]> }
@@ -69,7 +73,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   activeCharacterId: 'deepseek-v4-pro',
   projectDir: null,
   recentProjects: [],
-  worker: { adapter: 'codex', model: 'gpt-6.1-sol', sandbox: 'workspace-write' },
+  worker: {
+    adapter: 'codex', model: 'gpt-6.1-sol', sandbox: 'workspace-write',
+    connection: 'endpoint', endpoint: { baseUrl: 'http://127.0.0.1:3425/v1' },
+  },
   voice: {
     enabled: true,
     // 默认指向本机 magpie 网关（免 key）；用户可改成任意 OpenAI 兼容地址

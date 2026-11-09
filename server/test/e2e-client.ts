@@ -1,15 +1,16 @@
-/** Explicit real-model acceptance run: four Codex turns maximum; npm test never invokes it. */
+/** Explicit real-model acceptance: default four turns, --connections one turn per mode; never run by npm test. */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import type { ClientCommand, ServerMessage } from '../../src/shared/wire';
 import { startServer } from '../src/index';
 import { scrubFixture } from './scrub';
 
-const run = promisify(execFile), root = '/tmp/bigfish-c-sandbox', project = join(root, 'project');
+const connectionsOnly = process.argv.includes('--connections');
+const run = promisify(execFile), root = connectionsOnly ? await mkdtemp('/tmp/bigfish-connections-') : '/tmp/bigfish-c-sandbox', project = join(root, 'project');
 await mkdir(project, { recursive: true });
 await writeFile(join(project, 'package.json'), JSON.stringify({ name: 'local-acceptance-fixture', private: true, scripts: { test: 'node --test add.test.cjs' } }));
 await writeFile(join(project, 'add.cjs'), 'module.exports = (a, b) => a - b;\n');
@@ -43,6 +44,39 @@ let split = 0, turns = 0;
 try {
   await new Promise<void>((resolve, reject) => { socket.on('open', resolve); socket.on('error', reject); });
   send({ type: 'hello', protocolVersion: 1 }); await wait(m => m.type === 'welcome');
+  if (connectionsOnly) {
+    for (const connection of ['endpoint', 'agent-default'] as const) {
+      await writeFile(join(project, 'add.cjs'), 'module.exports = (a, b) => a - b;\n');
+      split = messages.length;
+      send({ type: 'update_settings', patch: {
+        projectDir: project, voice: { enabled: false },
+        worker: { adapter: 'codex', model: 'gpt-6-luna', sandbox: 'workspace-write', connection,
+          endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', apiKey: '' } },
+      } });
+      const updated = await wait(m => m.type === 'settings', split);
+      assert.equal(updated.settings.worker.connection, connection);
+      assert.equal(updated.settings.worker.endpoint.apiKeySet, false);
+      assert.ok(!('apiKey' in updated.settings.worker.endpoint));
+      send({ type: 'list_models', target: 'worker' });
+      const listed = await wait(m => m.type === 'models' && m.target === 'worker', split);
+      assert.ok(listed.models.length > 0, listed.error);
+      send({ type: 'new_session' });
+      await wait(m => m.type === 'session' && m.session !== null, split);
+      split = messages.length;
+      turns++;
+      console.log(`${connection} 开始唯一真实回合，模型 gpt-6-luna，模型列表 ${listed.models.length} 项，实际沙箱策略已由适配器验证。`);
+      send({ type: 'send', id: `connection-${connection}`, text: '只在当前项目目录工作，不要运行 git。读取 add.cjs 和 add.test.cjs，修复加法实现，然后运行 npm test。不要修改测试文件，不要访问项目外的文件，不要请求扩大权限。完成后简短报告测试结果。' });
+      const done = await wait(event('turn_done'), split);
+      assert.equal(done.event.ok, true, done.event.summary);
+      assert.ok(messages.slice(split).some(m => m.type === 'event' && m.event.type === 'tool_end' && m.event.ok));
+      assert.ok(!messages.slice(split).some(m => m.type === 'event' && m.event.type === 'permission_request'));
+      await run('npm', ['test'], { cwd: project });
+      await writeFile(join(root, `${connection}.jsonl`), messages.slice(split).map(m => JSON.stringify(scrubFixture(m))).join('\n') + '\n');
+      console.log(`${connection} 通过：真实修复与 npm test 完成；无扩大权限请求。`);
+    }
+    assert.equal(turns, 2);
+    console.log(`两种连接模式验收通过，各一轮。临时沙盒：${root}`);
+  } else {
   send({ type: 'update_settings', patch: { projectDir: project, activeCharacterId: 'deepseek-v4-pro', worker: { adapter: 'codex', model: 'gpt-6-luna', sandbox: 'workspace-write' }, voice: { enabled: true, maxLinesPerMinute: 6, endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', model: 'remote-magpie/antigravity/gemini-3.8-flash', apiKey: '' } } } });
   await wait(m => m.type === 'settings');
   for (const target of ['worker', 'voice'] as const) {
@@ -92,7 +126,8 @@ try {
   await writeFile(new URL('./fixtures/e2e-deny.jsonl', import.meta.url), messages.slice(split).map(m => JSON.stringify(scrubFixture(m))).join('\n') + '\n');
   await assert.rejects(readFile(join(project, 'stop-should-not-exist.txt')));
   console.log(`真实流程通过，Codex 本次 ${turns} 轮，模型 gpt-6-luna；停止的延迟写入经过后续轮次后仍未发生。`);
+  }
 } finally {
-  await writeFile(new URL('./fixtures/e2e-all.jsonl', import.meta.url), messages.map(m => JSON.stringify(scrubFixture(m))).join('\n') + '\n');
+  await writeFile(connectionsOnly ? join(root, 'all.jsonl') : new URL('./fixtures/e2e-all.jsonl', import.meta.url), messages.map(m => JSON.stringify(scrubFixture(m))).join('\n') + '\n');
   socket.terminate(); await app.close();
 }

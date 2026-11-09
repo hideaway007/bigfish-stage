@@ -74,7 +74,7 @@ export class SessionController {
     this.worker = undefined; this.info = null; this.history = []; this.voice.reset();
     this.broadcast({ type: 'session', session: null });
     try {
-      this.worker = await adapter.startSession({ cwd, model: settings.worker.model, sandbox: settings.worker.sandbox, extra: settings.worker.extra, resumeId, onEvent: event => this.record(event) });
+      this.worker = await adapter.startSession({ ...settings.worker, cwd, resumeId, onEvent: event => this.record(event) });
       if (this.closed) { await this.worker.close(); this.worker = undefined; return; }
       this.info = { sessionId: this.worker.sessionId, adapter: adapter.id, model: settings.worker.model, cwd, turnActive: false };
       this.broadcast({ type: 'session', session: this.snapshot() });

@@ -34,7 +34,10 @@ function buildInitialPublicSettings(): PublicSettings {
       '/workspace/bigfish-login-app',
       '/workspace/bigfish-pond-core',
     ],
-    worker: { ...DEFAULT_SETTINGS.worker },
+    worker: {
+      ...DEFAULT_SETTINGS.worker,
+      endpoint: { baseUrl: DEFAULT_SETTINGS.worker.endpoint.baseUrl, apiKeySet: false },
+    },
     voice: {
       enabled: DEFAULT_SETTINGS.voice.enabled,
       endpoint: {
@@ -237,6 +240,13 @@ export class ScriptSource implements StageDataSource {
       worker: {
         ...this.settings.worker,
         ...(patch.worker ?? {}),
+        endpoint: {
+          ...this.settings.worker.endpoint,
+          ...(patch.worker?.endpoint?.baseUrl !== undefined
+            ? { baseUrl: patch.worker.endpoint.baseUrl } : {}),
+          ...(patch.worker?.endpoint?.apiKey !== undefined
+            ? { apiKeySet: patch.worker.endpoint.apiKey.length > 0 } : {}),
+        },
       },
       voice: {
         ...this.settings.voice,

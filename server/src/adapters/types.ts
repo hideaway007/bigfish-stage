@@ -3,11 +3,8 @@ import type { WorkerAdapterInfo, WorkerSettings } from '../../../src/shared/sett
 
 export interface ConnectionResult { ok: boolean; message: string; latencyMs?: number }
 export interface ModelList { models: string[]; error?: string }
-export interface StartSessionOptions {
+export interface StartSessionOptions extends Omit<WorkerSettings, 'adapter'> {
   cwd: string;
-  model: string;
-  sandbox: WorkerSettings['sandbox'];
-  extra?: WorkerSettings['extra'];
   resumeId?: string;
   onEvent: (event: StageEvent) => void;
 }

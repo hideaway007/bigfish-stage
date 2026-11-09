@@ -6,13 +6,35 @@ import { mkdir, realpath } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import type { StageEvent, ToolKind } from '../../../src/shared/stage-events';
-import type { WorkerSettings } from '../../../src/shared/settings';
-import type { StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
+import { DEFAULT_SETTINGS, type WorkerSettings } from '../../../src/shared/settings';
+import type { ModelList, StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
 import { SentenceBuffer } from '../text-buffer';
 import { listEndpointModels, testEndpoint } from '../voice/endpoint';
 
 const runFile = promisify(execFile);
-const gateway = { baseUrl: 'http://127.0.0.1:3425/v1', model: 'gpt-6-luna' };
+/** Pure launch configuration: credentials only travel in the child environment. */
+export function buildCodexLaunch(settings: Pick<WorkerSettings, 'connection' | 'endpoint' | 'sandbox'>, isolatedHome: string, inheritedEnv: NodeJS.ProcessEnv) {
+  const args = [
+    '-c', `sandbox_mode=${JSON.stringify(settings.sandbox)}`, '-c', 'approval_policy="on-request"',
+    '-c', 'sandbox_workspace_write.exclude_slash_tmp=true', '-c', 'sandbox_workspace_write.exclude_tmpdir_env_var=true',
+    '-c', 'sandbox_workspace_write.writable_roots=[]',
+  ];
+  const env = { ...inheritedEnv };
+  delete env.BIGFISH_WORKER_API_KEY;
+  if (settings.connection === 'endpoint') {
+    env.CODEX_HOME = isolatedHome;
+    args.push(
+      '-c', 'model_provider="bigfish"', '-c', 'model_providers.bigfish.name="Big Fish endpoint"',
+      '-c', `model_providers.bigfish.base_url=${JSON.stringify(settings.endpoint.baseUrl)}`,
+      '-c', 'model_providers.bigfish.wire_api="responses"', '-c', 'model_providers.bigfish.requires_openai_auth=false',
+    );
+    if (settings.endpoint.apiKey) {
+      env.BIGFISH_WORKER_API_KEY = settings.endpoint.apiKey;
+      args.push('-c', 'model_providers.bigfish.env_key="BIGFISH_WORKER_API_KEY"');
+    }
+  }
+  return { args: [...args, 'app-server', '--stdio'], env };
+}
 type Payload<T> = T extends unknown ? Omit<T, 'at'> : never;
 type Wire = { id?: string | number; method?: string; params?: any; result?: any; error?: any };
 const textInput = (text: string) => [{ type: 'text', text, text_elements: [] }];
@@ -96,18 +118,15 @@ class CodexSession implements WorkerSession {
   private interruptSent = false;
   private readonly emit: (event: StageEvent) => void;
   constructor(private options: StartSessionOptions, home: string) {
-    this.emit = options.onEvent;
+    // Providers may echo credentials in error text; redact before events reach history/logs.
+    const key = options.connection === 'endpoint' ? options.endpoint.apiKey : undefined;
+    const redact = (value: unknown): unknown => typeof value === 'string' && key ? value.split(key).join('[REDACTED]')
+      : Array.isArray(value) ? value.map(redact)
+      : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redact(v)])) : value;
+    this.emit = key ? event => options.onEvent(redact(event) as StageEvent) : options.onEvent;
     this.mapper = new CodexEventMapper(this.emit);
-    const args = [
-      '-c', 'model_provider="local"', '-c', 'model_providers.local.name="Local magpie"',
-      '-c', 'model_providers.local.base_url="http://127.0.0.1:3425/v1"',
-      '-c', 'model_providers.local.wire_api="responses"', '-c', 'model_providers.local.requires_openai_auth=false',
-      '-c', `sandbox_mode="${options.sandbox}"`, '-c', 'approval_policy="on-request"',
-      '-c', 'sandbox_workspace_write.exclude_slash_tmp=true', '-c', 'sandbox_workspace_write.exclude_tmpdir_env_var=true',
-      '-c', 'sandbox_workspace_write.writable_roots=[]',
-      'app-server', '--stdio',
-    ];
-    this.child = spawn(options.extra?.executable ?? 'codex', args, { cwd: options.cwd, env: { ...process.env, CODEX_HOME: home }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const { args, env } = buildCodexLaunch(options, home, process.env);
+    this.child = spawn(options.extra?.executable ?? 'codex', args, { cwd: options.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     createInterface({ input: this.child.stdout! }).on('line', line => {
       try { this.receive(JSON.parse(line)); } catch { this.fail(new Error('Codex 协议数据无效')); this.child.kill('SIGTERM'); }
     });
@@ -191,9 +210,23 @@ class CodexSession implements WorkerSession {
     this.turnId = ''; this.turnActive = false;
     this.mapper.end(ok, summary, interrupted);
   }
-  async initialize() {
+  async initializeTransport() {
     await this.request('initialize', { clientInfo: { name: 'bigfish_stage', version: '0.1.0' }, capabilities: { experimentalApi: false } });
     this.sendWire({ method: 'initialized' });
+  }
+  async listModels(): Promise<ModelList> {
+    const models = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const result = await this.request('model/list', { cursor, limit: 100 });
+      if (!Array.isArray(result.data)) throw new Error('Codex 模型列表格式无效');
+      for (const entry of result.data) if (typeof entry.model === 'string') models.add(entry.model);
+      cursor = result.nextCursor ?? null;
+    } while (cursor);
+    return { models: [...models] };
+  }
+  async initialize() {
+    await this.initializeTransport();
     const params = { cwd: this.options.cwd, model: this.options.model, sandbox: this.options.sandbox, approvalPolicy: 'on-request', approvalsReviewer: 'user' };
     const result = await this.request(this.options.resumeId ? 'thread/resume' : 'thread/start', { ...params, ...(this.options.resumeId ? { threadId: this.options.resumeId } : {}) });
     verifyEffectivePolicy(result, this.options.sandbox, this.options.cwd);
@@ -258,13 +291,23 @@ export class CodexAdapter implements WorkerAdapter {
       return { id: this.id, name: 'Codex CLI', available: true };
     } catch { return { id: this.id, name: 'Codex CLI', available: false, unavailableReason: '找不到可用的 codex 可执行文件' }; }
   }
-  listModels() { return listEndpointModels(gateway); }
+  async listModels(settings: WorkerSettings = DEFAULT_SETTINGS.worker): Promise<ModelList> {
+    if (settings.connection === 'endpoint') return listEndpointModels({ ...settings.endpoint, model: settings.model });
+    const client = new CodexSession({ ...settings, cwd: process.cwd(), onEvent() {} }, this.home);
+    try { await client.initializeTransport(); return await client.listModels(); }
+    catch { return { models: [], error: '无法读取 Agent 自带配置的模型列表，请检查 Codex 登录与配置' }; }
+    finally { await client.close(); }
+  }
   async testConnection(settings: WorkerSettings) {
     const available = await this.info(settings);
-    return available.available ? testEndpoint({ ...gateway, model: settings.model }) : { ok: false, message: available.unavailableReason! };
+    if (!available.available) return { ok: false, message: available.unavailableReason! };
+    if (settings.connection === 'endpoint') return testEndpoint({ ...settings.endpoint, model: settings.model });
+    const start = Date.now(), result = await this.listModels(settings);
+    return result.error ? { ok: false, message: result.error, latencyMs: Date.now() - start }
+      : { ok: true, message: 'Codex 已加载本机配置并返回模型列表；模型连接将在执行任务时验证', latencyMs: Date.now() - start };
   }
   async startSession(options: StartSessionOptions): Promise<WorkerSession> {
-    await mkdir(this.home, { recursive: true, mode: 0o700 });
+    if (options.connection === 'endpoint') await mkdir(this.home, { recursive: true, mode: 0o700 });
     const session = new CodexSession({ ...options, cwd: await realpath(options.cwd) }, this.home);
     try { await session.initialize(); return session; }
     catch (error) { options.onEvent({ type: 'error', at: Date.now(), message: (error as Error).message }); await session.close(); throw error; }

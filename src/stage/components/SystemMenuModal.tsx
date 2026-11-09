@@ -88,6 +88,10 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   const [workerModelDraft, setWorkerModelDraft] = useState(
     settings.worker.model
   );
+  const [workerBaseUrlDraft, setWorkerBaseUrlDraft] = useState(
+    settings.worker.endpoint.baseUrl
+  );
+  const [workerApiKeyDraft, setWorkerApiKeyDraft] = useState('');
   const [voiceBaseUrlDraft, setVoiceBaseUrlDraft] = useState(
     settings.voice.endpoint.baseUrl
   );
@@ -108,6 +112,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   // Sync local drafts whenever server returns updated `settings`
   useEffect(() => {
     setWorkerModelDraft(settings.worker.model);
+    setWorkerBaseUrlDraft(settings.worker.endpoint.baseUrl);
     setVoiceBaseUrlDraft(settings.voice.endpoint.baseUrl);
     setVoiceModelDraft(settings.voice.endpoint.model);
     setVoiceRateDraft(String(settings.voice.maxLinesPerMinute));
@@ -118,11 +123,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   // Auto-fetch model lists when switching to worker or voice tab
   useEffect(() => {
     if (!open) return;
-    if (
-      activeTab === 'worker' &&
-      workerModels.models.length === 0 &&
-      !workerModels.loading
-    ) {
+    if (activeTab === 'worker') {
       onListModels('worker');
     } else if (
       activeTab === 'voice' &&
@@ -131,7 +132,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     ) {
       onListModels('voice');
     }
-  }, [open, activeTab]);
+  }, [open, activeTab, settings.worker.connection, settings.worker.endpoint.baseUrl, settings.worker.endpoint.apiKeySet, settings.worker.adapter]);
 
   if (!open) return null;
 
@@ -366,6 +367,110 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       ))}
                     </div>
                   </div>
+
+                  <div className="p5-form-group">
+                    <label className="p5-form-label" htmlFor="worker-connection-select">
+                      模型连接方式
+                    </label>
+                    <select
+                      id="worker-connection-select"
+                      data-testid="worker-connection-select"
+                      className="p5-form-select"
+                      value={settings.worker.connection}
+                      onChange={(e) => {
+                        setWorkerApiKeyDraft('');
+                        onUpdateSettings({ worker: { connection: e.target.value as 'endpoint' | 'agent-default' } });
+                      }}
+                    >
+                      <option value="endpoint">自定义接口</option>
+                      <option value="agent-default">使用 Agent 自带登录</option>
+                    </select>
+                  </div>
+
+                  {settings.worker.connection === 'endpoint' ? (
+                    <>
+                      <div className="p5-form-group">
+                        <label className="p5-form-label" htmlFor="worker-baseurl-input">
+                          OpenAI 兼容接口地址 (BASE URL)
+                        </label>
+                        <div className="p5-input-inline-row">
+                          <input
+                            id="worker-baseurl-input"
+                            data-testid="worker-baseurl-input"
+                            type="text"
+                            className="p5-form-input"
+                            value={workerBaseUrlDraft}
+                            onChange={(e) => setWorkerBaseUrlDraft(e.target.value)}
+                            placeholder="http://127.0.0.1:3425/v1"
+                          />
+                          <button
+                            type="button"
+                            className="p5-apply-btn"
+                            data-testid="worker-baseurl-save-btn"
+                            onClick={() => {
+                              const baseUrl = workerBaseUrlDraft.trim();
+                              if (baseUrl) onUpdateSettings({ worker: { endpoint: { baseUrl } } });
+                            }}
+                          >
+                            保存地址
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p5-form-group">
+                        <div className="p5-form-label-row">
+                          <label className="p5-form-label" htmlFor="worker-apikey-input">
+                            API Key（只写不读）
+                          </label>
+                          <span
+                            className={`p5-apikey-status ${settings.worker.endpoint.apiKeySet ? 'is-set' : 'is-unset'}`}
+                            data-testid="worker-apikey-status"
+                          >
+                            状态：{settings.worker.endpoint.apiKeySet ? '已设置' : '未设置'}
+                          </span>
+                        </div>
+                        <div className="p5-input-inline-row">
+                          <input
+                            id="worker-apikey-input"
+                            data-testid="worker-apikey-input"
+                            type="password"
+                            className="p5-form-input"
+                            value={workerApiKeyDraft}
+                            onChange={(e) => setWorkerApiKeyDraft(e.target.value)}
+                            placeholder="接口免 Key 时可留空"
+                            autoComplete="off"
+                          />
+                          <button
+                            type="button"
+                            className="p5-apply-btn"
+                            data-testid="worker-apikey-save-btn"
+                            onClick={() => {
+                              const apiKey = workerApiKeyDraft.trim();
+                              if (!apiKey) return;
+                              onUpdateSettings({ worker: { endpoint: { apiKey } } });
+                              setWorkerApiKeyDraft('');
+                            }}
+                          >
+                            更新 Key
+                          </button>
+                          <button
+                            type="button"
+                            className="p5-apply-btn p5-apply-btn--danger"
+                            data-testid="worker-apikey-clear-btn"
+                            onClick={() => {
+                              setWorkerApiKeyDraft('');
+                              onUpdateSettings({ worker: { endpoint: { apiKey: '' } } });
+                            }}
+                          >
+                            清除 Key
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="p5-empty-hint" data-testid="worker-agent-default-hint">
+                      使用本机 Agent 已有的登录状态和模型配置，工作台仍强制启用所选沙箱及按需审批。
+                    </p>
+                  )}
 
                   {/* Worker Model Input + List */}
                   <div className="p5-form-group">

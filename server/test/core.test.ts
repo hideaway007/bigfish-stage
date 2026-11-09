@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from 'node:http';
@@ -77,6 +77,35 @@ test('深合并、清除密钥、PublicSettings 脱敏与 600 持久化', async 
     await assert.rejects(store.update({ voice: { endpoint: { baseUrl: 'file:///private' } } }));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+test('旧设置默认合并；worker Key 不进入 PublicSettings，undefined 保留而空串清除', async () => {
+  const directory = await temporary(), path = join(directory, 'settings.json');
+  try {
+    const legacy = { ...structuredClone(DEFAULT_SETTINGS), worker: { adapter: 'codex', model: 'legacy-model', sandbox: 'workspace-write' } };
+    await writeFile(path, JSON.stringify(legacy));
+    const store = new SettingsStore(path); await store.load();
+    assert.equal(store.current.worker.connection, 'endpoint');
+    assert.deepEqual(store.current.worker.endpoint, DEFAULT_SETTINGS.worker.endpoint);
+    assert.equal(store.current.worker.model, 'legacy-model');
+    await store.update({ worker: { endpoint: { apiKey: 'worker-private-secret' } } });
+    await store.update({ worker: { connection: 'agent-default', endpoint: { apiKey: undefined, baseUrl: 'https://example.invalid/v1/' } } });
+    assert.equal(store.current.worker.endpoint.apiKey, 'worker-private-secret');
+    const visible = publicSettings(store.current);
+    assert.equal(visible.worker.endpoint.apiKeySet, true);
+    assert.ok(!('apiKey' in visible.worker.endpoint));
+    assert.ok(!JSON.stringify(visible).includes('worker-private-secret'));
+    assert.equal(visible.worker.endpoint.baseUrl, 'https://example.invalid/v1');
+    const reloaded = new SettingsStore(path); await reloaded.load();
+    assert.equal(reloaded.current.worker.connection, 'agent-default');
+    assert.equal(reloaded.current.worker.endpoint.apiKey, 'worker-private-secret');
+    await store.update({ worker: { endpoint: { apiKey: '' } } });
+    assert.equal(store.public.worker.endpoint.apiKeySet, false);
+    assert.ok(!('apiKey' in store.current.worker.endpoint));
+    await assert.rejects(store.update({ worker: { endpoint: { baseUrl: 'https://user:secret@example.invalid/v1' } } }));
+    await assert.rejects(store.update({ worker: { endpoint: { baseUrl: 'file:///tmp' } } }));
+    await assert.rejects(store.update({ worker: { connection: 'invalid' as any } }));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test('Origin 严格限定本机 HTTP 来源', () => {
   for (const origin of ['http://127.0.0.1:5173', 'http://localhost:5300', 'http://localhost']) assert.equal(validOrigin(origin), true, origin);
   for (const origin of [undefined, 'null', 'https://localhost:5300', 'http://localhost.evil:5300', 'http://127.0.0.2:5300', 'http://user@localhost:5300', 'http://localhost:5300/path', 'http://localhost:5300?x=1', 'http://localhost:5300#x']) assert.equal(validOrigin(origin), false, String(origin));

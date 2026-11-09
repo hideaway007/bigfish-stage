@@ -177,7 +177,10 @@ export function createDefaultPublicSettings(
     activeCharacterId: characterId,
     projectDir: DEFAULT_SETTINGS.projectDir,
     recentProjects: [...DEFAULT_SETTINGS.recentProjects],
-    worker: { ...DEFAULT_SETTINGS.worker },
+    worker: {
+      ...DEFAULT_SETTINGS.worker,
+      endpoint: { baseUrl: DEFAULT_SETTINGS.worker.endpoint.baseUrl, apiKeySet: false },
+    },
     voice: {
       enabled: DEFAULT_SETTINGS.voice.enabled,
       endpoint: {

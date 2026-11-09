@@ -132,6 +132,8 @@ function createDefaultState() {
         adapter: 'codex',
         model: 'gpt-6.1-sol',
         sandbox: 'workspace-write',
+        connection: 'endpoint',
+        endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', apiKeySet: false },
       },
       voice: {
         enabled: true,
@@ -513,7 +515,12 @@ function applySettingsPatch(patch) {
     s.recentProjects = patch.recentProjects;
   }
   if (patch.worker && typeof patch.worker === 'object') {
-    s.worker = { ...s.worker, ...patch.worker };
+    const { endpoint, ...workerPatch } = patch.worker;
+    s.worker = { ...s.worker, ...workerPatch };
+    if (endpoint && typeof endpoint === 'object') {
+      if (endpoint.baseUrl !== undefined) s.worker.endpoint.baseUrl = endpoint.baseUrl;
+      if (endpoint.apiKey !== undefined) s.worker.endpoint.apiKeySet = endpoint.apiKey.length > 0;
+    }
   }
   if (patch.voice && typeof patch.voice === 'object') {
     if (patch.voice.enabled !== undefined) {

@@ -27,17 +27,23 @@ export function validateSettings(value: unknown): AppSettings {
   assert(object(s.worker) && str(s.worker.adapter) && str(s.worker.model) && !!s.worker.model.trim(), '执行 Agent 设置无效');
   assert(['read-only', 'workspace-write'].includes(s.worker.sandbox), '沙箱设置无效');
   assert(s.worker.extra === undefined || (object(s.worker.extra) && Object.values(s.worker.extra).every(str)), '适配器选项无效');
+  assert(['endpoint', 'agent-default'].includes(s.worker.connection), '执行 Agent 连接方式无效');
   assert(object(s.voice) && typeof s.voice.enabled === 'boolean' && object(s.voice.endpoint), '台词设置无效');
-  const ep = s.voice.endpoint;
-  assert(str(ep.baseUrl) && str(ep.model) && !!ep.model.trim() && (ep.apiKey === undefined || str(ep.apiKey)), '模型接口无效');
-  const url = new URL(ep.baseUrl);
-  assert(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash, '模型地址必须是 HTTP(S) 地址且不能内嵌凭据');
+  const ep = s.voice.endpoint, workerEp = s.worker.endpoint;
+  assert(str(ep.model) && !!ep.model.trim(), '模型接口无效');
+  for (const endpoint of [ep, workerEp]) {
+    assert(object(endpoint) && str(endpoint.baseUrl) && (endpoint.apiKey === undefined || str(endpoint.apiKey)), '模型接口无效');
+    const url = new URL(endpoint.baseUrl);
+    assert(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash, '模型地址必须是 HTTP(S) 地址且不能内嵌凭据');
+  }
   assert(num(s.voice.maxLinesPerMinute, 0, 60) && object(s.performance) && num(s.performance.typingCharsPerSec, 1, 1000), '限流或打字速度无效');
   // Whitelist the public contract; never persist or echo arbitrary fields from a client.
   return {
     version: 1, activeCharacterId: s.activeCharacterId, projectDir: s.projectDir,
     recentProjects: s.recentProjects.slice(0, 20),
-    worker: { adapter: s.worker.adapter, model: s.worker.model, sandbox: s.worker.sandbox, ...(s.worker.extra ? { extra: { ...s.worker.extra } } : {}) },
+    worker: { adapter: s.worker.adapter, model: s.worker.model, sandbox: s.worker.sandbox, connection: s.worker.connection,
+      endpoint: { baseUrl: workerEp.baseUrl.replace(/\/+$/, ''), ...(workerEp.apiKey ? { apiKey: workerEp.apiKey } : {}) },
+      ...(s.worker.extra ? { extra: { ...s.worker.extra } } : {}) },
     voice: { enabled: s.voice.enabled, maxLinesPerMinute: s.voice.maxLinesPerMinute,
       endpoint: { baseUrl: ep.baseUrl.replace(/\/+$/, ''), model: ep.model, ...(ep.apiKey ? { apiKey: ep.apiKey } : {}) } },
     performance: { typingCharsPerSec: s.performance.typingCharsPerSec },
@@ -45,8 +51,13 @@ export function validateSettings(value: unknown): AppSettings {
 }
 export function publicSettings(settings: AppSettings): PublicSettings {
   const clean = structuredClone(settings);
-  const { apiKey, ...endpoint } = clean.voice.endpoint;
-  return { ...clean, voice: { ...clean.voice, endpoint: { ...endpoint, apiKeySet: !!apiKey } } };
+  const { apiKey: voiceKey, ...voiceEndpoint } = clean.voice.endpoint;
+  const { apiKey: workerKey, ...workerEndpoint } = clean.worker.endpoint;
+  return {
+    ...clean,
+    worker: { ...clean.worker, endpoint: { ...workerEndpoint, apiKeySet: !!workerKey } },
+    voice: { ...clean.voice, endpoint: { ...voiceEndpoint, apiKeySet: !!voiceKey } },
+  };
 }
 export class SettingsStore {
   private value: AppSettings = structuredClone(DEFAULT_SETTINGS);

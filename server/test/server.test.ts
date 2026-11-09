@@ -53,10 +53,12 @@ test('真实 HTTP/WS：握手、设置、动态适配器、停止、重连、历
     client.send({ type: 'hello', protocolVersion: 1 }); const welcome = await client.wait(m => m.type === 'welcome'); assert.equal((welcome as any).session, null);
     client.send({ type: 'send', id: 'missing-project', text: 'test' }); await client.wait(m => m.type === 'command_error');
     client.send({ type: 'update_settings', patch: { projectDir: '/missing-project-123' } }); await client.wait(m => m.type === 'command_error' && m.commandType === 'update_settings');
-    client.send({ type: 'update_settings', patch: { projectDir: root, worker: { adapter: 'test', model: 'first' }, voice: { enabled: false, endpoint: { apiKey: 'secret-only-on-disk' } } } });
+    client.send({ type: 'update_settings', patch: { projectDir: root, worker: { adapter: 'test', model: 'first', connection: 'agent-default', endpoint: { baseUrl: 'https://worker.example/v1', apiKey: 'worker-only-on-disk' } }, voice: { enabled: false, endpoint: { apiKey: 'secret-only-on-disk' } } } });
     await client.wait(m => m.type === 'settings');
     client.send({ type: 'send', id: 'first', text: 'test' }); await client.wait(m => m.type === 'event' && m.event.type === 'thinking');
     assert.equal(adapter.starts.length, 1); assert.equal(adapter.starts[0].model, 'first');
+    assert.equal(adapter.starts[0].connection, 'agent-default');
+    assert.deepEqual(adapter.starts[0].endpoint, { baseUrl: 'https://worker.example/v1', apiKey: 'worker-only-on-disk' });
     let from = client.messages.length;
     client.send({ type: 'update_settings', patch: { worker: { model: 'next' } } }); await client.wait(m => m.type === 'settings', from);
     assert.equal(adapter.starts.length, 1); assert.equal(adapter.active, true);
@@ -69,6 +71,8 @@ test('真实 HTTP/WS：握手、设置、动态适配器、停止、重连、历
     reconnect.send({ type: 'hello', protocolVersion: 1 }); const reconnected = await reconnect.wait(m => m.type === 'welcome');
     assert.equal((reconnected as any).history.length, 2000); assert.equal((reconnected as any).session.sessionId, 'resume-id');
     assert.ok(!JSON.stringify(client.messages).includes('secret-only-on-disk'));
+    assert.ok(!JSON.stringify(client.messages).includes('worker-only-on-disk'));
+    assert.ok(!JSON.stringify(client.messages).includes('"apiKey":'));
     client.send({ type: 'list_models', target: 'worker' }); assert.deepEqual((await client.wait(m => m.type === 'models') as any).models, ['test-model']);
     client.send({ type: 'test_connection', target: 'worker' }); assert.equal((await client.wait(m => m.type === 'connection_test') as any).ok, true);
   } finally { for (const socket of clients) socket.terminate(); await app.close(); await rm(root, { recursive: true, force: true }); }
