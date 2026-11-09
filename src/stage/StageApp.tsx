@@ -26,6 +26,8 @@ import { PermissionModal } from './components/PermissionModal';
 import { BacklogModal } from './components/BacklogModal';
 import { EngineeringView } from './components/EngineeringView';
 import { SystemMenuModal } from './components/SystemMenuModal';
+import { SwitchTransition, SfxMuteButton } from './components/SwitchTransition';
+import { playSfx } from './sfx';
 import type { Emotion, ToolKind } from '../shared/stage-events';
 import type { SettingsPatch } from '../shared/settings';
 import type { ServerMessage } from '../shared/wire';
@@ -248,6 +250,7 @@ export const StageApp: React.FC = () => {
 
   const handleConfirmPermission = (allowed: boolean) => {
     if (!state.pendingPermission) return;
+    playSfx(allowed ? 'allow' : 'deny');
     sourceRef.current?.decidePermission(
       state.pendingPermission.requestId,
       allowed
@@ -635,6 +638,8 @@ export const StageApp: React.FC = () => {
           >
             <span className="kbd-tag">ESC</span> SYSTEM
           </button>
+
+          <SfxMuteButton />
 
           {sourceMode === 'demo' && (
             <button
@@ -1268,6 +1273,19 @@ export const StageApp: React.FC = () => {
           </div>
         </aside>
       </div>
+
+      <SwitchTransition
+        characterId={character.id}
+        characterSwitchKey={state.characterSwitchKey}
+        name={character.name}
+        codename={character.codename}
+        tagline={character.tagline}
+        themeColor={character.themeColor}
+        accentColor={character.accentColor}
+        portraitUrl={
+          state.characters.find((c) => c.id === character.id)?.portraitUrl
+        }
+      />
 
       {/* ── OVERLAYS: 权限选择肢 / 档案层 / BACKLOG / SYSTEM 菜单 ── */}
       <PermissionModal
