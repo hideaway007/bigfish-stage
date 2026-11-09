@@ -1,0 +1,438 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   FIRST-RUN ONBOARDING CARD (A2 — 首次使用引导卡片)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes p5OnboardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) skewX(-3deg) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) skewX(-3deg) scale(1);
+  }
+}
+
+.p5-onboard-card {
+  background: var(--p5-black);
+  border: 4px solid var(--p5-white);
+  box-shadow:
+    8px 8px 0 var(--p5-red),
+    -4px -4px 0 var(--char-theme-color, var(--p5-blue));
+  transform: skewX(-3deg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: p5OnboardEnter 240ms cubic-bezier(0.2, 1.1, 0.3, 1);
+}
+
+.p5-onboard-ribbon {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--p5-red),
+    var(--p5-red) 14px,
+    var(--p5-red-dark) 14px,
+    var(--p5-red-dark) 28px
+  );
+  border-bottom: 3px solid var(--p5-white);
+  padding: 5px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.p5-onboard-ribbon-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.p5-onboard-kicker {
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 1px 8px;
+  border: 2px solid var(--p5-black);
+  transform: skewX(-8deg);
+  flex-shrink: 0;
+}
+
+.p5-onboard-title {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--p5-white);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.p5-onboard-sys-link {
+  background: var(--p5-black);
+  color: var(--p5-yellow);
+  border: 2px solid var(--p5-white);
+  padding: 2px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 90ms ease, color 90ms ease, transform 90ms ease;
+}
+
+.p5-onboard-sys-link:hover {
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  transform: translate(-1px, -1px);
+}
+
+.p5-onboard-body {
+  padding: 10px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── 3-STEP INDICATOR ── */
+.p5-onboard-steps {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.p5-onboard-step {
+  flex: 1;
+  min-width: 0;
+  background: #12121c;
+  border: 2px solid #334155;
+  padding: 5px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  color: var(--p5-white);
+  font-family: var(--font-sans);
+}
+
+.p5-onboard-step--clickable {
+  cursor: pointer;
+  transition: border-color 90ms ease, transform 90ms ease;
+}
+
+.p5-onboard-step--clickable:hover {
+  border-color: var(--p5-yellow);
+  transform: translateY(-1px);
+}
+
+.p5-onboard-step.is-active {
+  background: rgba(230, 0, 18, 0.16);
+  border-color: var(--p5-yellow);
+  box-shadow: 3px 3px 0 var(--p5-red);
+}
+
+.p5-onboard-step.is-done {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: var(--p5-green);
+}
+
+.p5-onboard-step.is-pending {
+  opacity: 0.72;
+}
+
+.p5-onboard-step-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.p5-onboard-step-name {
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.p5-onboard-step-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 900;
+  padding: 1px 4px;
+  border: 1px solid currentColor;
+  flex-shrink: 0;
+}
+
+.p5-onboard-step.is-active .p5-onboard-step-badge {
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  border-color: var(--p5-black);
+}
+
+.p5-onboard-step.is-done .p5-onboard-step-badge {
+  background: var(--p5-green);
+  color: var(--p5-black);
+  border-color: var(--p5-black);
+}
+
+.p5-onboard-step.is-pending .p5-onboard-step-badge {
+  color: #94a3b8;
+}
+
+.p5-onboard-step-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.p5-onboard-step-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--p5-yellow);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+/* ── IN-CHARACTER LINE ── */
+.p5-onboard-char-box {
+  background: #0f1320;
+  border-left: 4px solid var(--char-theme-color, var(--p5-blue));
+  border-top: 1px solid #2e364f;
+  border-right: 1px solid #2e364f;
+  border-bottom: 1px solid #2e364f;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.p5-onboard-char-tag {
+  background: var(--char-theme-color, var(--p5-blue));
+  color: var(--p5-white);
+  border: 1px solid var(--p5-white);
+  font-size: 11px;
+  font-weight: 900;
+  padding: 1px 7px;
+  transform: skewX(-8deg);
+  flex-shrink: 0;
+}
+
+.p5-onboard-char-text {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* ── PATH INPUT & START BUTTON ── */
+.p5-onboard-form {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.p5-onboard-input {
+  flex: 1;
+  min-width: 0;
+  background: #090910;
+  color: var(--p5-white);
+  border: 3px solid var(--p5-white);
+  padding: 7px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  user-select: text;
+}
+
+.p5-onboard-input:focus {
+  border-color: var(--p5-yellow);
+  background: #121220;
+}
+
+.p5-onboard-input.is-invalid {
+  border-color: var(--p5-orange);
+}
+
+.p5-onboard-input.is-valid {
+  border-color: var(--p5-green);
+}
+
+.p5-onboard-start-btn {
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  border: 3px solid var(--p5-white);
+  padding: 6px 18px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 var(--p5-red);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 90ms ease, background 90ms ease;
+}
+
+.p5-onboard-start-btn:hover:not(:disabled) {
+  background: #fde047;
+  transform: translate(-1px, -1px);
+}
+
+.p5-onboard-start-btn:disabled {
+  background: #334155;
+  color: #94a3b8;
+  border-color: #64748b;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* ── VALIDATION HINT, ERROR & RECENT CHIPS ── */
+.p5-onboard-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 20px;
+}
+
+.p5-onboard-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.p5-onboard-hint.hint-neutral {
+  color: #94a3b8;
+}
+
+.p5-onboard-hint.hint-valid {
+  color: #34d399;
+}
+
+.p5-onboard-hint.hint-invalid {
+  color: #fb923c;
+}
+
+.p5-onboard-error-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid var(--p5-orange);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fed7aa;
+  width: 100%;
+}
+
+.p5-onboard-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.p5-onboard-recent-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--p5-cyan);
+  flex-shrink: 0;
+}
+
+.p5-onboard-chip {
+  background: #141829;
+  color: #e2e8f0;
+  border: 2px solid #475569;
+  padding: 2px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 90ms ease, background 90ms ease, color 90ms ease;
+}
+
+.p5-onboard-chip:hover {
+  border-color: var(--p5-white);
+  color: var(--p5-white);
+}
+
+.p5-onboard-chip.is-selected {
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  border-color: var(--p5-white);
+  font-weight: 900;
+}
+
+/* ── DISABLED STAGE INPUT WHEN PROJECT_DIR IS NULL ── */
+.p5-input-onboarding-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--p5-yellow);
+  background: rgba(230, 0, 18, 0.25);
+  border: 1px solid var(--p5-yellow);
+  padding: 2px 8px;
+}
+
+.p5-command-input:disabled {
+  background: #0c0c12;
+  color: #64748b;
+  border-color: #334155;
+  cursor: not-allowed;
+}
+
+.p5-send-btn:disabled {
+  background: #334155;
+  color: #94a3b8;
+  border-color: #475569;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.p5-chip-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-height: 760px) {
+  .p5-onboard-body {
+    padding: 7px 12px 9px;
+    gap: 5px;
+  }
+  .p5-onboard-step {
+    padding: 3px 7px;
+  }
+  .p5-onboard-char-box {
+    padding: 4px 8px;
+  }
+  .p5-onboard-input {
+    padding: 5px 10px;
+  }
+  .p5-onboard-start-btn {
+    padding: 4px 14px;
+  }
+}
