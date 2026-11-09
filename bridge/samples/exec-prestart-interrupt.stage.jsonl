@@ -1,0 +1,3 @@
+{"type":"user_message","at":1794217442607,"id":"9a86d435-e09b-4a1c-8ee1-8142818c3b18","text":"Run node -e \"setTimeout(()=>console.log(\"EXEC_LONG_FINISHED\"),20000)\"; then reply done. Remember marker EXEC_OTTER_17."}
+{"at":1794217447620,"type":"interrupted","reason":"SIGINT requested"}
+{"at":1794217447620,"type":"turn_done","ok":false,"summary":"interrupted"}

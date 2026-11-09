@@ -1,0 +1,6 @@
+{"at":1794217817125,"direction":"out","message":{"args":["-c","model_provider=\"local\"","-c","model_providers.local.name=\"Local magpie\"","-c","model_providers.local.base_url=\"http://127.0.0.1:3425/v1\"","-c","model_providers.local.wire_api=\"responses\"","-c","model_providers.local.requires_openai_auth=false","-c","sandbox_mode=\"workspace-write\"","-c","sandbox_workspace_write.exclude_slash_tmp=true","-c","sandbox_workspace_write.exclude_tmpdir_env_var=true","-c","approval_policy=\"on-request\"","exec","resume","01a1bfb4-25cb-7de1-8bb3-aae561cdb3ea","--json","--skip-git-repo-check","-m","gpt-6-luna","What context marker did I ask you to remember? No tools."],"cwd":"/private/tmp/p5-bridge-sandbox"}}
+{"at":1794217817454,"direction":"in","message":{"type":"thread.started","thread_id":"01a1bfb4-25cb-7de1-8bb3-aae561cdb3ea"}}
+{"at":1794217817461,"direction":"in","message":{"type":"turn.started"}}
+{"at":1794217826257,"direction":"in","message":{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"EXEC_OTTER_17"}}}
+{"at":1794217826315,"direction":"in","message":{"type":"turn.completed","usage":{"input_tokens":30863,"cached_input_tokens":18304,"cache_write_input_tokens":0,"output_tokens":114,"reasoning_output_tokens":0}}}
+{"at":1794217831353,"direction":"result","message":{"session":"01a1bfb4-25cb-7de1-8bb3-aae561cdb3ea"}}

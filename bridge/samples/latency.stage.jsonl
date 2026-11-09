@@ -1,0 +1,27 @@
+{"at":1794217393853,"type":"session_started","sessionId":"01a1bfb0-beb2-71a0-90f8-0d91dd9e4068","model":"gpt-6-luna","cwd":"/private/tmp/p5-bridge-sandbox"}
+{"type":"user_message","at":1794217393854,"id":"3d3f9643-dee4-4998-8d5c-81b5041babae","text":"Reply exactly PONG_0. No tools."}
+{"at":1794217393863,"type":"thinking"}
+{"at":1794217402738,"type":"worker_text","text":"P"}
+{"at":1794217402738,"type":"worker_text","text":"ONG"}
+{"at":1794217402781,"type":"worker_text","text":"_"}
+{"at":1794217402782,"type":"worker_text","text":"0"}
+{"at":1794217402882,"type":"worker_text","text":"","final":true}
+{"at":1794217403058,"type":"turn_done","ok":true,"summary":"completed","durationMs":9195}
+{"type":"user_message","at":1794217403058,"id":"c24423d7-0f3b-44dc-876c-591264b3342c","text":"Reply exactly PONG_1. No tools."}
+{"at":1794217403068,"type":"thinking"}
+{"at":1794217406438,"type":"worker_text","text":"P"}
+{"at":1794217406439,"type":"worker_text","text":"ONG"}
+{"at":1794217406479,"type":"worker_text","text":"_"}
+{"at":1794217406480,"type":"worker_text","text":"1"}
+{"at":1794217406586,"type":"worker_text","text":"","final":true}
+{"at":1794217406777,"type":"turn_done","ok":true,"summary":"completed","durationMs":3709}
+{"type":"user_message","at":1794217406778,"id":"0c4fc579-85a2-401c-a20b-09d0d53e612c","text":"Reply exactly PONG_2. No tools."}
+{"at":1794217406787,"type":"thinking"}
+{"at":1794217409090,"type":"thinking"}
+{"at":1794217412233,"type":"thinking"}
+{"at":1794217412235,"type":"worker_text","text":"P"}
+{"at":1794217412236,"type":"worker_text","text":"ONG"}
+{"at":1794217412236,"type":"worker_text","text":"_"}
+{"at":1794217412236,"type":"worker_text","text":"2"}
+{"at":1794217412380,"type":"worker_text","text":"","final":true}
+{"at":1794217412444,"type":"turn_done","ok":true,"summary":"completed","durationMs":5657}

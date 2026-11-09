@@ -1,0 +1,2 @@
+{"at":1794218146627,"type":"session_started","sessionId":"01a1bfbc-3b06-7dd1-9182-a0e315859124","model":"gpt-6-luna","cwd":"/private/tmp/p5-bridge-sandbox"}
+{"type":"error","at":1794218146632,"message":"Error: {\"code\":-32600,\"message\":\"no active turn to steer\"}"}

@@ -1,0 +1,6 @@
+{"type":"user_message","at":1794217817125,"id":"c66b00e7-0e22-4e6b-9e7a-84b461cd77c7","text":"What context marker did I ask you to remember? No tools."}
+{"at":1794217817454,"type":"session_started","sessionId":"01a1bfb4-25cb-7de1-8bb3-aae561cdb3ea"}
+{"at":1794217817461,"type":"thinking"}
+{"at":1794217826257,"type":"worker_text","text":"EXEC_OTTER_17","final":false}
+{"at":1794217826315,"type":"worker_text","text":"","final":true}
+{"at":1794217826315,"type":"turn_done","ok":true,"durationMs":8854}

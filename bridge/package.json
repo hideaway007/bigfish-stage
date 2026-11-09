@@ -1,0 +1,17 @@
+{
+  "name": "p5-codex-bridge-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "protocol": "codex app-server generate-ts --out protocol",
+    "fixture": "tsx src/fixture.ts",
+    "sanitize": "tsx src/scrub.ts",
+    "frontstage": "tsx src/frontstage-spike.ts",
+    "check": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts",
+    "exec": "tsx src/exec-spike.ts",
+    "appserver": "tsx src/appserver-spike.ts",
+    "probe": "tsx src/probe.ts"
+  },
+  "devDependencies": {"@types/node": "^22.0.0", "tsx": "^4.20.0", "typescript": "^5.9.0"}
+}
