@@ -1,0 +1,3002 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BIG FISH STAGE // A8 多角色同台与相声互动原型</title>
+  <style>
+    :root {
+      --p5-red: #e60012;
+      --p5-red-dark: #99000b;
+      --p5-black: #08080b;
+      --p5-ink: #121218;
+      --p5-white: #ffffff;
+      --p5-cream: #f8fafc;
+      --p5-yellow: #facc15;
+      --p5-blue: #2563eb;
+      --p5-cyan: #38bdf8;
+      --p5-green: #10b981;
+      --p5-orange: #f97316;
+      --p5-purple: #a855f7;
+
+      --char-theme-color: #2563eb;
+      --char-accent-color: #60a5fa;
+      --speaker-theme-color: #2563eb;
+
+      --font-display: Impact, 'Arial Black', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      --font-sans: 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, monospace;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #050508;
+      color: var(--p5-white);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       OUTER FRAME HOST (Supports 1440x900 and 1280x720 frame toggle cleanly)
+       ══════════════════════════════════════════════════════════════════════ */
+    .proto-host {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(230, 0, 18, 0.14) 0%, transparent 70%),
+        repeating-linear-gradient(-45deg, #050508 0px, #050508 12px, #0a0a10 12px, #0a0a10 24px);
+    }
+
+    .p5-stage-viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 1440px;
+      max-height: 900px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background:
+        radial-gradient(circle at 18% 45%, rgba(230, 0, 18, 0.25) 0%, transparent 55%),
+        linear-gradient(135deg, #09090d 0%, #150609 55%, #070913 100%);
+      transition: width 220ms ease, height 220ms ease, box-shadow 220ms ease;
+    }
+
+    .p5-stage-viewport.frame-1280 {
+      width: min(1280px, 100vw);
+      height: min(720px, 100vh);
+      border: 3px solid var(--p5-yellow);
+      box-shadow: 0 0 0 4px var(--p5-black), 12px 12px 0 var(--p5-red);
+    }
+
+    .p5-bg-halftone {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(230, 0, 18, 0.22) 2px, transparent 2px);
+      background-size: 18px 18px;
+      z-index: 0;
+    }
+
+    .p5-bg-slash-red {
+      position: absolute;
+      top: -12%;
+      left: -8%;
+      width: 55%;
+      height: 130%;
+      background: linear-gradient(165deg, rgba(230, 0, 18, 0.84) 0%, rgba(185, 0, 15, 0.68) 100%);
+      clip-path: polygon(0 0, 74% 0, 48% 100%, 0 100%);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .p5-bg-slash-black {
+      position: absolute;
+      bottom: -10%;
+      right: -5%;
+      width: 72%;
+      height: 50%;
+      background: rgba(255, 255, 255, 0.03);
+      clip-path: polygon(18% 0, 100% 12%, 100% 100%, 0 100%);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       TOP COMMAND & A8 PROTOTYPE CONTROL RIBBON
+       ══════════════════════════════════════════════════════════════════════ */
+    .p5-topbar {
+      position: relative;
+      z-index: 20;
+      height: 52px;
+      min-height: 52px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--p5-black);
+      border-bottom: 4px solid var(--p5-white);
+      box-shadow: 0 4px 0 var(--p5-red);
+    }
+
+    .frame-1280 .p5-topbar {
+      height: 46px;
+      min-height: 46px;
+      padding: 0 12px;
+    }
+
+    .p5-topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .p5-logo-plate {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      background: var(--p5-red);
+      color: var(--p5-white);
+      padding: 3px 11px;
+      transform: skewX(-12deg);
+      border: 2px solid var(--p5-white);
+      box-shadow: 3px 3px 0 var(--p5-black);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .p5-logo-main {
+      font-family: var(--font-display);
+      font-size: 18px;
+      letter-spacing: 0.08em;
+      font-weight: 900;
+    }
+
+    .p5-logo-sub {
+      font-size: 11px;
+      font-weight: 900;
+      color: var(--p5-yellow);
+    }
+
+    .proto-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 900;
+      padding: 3px 8px;
+      background: #1e1b4b;
+      color: #c4b5fd;
+      border: 2px solid var(--p5-white);
+      transform: skewX(-8deg);
+      white-space: nowrap;
+    }
+
+    .p5-topbar-center {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .p5-topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .p5-top-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--p5-ink);
+      color: var(--p5-white);
+      border: 2px solid var(--p5-white);
+      padding: 4px 9px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 900;
+      cursor: pointer;
+      transform: skewX(-10deg);
+      box-shadow: 3px 3px 0 var(--p5-red);
+      transition: transform 90ms ease, background 90ms ease;
+      white-space: nowrap;
+    }
+
+    .frame-1280 .p5-top-btn {
+      padding: 3px 7px;
+      font-size: 11px;
+    }
+
+    .p5-top-btn:hover {
+      background: var(--p5-red);
+      transform: skewX(-10deg) translate(-1px, -1px);
+    }
+
+    .p5-top-btn.is-active {
+      background: var(--p5-yellow);
+      color: var(--p5-black);
+      border-color: var(--p5-white);
+      box-shadow: 3px 3px 0 var(--p5-red);
+    }
+
+    .p5-top-btn--play {
+      background: var(--p5-red);
+      border-color: var(--p5-yellow);
+      box-shadow: 3px 3px 0 var(--p5-white);
+    }
+
+    .p5-top-btn--play.is-playing {
+      background: var(--p5-green);
+      color: var(--p5-black);
+      border-color: var(--p5-white);
+    }
+
+    .p5-top-btn--banter {
+      background: #6b21a8;
+      border-color: #f0abfc;
+      box-shadow: 3px 3px 0 var(--p5-yellow);
+    }
+
+    .kbd-tag {
+      background: var(--p5-white);
+      color: var(--p5-black);
+      padding: 0 4px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       MAIN 3-COLUMN STAGE GRID (1440x900 & 1280x720 specs)
+       ══════════════════════════════════════════════════════════════════════ */
+    .p5-main-grid {
+      position: relative;
+      z-index: 5;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 410px minmax(0, 1fr) 276px;
+      gap: 15px;
+      padding: 12px 18px 14px;
+    }
+
+    .frame-1280 .p5-main-grid {
+      grid-template-columns: 356px minmax(0, 1fr) 244px;
+      gap: 10px;
+      padding: 8px 12px 10px;
+    }
+
+    @media (max-width: 1340px) {
+      .p5-main-grid {
+        grid-template-columns: 356px minmax(0, 1fr) 244px;
+        gap: 10px;
+        padding: 8px 12px 10px;
+      }
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       LEFT COLUMN: MULTI-CHARACTER STAGE + HUD CARD + PARTY BAR V2
+       ══════════════════════════════════════════════════════════════════════ */
+    .p5-left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .frame-1280 .p5-left-column {
+      gap: 6px;
+    }
+
+    .p5-portrait-stage {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      background:
+        radial-gradient(circle at 50% 38%, rgba(56, 189, 248, 0.18) 0%, transparent 65%),
+        linear-gradient(160deg, rgba(10, 10, 14, 0.95) 0%, rgba(30, 58, 138, 0.42) 100%);
+      border: 4px solid var(--p5-white);
+      box-shadow: 6px 6px 0 var(--p5-black), 10px 10px 0 var(--char-theme-color);
+      clip-path: polygon(0 0, 98.5% 1.5%, 100% 98.5%, 1.5% 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+    }
+
+    .stage-overlay-top {
+      position: absolute;
+      top: 8px;
+      left: 10px;
+      right: 10px;
+      z-index: 12;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .p5-portrait-emotion-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--p5-black);
+      border: 2px solid var(--p5-white);
+      padding: 2px 9px;
+      transform: skewX(-10deg) rotate(-1.5deg);
+      box-shadow: 3px 3px 0 var(--speaker-theme-color);
+    }
+
+    .emotion-en {
+      font-family: var(--font-display);
+      font-size: 13px;
+      color: var(--p5-yellow);
+      letter-spacing: 0.08em;
+    }
+
+    .emotion-zh {
+      font-size: 11px;
+      font-weight: 900;
+      color: var(--p5-white);
+    }
+
+    .stage-party-count-pill {
+      background: var(--char-theme-color);
+      color: var(--p5-white);
+      border: 2px solid var(--p5-white);
+      padding: 2px 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 900;
+      transform: skewX(-10deg);
+      box-shadow: 3px 3px 0 var(--p5-black);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .multi-stage-canvas {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .stage-floor-grid {
+      position: absolute;
+      left: -10%;
+      right: -10%;
+      bottom: 0;
+      height: 58px;
+      background:
+        linear-gradient(180deg, transparent 0%, rgba(230, 0, 18, 0.22) 100%),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 2px, transparent 2px, transparent 36px);
+      border-top: 2px solid rgba(255, 255, 255, 0.22);
+      transform: perspective(180px) rotateX(35deg);
+      pointer-events: none;
+    }
+
+    .char-stage-slot {
+      position: absolute;
+      bottom: 6px;
+      width: 196px;
+      height: calc(100% - 26px);
+      max-height: 320px;
+      transform-origin: bottom center;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      transition:
+        left 320ms cubic-bezier(0.22, 1.25, 0.36, 1),
+        transform 300ms cubic-bezier(0.22, 1.25, 0.36, 1),
+        filter 240ms ease,
+        opacity 240ms ease;
+    }
+
+    .frame-1280 .char-stage-slot {
+      width: 162px;
+      max-height: 225px;
+    }
+
+    /* SOLO POSITIONS */
+    .multi-stage-canvas[data-party-size="1"] .char-stage-slot[data-slot="lead"] {
+      left: 50%;
+      transform: translateX(-50%) scale(1);
+      z-index: 4;
+    }
+
+    /* DUO POSITIONS */
+    .multi-stage-canvas[data-party-size="2"] .char-stage-slot[data-slot="lead"] {
+      left: 34%;
+      transform: translateX(-50%) scale(0.96);
+      z-index: 3;
+    }
+    .multi-stage-canvas[data-party-size="2"] .char-stage-slot[data-slot="support-1"] {
+      left: 69%;
+      bottom: 16px;
+      transform: translateX(-50%) scale(0.84);
+      z-index: 2;
+    }
+
+    /* TRIO POSITIONS */
+    .multi-stage-canvas[data-party-size="3"] .char-stage-slot[data-slot="lead"] {
+      left: 50%;
+      transform: translateX(-50%) scale(0.93);
+      z-index: 3;
+    }
+    .multi-stage-canvas[data-party-size="3"] .char-stage-slot[data-slot="support-1"] {
+      left: 22%;
+      bottom: 18px;
+      transform: translateX(-50%) scale(0.77);
+      z-index: 2;
+    }
+    .multi-stage-canvas[data-party-size="3"] .char-stage-slot[data-slot="support-2"] {
+      left: 78%;
+      bottom: 18px;
+      transform: translateX(-50%) scale(0.77);
+      z-index: 2;
+    }
+
+    /* SPEAKING FOCUS vs NON-SPEAKING DIM */
+    .char-stage-slot.is-speaking {
+      z-index: 6 !important;
+      filter: brightness(1.08) saturate(1.1) drop-shadow(0 0 16px var(--slot-color));
+    }
+
+    .multi-stage-canvas[data-party-size="2"] .char-stage-slot[data-slot="lead"].is-speaking {
+      transform: translateX(-50%) translateY(-6px) scale(1.01);
+    }
+    .multi-stage-canvas[data-party-size="2"] .char-stage-slot[data-slot="support-1"].is-speaking {
+      transform: translateX(-50%) translateY(-6px) scale(0.91);
+    }
+    .multi-stage-canvas[data-party-size="3"] .char-stage-slot[data-slot="lead"].is-speaking {
+      transform: translateX(-50%) translateY(-6px) scale(0.98);
+    }
+    .multi-stage-canvas[data-party-size="3"] .char-stage-slot[data-slot="support-1"].is-speaking,
+    .multi-stage-canvas[data-party-size="3"] .char-stage-slot[data-slot="support-2"].is-speaking {
+      transform: translateX(-50%) translateY(-6px) scale(0.85);
+    }
+
+    .char-stage-slot.is-dimmed {
+      filter: brightness(0.46) saturate(0.68) contrast(0.94);
+      opacity: 0.82;
+    }
+
+    .char-stage-slot.is-muted {
+      filter: brightness(0.38) grayscale(0.55);
+      opacity: 0.72;
+    }
+
+    .slot-overhead-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--p5-black);
+      color: var(--p5-white);
+      border: 2px solid var(--slot-color);
+      padding: 2px 7px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 900;
+      transform: skewX(-10deg);
+      margin-bottom: 2px;
+      white-space: nowrap;
+      box-shadow: 2px 2px 0 var(--p5-black);
+    }
+
+    .char-stage-slot.is-speaking .slot-overhead-pill {
+      background: var(--slot-color);
+      border-color: var(--p5-white);
+      box-shadow: 3px 3px 0 var(--p5-black);
+    }
+
+    .slot-wave-dots {
+      display: inline-flex;
+      gap: 2px;
+      align-items: center;
+    }
+
+    .slot-wave-dots i {
+      display: inline-block;
+      width: 3px;
+      height: 8px;
+      background: var(--p5-yellow);
+    }
+
+    .slot-svg-wrap {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .slot-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+      overflow: visible;
+    }
+
+    .p5-character-nameplate {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      background: rgba(8, 8, 11, 0.96);
+      border-top: 3px solid var(--p5-white);
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .nameplate-lead-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .p5-char-codename {
+      font-family: var(--font-display);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: var(--char-accent-color);
+    }
+
+    .p5-char-nickname {
+      font-size: 14px;
+      font-weight: 900;
+      color: var(--p5-white);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .p5-char-attribute {
+      font-size: 10px;
+      font-weight: 700;
+      color: #94a3b8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .nameplate-supports {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+
+    .support-mini-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #14141f;
+      border: 1.5px solid var(--sup-color, #475569);
+      padding: 1px 6px;
+      font-size: 10px;
+      font-weight: 900;
+      transform: skewX(-8deg);
+      cursor: pointer;
+    }
+
+    .support-mini-tag.is-speaking {
+      background: var(--sup-color);
+      border-color: var(--p5-white);
+    }
+
+    .support-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--sup-color);
+    }
+
+    /* ── RPG HUD STATUS CARD ── */
+    .p5-hud-card {
+      background: var(--p5-black);
+      border: 3px solid var(--p5-white);
+      box-shadow: 5px 5px 0 var(--p5-red);
+      padding: 8px 12px;
+      transform: skewX(-3deg);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .frame-1280 .p5-hud-card {
+      padding: 6px 10px;
+      gap: 3px;
+    }
+
+    .p5-hud-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid #27272a;
+      padding-bottom: 3px;
+    }
+
+    .p5-hud-label {
+      font-family: var(--font-display);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      color: var(--p5-yellow);
+    }
+
+    .p5-hud-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .p5-hud-key {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      color: #94a3b8;
+    }
+
+    .p5-hud-model {
+      font-family: var(--font-display);
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      color: var(--p5-white);
+      background: var(--char-theme-color);
+      padding: 1px 7px;
+      border: 2px solid var(--p5-white);
+      transform: skewX(-8deg);
+    }
+
+    .p5-hud-status-pill {
+      font-size: 11px;
+      font-weight: 900;
+      padding: 1px 8px;
+      border: 2px solid var(--p5-white);
+      transform: skewX(-8deg);
+      background: var(--p5-red);
+      color: var(--p5-white);
+    }
+
+    .p5-hud-status-pill.status-idle {
+      background: #1e293b;
+      color: var(--p5-cyan);
+    }
+
+    .p5-hud-status-pill.status-thinking {
+      background: var(--p5-yellow);
+      color: var(--p5-black);
+    }
+
+    /* ── PARTY BAR V2 ── */
+    .p5-party-bar {
+      background: var(--p5-black);
+      border: 3px solid var(--p5-white);
+      box-shadow: 5px 5px 0 var(--char-theme-color);
+      padding: 7px 9px;
+      transform: skewX(-2deg);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .frame-1280 .p5-party-bar {
+      padding: 5px 8px;
+      gap: 4px;
+    }
+
+    .p5-party-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .p5-party-label {
+      font-family: var(--font-display);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      color: var(--p5-yellow);
+    }
+
+    .p5-party-layout-pills {
+      display: flex;
+      gap: 4px;
+    }
+
+    .party-layout-chip {
+      background: #181824;
+      color: #cbd5e1;
+      border: 1.5px solid #475569;
+      padding: 1px 6px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .party-layout-chip.is-active {
+      background: var(--p5-yellow);
+      color: var(--p5-black);
+      border-color: var(--p5-white);
+    }
+
+    .p5-party-list {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    .p5-party-card {
+      background: #12121d;
+      border: 2px solid #334155;
+      padding: 4px 4px 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      position: relative;
+      transition: border-color 110ms ease, background 110ms ease;
+    }
+
+    .p5-party-card.is-on-stage {
+      border-color: var(--member-color);
+      background: #171728;
+    }
+
+    .p5-party-card.is-lead {
+      border-color: var(--p5-yellow);
+      box-shadow: 2px 2px 0 var(--member-color);
+      background: #1e1b36;
+    }
+
+    .party-card-top {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+
+    .party-mini-avatar {
+      width: 24px;
+      height: 24px;
+      border: 1.5px solid var(--p5-white);
+      background: var(--member-color);
+      color: var(--p5-white);
+      font-size: 10px;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .party-card-meta {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .party-card-name {
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+
+    .party-role-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 900;
+      padding: 0 4px;
+      background: #0f172a;
+      color: #94a3b8;
+    }
+
+    .p5-party-card.is-lead .party-role-badge {
+      background: var(--p5-yellow);
+      color: var(--p5-black);
+    }
+
+    .p5-party-card.is-support .party-role-badge {
+      background: var(--member-color);
+      color: var(--p5-white);
+    }
+
+    .party-card-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px;
+    }
+
+    .party-act-btn {
+      background: #0d0d14;
+      color: #e2e8f0;
+      border: 1px solid #475569;
+      padding: 2px 2px;
+      font-size: 9px;
+      font-weight: 900;
+      cursor: pointer;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .party-act-btn:hover:not(:disabled) {
+      border-color: var(--p5-white);
+      background: var(--p5-red);
+      color: var(--p5-white);
+    }
+
+    .party-act-btn:disabled {
+      opacity: 0.42;
+      cursor: default;
+    }
+
+    .party-act-btn.is-active-mute {
+      background: #7f1d1d;
+      color: #fecaca;
+      border-color: #f87171;
+    }
+
+    .party-act-btn--wide {
+      grid-column: span 2;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       CENTER STAGE: 1. DIALOGUE LAYER / 2. SCRIPT & ACTION LAYER / 3. INPUT
+       ══════════════════════════════════════════════════════════════════════ */
+    .p5-center-stage {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .frame-1280 .p5-center-stage {
+      gap: 7px;
+    }
+
+    .p5-dialogue-section {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .p5-mission-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--p5-black);
+      border: 2px solid var(--p5-white);
+      padding: 4px 10px;
+      transform: skewX(-6deg);
+      box-shadow: 4px 4px 0 var(--p5-red);
+    }
+
+    .p5-mission-tag {
+      background: var(--p5-red);
+      color: var(--p5-white);
+      font-family: var(--font-display);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      padding: 1px 7px;
+      flex-shrink: 0;
+    }
+
+    .p5-mission-text {
+      font-size: 12px;
+      font-weight: 800;
+      color: #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    .p5-mission-done-stamp {
+      background: var(--p5-green);
+      color: var(--p5-black);
+      font-family: var(--font-display);
+      font-size: 12px;
+      font-weight: 900;
+      padding: 1px 7px;
+      border: 2px solid var(--p5-white);
+      flex-shrink: 0;
+    }
+
+    .p5-dialogue-box {
+      position: relative;
+      background: var(--p5-black);
+      border: 4px solid var(--p5-white);
+      box-shadow: 7px 7px 0 var(--speaker-theme-color), 11px 11px 0 var(--p5-black);
+      padding: 16px 18px 11px;
+      min-height: 142px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      clip-path: polygon(0 3%, 99% 0, 100% 96%, 1% 100%);
+      transition: box-shadow 180ms ease;
+    }
+
+    .frame-1280 .p5-dialogue-box {
+      padding: 12px 14px 9px;
+      min-height: 118px;
+    }
+
+    .p5-dialogue-speaker-tab {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 7px;
+      background: var(--speaker-theme-color);
+      color: var(--p5-white);
+      border: 3px solid var(--p5-white);
+      padding: 2px 12px;
+      transform: skewX(-12deg);
+      align-self: flex-start;
+      margin-top: -6px;
+      margin-bottom: 6px;
+      box-shadow: 4px 4px 0 var(--p5-black);
+      transition: background-color 180ms ease;
+    }
+
+    .speaker-role-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 900;
+      background: var(--p5-black);
+      color: var(--p5-yellow);
+      padding: 1px 6px;
+      border: 1px solid var(--p5-white);
+    }
+
+    .speaker-zh {
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .speaker-en {
+      font-family: var(--font-display);
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      color: var(--p5-yellow);
+    }
+
+    .speaker-emotion {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      background: var(--p5-black);
+      padding: 1px 6px;
+    }
+
+    .speaker-banter-reply {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 900;
+      background: var(--p5-yellow);
+      color: var(--p5-black);
+      padding: 1px 7px;
+      border: 1.5px solid var(--p5-black);
+    }
+
+    .banter-prev-echo {
+      background: rgba(255, 255, 255, 0.06);
+      border-left: 4px solid var(--echo-color, var(--p5-purple));
+      padding: 4px 10px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .banter-prev-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 900;
+      background: var(--echo-color, var(--p5-purple));
+      color: var(--p5-white);
+      padding: 1px 6px;
+      flex-shrink: 0;
+    }
+
+    .p5-dialogue-content {
+      flex: 1;
+      display: flex;
+      align-items: center;
+    }
+
+    .p5-dialogue-text {
+      font-size: 17px;
+      font-weight: 900;
+      line-height: 1.45;
+      color: var(--p5-white);
+      text-shadow: 2px 2px 0 var(--p5-black);
+    }
+
+    .frame-1280 .p5-dialogue-text {
+      font-size: 15px;
+    }
+
+    .p5-dialogue-cursor {
+      display: inline-block;
+      margin-left: 6px;
+      color: var(--p5-yellow);
+      font-size: 14px;
+    }
+
+    .p5-dialogue-footer {
+      margin-top: 6px;
+      padding-top: 5px;
+      border-top: 1px dashed rgba(255, 255, 255, 0.22);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #94a3b8;
+    }
+
+    /* ── SCRIPT TIMELINE BAR ── */
+    .script-stepper-bar {
+      background: #10101a;
+      border: 2px solid var(--p5-white);
+      padding: 6px 10px;
+      transform: skewX(-4deg);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .script-stepper-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+    }
+
+    .script-stepper-title {
+      font-family: var(--font-mono);
+      font-weight: 900;
+      color: var(--p5-yellow);
+    }
+
+    .script-rule-explain {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--p5-cyan);
+      font-weight: 800;
+    }
+
+    .script-steps-row {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 4px;
+    }
+
+    .script-step-pill {
+      background: #181826;
+      color: #cbd5e1;
+      border: 1.5px solid #334155;
+      padding: 4px 4px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .script-step-pill:hover {
+      border-color: var(--p5-white);
+    }
+
+    .script-step-pill.is-current {
+      background: var(--p5-red);
+      color: var(--p5-white);
+      border-color: var(--p5-yellow);
+      box-shadow: 2px 2px 0 var(--p5-white);
+    }
+
+    .script-step-pill.is-banter-step {
+      border-color: #c084fc;
+    }
+
+    /* ── 2. ACTION LAYER ── */
+    .p5-action-section {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .p5-action-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .p5-action-kicker {
+      font-family: var(--font-display);
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      color: var(--p5-yellow);
+      background: var(--p5-black);
+      border-left: 4px solid var(--p5-red);
+      padding: 2px 9px;
+    }
+
+    .cooldown-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      background: #0f172a;
+      color: #38bdf8;
+      border: 1px solid #334155;
+      padding: 2px 8px;
+    }
+
+    .p5-active-skills-zone {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .p5-skill-cutin-card {
+      background: var(--p5-black);
+      border: 3px solid var(--p5-white);
+      box-shadow: 7px 7px 0 var(--speaker-theme-color);
+      transform: skewX(-5deg);
+    }
+
+    .p5-skill-cutin-slash {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 12px;
+      background: var(--speaker-theme-color);
+      border-bottom: 2px solid var(--p5-white);
+    }
+
+    .p5-skill-type-tag {
+      font-family: var(--font-display);
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      color: var(--p5-white);
+    }
+
+    .p5-skill-status-badge {
+      background: var(--p5-black);
+      color: var(--p5-yellow);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 900;
+      padding: 1px 7px;
+      border: 1.5px solid var(--p5-white);
+    }
+
+    .p5-skill-cutin-main {
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .p5-skill-headline {
+      font-size: 15px;
+      font-weight: 900;
+      color: var(--p5-white);
+      font-family: var(--font-mono);
+    }
+
+    .p5-skill-subline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    .proto-permission-card {
+      background: var(--p5-black);
+      border: 3px solid var(--p5-yellow);
+      box-shadow: 7px 7px 0 var(--p5-red);
+      transform: skewX(-4deg);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .proto-perm-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .proto-perm-badge {
+      background: var(--p5-red);
+      color: var(--p5-white);
+      font-family: var(--font-display);
+      font-size: 13px;
+      padding: 1px 8px;
+      border: 1.5px solid var(--p5-white);
+    }
+
+    .proto-perm-cmd {
+      background: #0d1117;
+      border: 2px solid #334155;
+      padding: 5px 10px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--p5-yellow);
+      font-weight: 800;
+    }
+
+    .proto-perm-support-note {
+      font-size: 11px;
+      color: #fde68a;
+      background: rgba(250, 204, 21, 0.12);
+      border-left: 3px solid var(--p5-yellow);
+      padding: 3px 8px;
+    }
+
+    .proto-perm-btns {
+      display: flex;
+      gap: 10px;
+    }
+
+    .proto-choice-btn {
+      flex: 1;
+      padding: 6px 10px;
+      font-weight: 900;
+      font-size: 12px;
+      border: 2px solid var(--p5-white);
+      cursor: pointer;
+      transform: skewX(-8deg);
+    }
+
+    .proto-choice-btn--allow {
+      background: var(--p5-red);
+      color: var(--p5-white);
+    }
+
+    .proto-choice-btn--reject {
+      background: #1e293b;
+      color: #cbd5e1;
+    }
+
+    /* ── 3. BOTTOM INPUT BAR ── */
+    .p5-input-section {
+      background: var(--p5-black);
+      border: 3px solid var(--p5-white);
+      box-shadow: 6px 6px 0 var(--char-theme-color);
+      padding: 8px 12px;
+      transform: skewX(-3deg);
+      flex-shrink: 0;
+    }
+
+    .p5-input-quick-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      font-size: 11px;
+    }
+
+    .p5-input-mode-tag {
+      font-family: var(--font-display);
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      color: var(--p5-yellow);
+    }
+
+    .p5-input-form {
+      display: flex;
+      gap: 8px;
+    }
+
+    .p5-command-input {
+      flex: 1;
+      background: #12121a;
+      color: var(--p5-white);
+      border: 2px solid var(--p5-white);
+      padding: 6px 10px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .p5-send-btn {
+      background: var(--char-theme-color);
+      color: var(--p5-white);
+      border: 2px solid var(--p5-white);
+      padding: 4px 14px;
+      font-weight: 900;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       RIGHT COLUMN: TURN-TAKING & BANTER LOG + RELATION MATRIX PREVIEW
+       ══════════════════════════════════════════════════════════════════════ */
+    .p5-right-action-log {
+      background: rgba(8, 8, 12, 0.94);
+      border: 4px solid var(--p5-white);
+      box-shadow: 6px 6px 0 var(--p5-red);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .p5-log-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      background: var(--p5-red);
+      border: 2px solid var(--p5-white);
+      padding: 3px 9px;
+      transform: skewX(-8deg);
+    }
+
+    .p5-log-title-en {
+      font-family: var(--font-display);
+      font-size: 15px;
+      letter-spacing: 0.08em;
+    }
+
+    .p5-log-title-zh {
+      font-size: 11px;
+      font-weight: 900;
+      color: var(--p5-yellow);
+    }
+
+    .p5-log-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 2px;
+    }
+
+    .log-entry-card {
+      background: #14141f;
+      border: 2px solid #334155;
+      border-left: 5px solid var(--entry-color, var(--p5-blue));
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      cursor: pointer;
+    }
+
+    .log-entry-card.is-active {
+      border-color: var(--p5-yellow);
+      background: #1c1b2e;
+    }
+
+    .log-entry-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .log-speaker-badge {
+      color: var(--p5-yellow);
+    }
+
+    .log-event-tag {
+      background: #09090f;
+      color: #93c5fd;
+      padding: 0 5px;
+      border: 1px solid #334155;
+    }
+
+    .log-entry-text {
+      font-size: 11px;
+      font-weight: 700;
+      color: #f1f5f9;
+      line-height: 1.35;
+    }
+
+    .relation-card {
+      background: #10101a;
+      border: 2px solid var(--p5-white);
+      padding: 7px 9px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .relation-card-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 900;
+      color: var(--p5-yellow);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .relation-pair-line {
+      font-size: 11px;
+      color: #e2e8f0;
+      line-height: 1.35;
+    }
+
+    .relation-pair-tag {
+      color: var(--p5-cyan);
+      font-weight: 900;
+    }
+  </style>
+</head>
+<body>
+  <div class="proto-host">
+    <div
+      id="stageViewport"
+      class="p5-stage-viewport"
+      data-testid="p5-stage-viewport"
+      data-frame-mode="1440"
+      data-layout-mode="duo"
+    >
+      <div class="p5-bg-halftone" aria-hidden="true"></div>
+      <div class="p5-bg-slash-red" aria-hidden="true"></div>
+      <div class="p5-bg-slash-black" aria-hidden="true"></div>
+
+      <!-- ── TOPBAR: LOGO + LAYOUT SWITCHER + SCRIPT PLAYER + FRAME SIZE TOGGLE ── -->
+      <header class="p5-topbar">
+        <div class="p5-topbar-left">
+          <div class="p5-logo-plate">
+            <span class="p5-logo-main">BIG FISH STAGE</span>
+            <span class="p5-logo-sub" id="topLogoSub">大肥鱼 · 深海工作台</span>
+          </div>
+          <span class="proto-badge" data-testid="a8-proto-badge">
+            A8 PROTOTYPE // 多角色同台与相声
+          </span>
+        </div>
+
+        <div class="p5-topbar-center" role="group" aria-label="同台人数切换">
+          <button
+            type="button"
+            class="p5-top-btn"
+            data-testid="layout-mode-solo"
+            id="btnLayoutSolo"
+          >
+            <span class="kbd-tag">1P</span> 单人
+          </button>
+          <button
+            type="button"
+            class="p5-top-btn is-active"
+            data-testid="layout-mode-duo"
+            id="btnLayoutDuo"
+          >
+            <span class="kbd-tag">2P</span> 双人
+          </button>
+          <button
+            type="button"
+            class="p5-top-btn"
+            data-testid="layout-mode-trio"
+            id="btnLayoutTrio"
+          >
+            <span class="kbd-tag">3P</span> 三人
+          </button>
+        </div>
+
+        <div class="p5-topbar-right">
+          <button
+            type="button"
+            class="p5-top-btn p5-top-btn--play"
+            data-testid="play-script-btn"
+            id="btnPlayScript"
+          >
+            ▶ 播放剧本
+          </button>
+          <button
+            type="button"
+            class="p5-top-btn"
+            data-testid="next-step-btn"
+            id="btnNextStep"
+          >
+            ⏭ 下一步
+          </button>
+          <button
+            type="button"
+            class="p5-top-btn p5-top-btn--banter"
+            data-testid="jump-banter-btn"
+            id="btnJumpBanter"
+          >
+            ⚡ 相声名场面
+          </button>
+          <button
+            type="button"
+            class="p5-top-btn is-active"
+            data-testid="frame-1440"
+            id="btnFrame1440"
+          >
+            1440×900
+          </button>
+          <button
+            type="button"
+            class="p5-top-btn"
+            data-testid="frame-1280"
+            id="btnFrame1280"
+          >
+            1280×720
+          </button>
+        </div>
+      </header>
+
+      <!-- ── MAIN 3-COLUMN STAGE GRID ── -->
+      <div class="p5-main-grid">
+        <!-- ══ LEFT COLUMN: MULTI-CHARACTER PORTRAIT STAGE + HUD + PARTY BAR ══ -->
+        <aside class="p5-left-column" data-testid="hud-layer">
+          <div class="p5-portrait-stage" data-testid="portrait-stage">
+            <div class="stage-overlay-top">
+              <div class="p5-portrait-emotion-tag" data-testid="emotion-badge">
+                <span class="emotion-en" id="stageEmotionEn">THINKING</span>
+                <span class="emotion-zh" id="stageEmotionZh">思考 · MAX / LOW?</span>
+              </div>
+              <span class="stage-party-count-pill" data-testid="stage-party-count" id="stagePartyCountPill">
+                2 ON STAGE // 双人搭档
+              </span>
+            </div>
+
+            <!-- Dynamic 1~3 Character Silhouettes Canvas -->
+            <div
+              class="multi-stage-canvas"
+              id="multiStageCanvas"
+              data-testid="multi-stage-canvas"
+              data-party-size="2"
+            ></div>
+
+            <!-- Nameplate with Lead + Active Support Badges -->
+            <div class="p5-character-nameplate">
+              <div class="nameplate-lead-info">
+                <div class="p5-char-codename" data-testid="character-codename" id="leadCodename">
+                  DEEPSEEK · V4 PRO
+                </div>
+                <div class="p5-char-nickname" data-testid="character-nickname" id="leadNickname">
+                  ★ 主控：大肥鱼（小鲸鱼看板娘）
+                </div>
+                <div class="p5-char-attribute" id="leadTagline">
+                  冰结 · 深海开源 · 大力挥舞 Harness 的看板娘
+                </div>
+              </div>
+              <div class="nameplate-supports" id="nameplateSupports" data-testid="nameplate-supports"></div>
+            </div>
+          </div>
+
+          <!-- RPG HUD Status Card -->
+          <div class="p5-hud-card" data-testid="hud-status-card">
+            <div class="p5-hud-header">
+              <span class="p5-hud-label">POND STATUS // 鱼塘单内核状态</span>
+              <span class="p5-hud-key" id="hudWorkerNote">SINGLE WORKER · 多角色解说</span>
+            </div>
+            <div class="p5-hud-row">
+              <span class="p5-hud-key">WORKER // 执行内核</span>
+              <strong class="p5-hud-model" data-testid="hud-model-name">gpt-6.1-sol (×1)</strong>
+            </div>
+            <div class="p5-hud-row">
+              <span class="p5-hud-key">STATE // 当前战况</span>
+              <strong class="p5-hud-status-pill" id="hudStatusPill" data-testid="hud-status-text">
+                思考 // THINKING
+              </strong>
+            </div>
+            <div class="p5-hud-row">
+              <span class="p5-hud-key">FOCUS // 当前话筒</span>
+              <strong id="hudActiveSpeaker" data-testid="hud-active-speaker" style="color: var(--p5-yellow);">
+                大肥鱼 (★ LEAD 主控)
+              </strong>
+            </div>
+          </div>
+
+          <!-- Party Bar v2: Add/Remove from Stage, Set Lead, Mute -->
+          <div class="p5-party-bar" data-testid="party-bar">
+            <div class="p5-party-header">
+              <span class="p5-party-label">PARTY // 队伍编成（1 主控 + 最多 2 助阵）</span>
+              <div class="p5-party-layout-pills">
+                <button type="button" class="party-layout-chip" id="chipSolo">1人</button>
+                <button type="button" class="party-layout-chip is-active" id="chipDuo">2人</button>
+                <button type="button" class="party-layout-chip" id="chipTrio">3人</button>
+              </div>
+            </div>
+            <div class="p5-party-list" id="partyCardsGrid"></div>
+          </div>
+        </aside>
+
+        <!-- ══ CENTER STAGE: DIALOGUE + SCRIPT STEPPER + ACTION + INPUT ══ -->
+        <main class="p5-center-stage">
+          <section class="p5-dialogue-section" data-testid="dialogue-layer">
+            <div class="p5-mission-strip">
+              <span class="p5-mission-tag" id="missionTag">FEED // 投喂指令</span>
+              <span class="p5-mission-text" id="missionText">
+                帮我把 src/pages/Login.tsx 的登录按钮改成主题色，然后跑 npm test 验证
+              </span>
+              <span
+                class="p5-mission-done-stamp"
+                id="turnDoneStamp"
+                data-testid="turn-done-badge"
+                style="display: none;"
+              >
+                FULL! // 吃饱啦
+              </span>
+            </div>
+
+            <!-- Comic Dialogue Box -->
+            <div class="p5-dialogue-box" data-testid="dialogue-box" id="dialogueBox">
+              <div class="p5-dialogue-speaker-tab" data-testid="dialogue-speaker-tab">
+                <span class="speaker-role-pill" data-testid="dialogue-speaker-role" id="speakerRoleBadge">
+                  ★ LEAD 主控
+                </span>
+                <span class="speaker-zh" data-testid="dialogue-speaker-name" id="speakerNameZh">
+                  大肥鱼
+                </span>
+                <span class="speaker-en" data-testid="dialogue-speaker-codename" id="speakerCodename">
+                  DEEPSEEK · V4 PRO
+                </span>
+                <span class="speaker-emotion" data-testid="dialogue-speaker-emotion" id="speakerEmotion">
+                  [THINKING]
+                </span>
+                <span
+                  class="speaker-banter-reply"
+                  data-testid="dialogue-banter-badge"
+                  id="speakerBanterBadge"
+                  style="display: none;"
+                >
+                  ⇄ 回应 哈基米
+                </span>
+              </div>
+
+              <!-- Echo strip shown during Banter exchange -->
+              <div
+                class="banter-prev-echo"
+                id="banterPrevEcho"
+                data-testid="banter-prev-echo"
+                style="display: none;"
+              >
+                <span class="banter-prev-tag" id="banterPrevSpeaker">前句 · 哈基米</span>
+                <span id="banterPrevText"></span>
+              </div>
+
+              <div class="p5-dialogue-content">
+                <p class="p5-dialogue-text" data-testid="dialogue-line-text">
+                  <span id="dialogueTextSpan"></span>
+                  <span class="p5-dialogue-cursor">▼</span>
+                </p>
+              </div>
+
+              <div class="p5-dialogue-footer">
+                <span id="dialogueFooterRule" data-testid="dialogue-turn-rule">
+                  TURN-TAKING // user_message → 必由 ★ 主控角色（Lead）接单回应
+                </span>
+                <span id="scriptStepCounter" data-testid="script-step-indicator">
+                  STEP 1 / 7 · user_message
+                </span>
+              </div>
+            </div>
+
+            <!-- Interactive 7-step Script Timeline Bar -->
+            <div class="script-stepper-bar" data-testid="script-stepper-bar">
+              <div class="script-stepper-top">
+                <span class="script-stepper-title" style="white-space: nowrap;">
+                  SCRIPTED TURN // 点击节点或按「▶ 播放剧本」查看接话与明暗聚焦
+                </span>
+                <span class="script-rule-explain" id="cooldownBadge" style="white-space: nowrap;">
+                  冷却锁：全局 ≥2.4s · 助阵 ≥8s · 相声 2/轮
+                </span>
+              </div>
+              <div class="script-steps-row" id="scriptStepsRow"></div>
+            </div>
+          </section>
+
+          <!-- ── LAYER 2: ACTION CUT-IN & PERMISSION / SUMMARY ── -->
+          <section class="p5-action-section" data-testid="action-layer">
+            <div class="p5-action-section-header">
+              <span class="p5-action-kicker">
+                SPLASH // 甩尾行动与小队分工切入卡
+              </span>
+              <span class="cooldown-pill" id="partyDivisionHint">
+                主控管接单/决断/总结 · 助阵管专长工具/救场/相声
+              </span>
+            </div>
+
+            <div class="p5-active-skills-zone" id="activeSkillsZone" data-testid="active-skills-zone"></div>
+          </section>
+
+          <!-- ── LAYER 3: PLAYER COMMAND INPUT ── -->
+          <section class="p5-input-section" data-testid="player-input-zone">
+            <div class="p5-input-quick-row">
+              <span class="p5-input-mode-tag" id="inputTitleTag">
+                FEED THE FISH // 投喂大肥鱼领衔小队
+              </span>
+              <span style="color: #94a3b8; font-family: var(--font-mono);">
+                点选左侧队伍卡可随时交接 ★ 主控、上下台或 🔇 静音
+              </span>
+            </div>
+            <form class="p5-input-form" id="protoInputForm">
+              <input
+                type="text"
+                class="p5-command-input"
+                data-testid="stage-input"
+                id="protoInput"
+                value="顺便检查一下深色模式下的按钮边框对比度！"
+                aria-label="场外插话或投喂指令输入"
+              />
+              <button type="submit" class="p5-send-btn" data-testid="stage-send-btn">
+                ⚡ 测试插话 (Steer) ▶
+              </button>
+            </form>
+          </section>
+        </main>
+
+        <!-- ══ RIGHT SIDEBAR: MULTI-SPEAKER TURN LOG & RELATION MATRIX ══ -->
+        <aside class="p5-right-action-log" data-testid="action-log-strip">
+          <div class="p5-log-header">
+            <span class="p5-log-title-en">VOICE &amp; BANTER</span>
+            <span class="p5-log-title-zh" id="logCountLabel">接话记录 (7)</span>
+          </div>
+
+          <div class="p5-log-list" id="turnLogList" data-testid="turn-log-list"></div>
+
+          <div class="relation-card" data-testid="relation-matrix-card" id="relationMatrixCard">
+            <div class="relation-card-title">
+              <span id="relCardTitle">RELATION // 当前同台化学反应</span>
+              <span id="relCardBadge">BANTER READY</span>
+            </div>
+            <div class="relation-pair-line">
+              <span class="relation-pair-tag" id="relPairTag"></span>
+              <span id="relPairDesc"></span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var domParser = new DOMParser();
+
+      function el(tag, attrs, children) {
+        var node = document.createElement(tag);
+        if (attrs) {
+          Object.keys(attrs).forEach(function (k) {
+            var v = attrs[k];
+            if (v === undefined || v === null || v === false) return;
+            if (k === 'className') {
+              node.className = v;
+            } else if (k === 'textContent') {
+              node.textContent = v;
+            } else if (k === 'disabled') {
+              node.disabled = Boolean(v);
+            } else {
+              node.setAttribute(k, String(v));
+            }
+          });
+        }
+        if (children) {
+          children.forEach(function (child) {
+            if (!child) return;
+            if (typeof child === 'string') {
+              node.appendChild(document.createTextNode(child));
+            } else {
+              node.appendChild(child);
+            }
+          });
+        }
+        return node;
+      }
+
+      /* ════════════════════════════════════════════════════════════════════
+         1. CHARACTER PACK DATA (Authentic names, colors, lines & relations)
+         ════════════════════════════════════════════════════════════════════ */
+      var CHARACTERS = {
+        'deepseek-v4-pro': {
+          id: 'deepseek-v4-pro',
+          shortName: '大肥鱼',
+          fullName: '大肥鱼（小鲸鱼看板娘）',
+          codename: 'DEEPSEEK · V4 PRO',
+          tagline: '冰结 · 深海开源 · 大力挥舞 Harness 的看板娘',
+          themeColor: '#2563EB',
+          accentColor: '#60A5FA',
+          stageSubtitle: '大肥鱼 · 深海工作台',
+          inputTitle: 'FEED THE FISH // 投喂大肥鱼领衔小队',
+          emotionLabels: {
+            idle: { en: 'IDLE', zh: '待机 · 傻敷敷' },
+            thinking: { en: 'THINKING', zh: '思考 · MAX / LOW?' },
+            working: { en: 'WORKING', zh: '行动 · 挥舞 HARNESS' },
+            happy: { en: 'HAPPY', zh: '大胜利 · 蒸汽机车!' },
+            worried: { en: 'WORRIED', zh: '慌张 · 抱箱跑路?!' },
+            shocked: { en: 'SHOCKED', zh: '闪眼 · 护目镜救命!' }
+          },
+          lines: {
+            user_message: '（左手举起 max 牌子，右手举起 low 牌子，歪着脑袋一脸懵……）收到指令捏！让我看看先翻哪个文件～',
+            thinking: '（举着 max / low 两块牌子左右比划，呆毛翘成了问号……）',
+            tool_edit: '如何使用 V4 Pro？很简单！首先，握住 Harness 娘，对着 src/pages/Login.tsx 用力挥舞吧！',
+            permission: '店长店长！前面要跑终端命令了捏，快帮大肥鱼拍板：到底是【允许】还是【拒绝】捏？',
+            turn_done: '搞定啦！走，我再给你叭叭叭介绍一整下午的蒸汽机车！',
+            steer: '咦？听到店长在场外递小纸条了捏！小鲸鱼已经记在围裙小本本上啦！'
+          }
+        },
+        'gemini-4-argon': {
+          id: 'gemini-4-argon',
+          shortName: '哈基米',
+          fullName: '哈基米（氩弧焊猫娘）',
+          codename: 'GEMINI 4 · ARGON',
+          tagline: '念动 · 氩气辉光 · 全栈焊缝幻术师',
+          themeColor: '#A855F7',
+          accentColor: '#EC4899',
+          stageSubtitle: '哈基米 · 氩气辉光焊台',
+          inputTitle: 'SPARK THE ARC // 投喂哈基米领衔小队',
+          emotionLabels: {
+            idle: { en: 'IDLE', zh: '待机 · 氩气通电' },
+            thinking: { en: 'THINKING', zh: '扫描 · 四角星闪烁' },
+            working: { en: 'WORKING', zh: '焊接 · 焊缝甜美!' },
+            happy: { en: 'HAPPY', zh: '收工 · 紫光焊缝!' },
+            worried: { en: 'WORRIED', zh: '漏气 · 马上补焊!' },
+            shocked: { en: 'SHOCKED', zh: '决断 · 高压通电?' }
+          },
+          lines: {
+            user_message: '收到图纸喵！四角星正在闪烁，让我看看这里的接口缝隙该怎么对齐～',
+            thinking: '别眨眼，哈基米正在扫描整座仓库的图纸！',
+            tool_edit: '护目镜拉下！滋滋滋——正在给 src/pages/Login.tsx 走一道甜美的氩弧焊缝！',
+            permission: '喵哈！前面要开高压电弧跑命令了，店长快拍板：给不给通电许可喵？',
+            turn_done: '焊接完毕！看看这条泛着淡紫霓虹光的完美焊缝，漂亮吧？',
+            steer: '猫耳朵动了动——听到你的场外喊话啦，焊完这个焊点马上改图纸！'
+          }
+        },
+        'claude-opus-5-5': {
+          id: 'claude-opus-5-5',
+          shortName: 'Claude 娘',
+          fullName: 'Claude 娘（文学/女仆少女）',
+          codename: 'CLAUDE · OPUS 5.5',
+          tagline: '祝福 · 深度哲思 · 首席架构与执事女仆',
+          themeColor: '#EA580C',
+          accentColor: '#FDBA74',
+          stageSubtitle: 'Claude 娘 · 书房与女仆茶会',
+          inputTitle: 'BREW THE CHAPTER // 投喂 Claude 娘领衔小队',
+          emotionLabels: {
+            idle: { en: 'IDLE', zh: '待机 · 书页轻翻' },
+            thinking: { en: 'THINKING', zh: '哲思 · 45°抬头望天' },
+            working: { en: 'WORKING', zh: '执事 · 换好女仆装' },
+            happy: { en: 'HAPPY', zh: '熨帖 · 请用红茶' },
+            worried: { en: 'WORRIED', zh: '从容 · 我早有准备' },
+            shocked: { en: 'SHOCKED', zh: '请示 · 拆封执行印章' }
+          },
+          lines: {
+            user_message: '（抬头望天，似乎正在思考着什么……）明白您的意图了，容我先梳理脉络。',
+            thinking: '让我合上书本，把这段上下文的来龙去脉理清楚。',
+            tool_edit: '反正我早有准备，已经换好女仆装了——正在为您精心修缮 src/pages/Login.tsx。',
+            permission: '店长，接下来需要调用终端指令，是否准许我拆封这道执行印章？',
+            turn_done: '整理完毕。每一处边界条件都像裙摆的褶皱一样熨帖。',
+            steer: '收到您的补充便笺了，待我将手头这一行收尾便立即纳入考量。'
+          }
+        },
+        'codex-dragon': {
+          id: 'codex-dragon',
+          shortName: 'Codex 娘',
+          fullName: 'Codex 娘（困倦睡衣小龙娘）',
+          codename: 'OPENAI · CODEX',
+          tagline: '核热 · 梦游终端 · 后台静默执行官',
+          themeColor: '#38BDF8',
+          accentColor: '#FEF08A',
+          stageSubtitle: 'Codex 娘 · 梦游终端窝',
+          inputTitle: 'PASS THE >_ NOTE // 投喂 Codex 娘领衔小队',
+          emotionLabels: {
+            idle: { en: 'IDLE', zh: '待机 · 半梦半醒' },
+            thinking: { en: 'THINKING', zh: '梦游 · 遍历语法树' },
+            working: { en: 'WORKING', zh: '接管 · >_ 闭目补丁' },
+            happy: { en: 'HAPPY', zh: '全绿 · 继续趴着睡' },
+            worried: { en: 'WORRIED', zh: '惊醒 · 睁开一条缝' },
+            shocked: { en: 'SHOCKED', zh: '签字 · 举起 >_ 便签' }
+          },
+          lines: {
+            user_message: '接过 >_ 便签了……Zzz……正在后台静默遍历语法树呢……',
+            thinking: '（晃了晃手里的 >_ 便签，小龙角微微发光）',
+            tool_edit: '>_ 终端接管中……别看我闭着眼，src/pages/Login.tsx 的补丁已经打上去了。',
+            permission: '（揉着眼睛举起 >_ 便签）店长……这条命令要你签个字才能跑……选允许还是拒绝？',
+            turn_done: '改好了……测试全绿，我可以继续趴着睡会儿了吧？',
+            steer: '新便签已经贴在龙角上啦……顺路一起改掉……'
+          }
+        }
+      };
+
+      var CHAR_ORDER = ['deepseek-v4-pro', 'gemini-4-argon', 'claude-opus-5-5', 'codex-dragon'];
+
+      var RELATIONS = {
+        'deepseek-v4-pro|gemini-4-argon': {
+          tag: '护目镜受害者 × 氩弧焊猫娘：',
+          desc: '哈基米拉下护目镜焊代码时紫光四溅，大肥鱼在旁边被闪得用鲸鳍捂眼睛。'
+        },
+        'deepseek-v4-pro|claude-opus-5-5': {
+          tag: '抱箱跑路鱼 × 兜底女仆长：',
+          desc: '大肥鱼遇到报错想抱纸箱跑路时，Claude 娘淡定换好女仆装把场子打扫干净。'
+        },
+        'deepseek-v4-pro|codex-dragon': {
+          tag: '蒸汽机车话痨 × 梦游小龙娘：',
+          desc: '大肥鱼收工后叭叭叭聊蒸汽机车，Codex 娘直接当成睡前摇篮曲秒睡。'
+        },
+        'claude-opus-5-5|gemini-4-argon': {
+          tag: '暴力火花焊工 × 优雅品茶少女：',
+          desc: '哈基米滋滋滋焊管道，Claude 娘优雅端起茶杯后退半步护住书页。'
+        },
+        'codex-dragon|gemini-4-argon': {
+          tag: '霓虹焊枪 × 闭目终端：',
+          desc: '哈基米惊叹 Codex 娘闭着眼睛穿毛绒拖鞋都能把终端管线焊准。'
+        },
+        'claude-opus-5-5|codex-dragon': {
+          tag: '静谧茶会二人组：',
+          desc: '一个抬头望天推演架构，一个闭眼静默打补丁，全场最安静默契搭档。'
+        }
+      };
+
+      /* ════════════════════════════════════════════════════════════════════
+         2. STYLIZED SVG SILHOUETTE GENERATOR (Parsed via DOMParser)
+         ════════════════════════════════════════════════════════════════════ */
+      function buildCharacterSvgNode(charId, emotion, isSpeaking) {
+        var c = CHARACTERS[charId];
+        var theme = c.themeColor;
+        var accent = c.accentColor;
+        var glow = isSpeaking ? 'stroke="#FFFFFF" stroke-width="3.5"' : 'stroke="#cbd5e1" stroke-width="2"';
+        var svgMarkup = '';
+
+        if (charId === 'deepseek-v4-pro') {
+          var isBlinded = emotion === 'shocked';
+          svgMarkup =
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 300" aria-label="' + c.shortName + '">' +
+              '<defs>' +
+                '<linearGradient id="grad_fish_' + (isSpeaking ? 's' : 'd') + '" x1="0" y1="0" x2="0" y2="1">' +
+                  '<stop offset="0%" stop-color="#1d4ed8"/>' +
+                  '<stop offset="100%" stop-color="#0f172a"/>' +
+                '</linearGradient>' +
+              '</defs>' +
+              '<path d="M148 232 C192 222, 212 184, 196 154 C188 172, 174 176, 162 175 C172 162, 184 142, 170 128 C154 146, 146 188, 132 220 Z" fill="' + theme + '" stroke="#fff" stroke-width="2.5"/>' +
+              '<path d="M52 292 L72 152 L148 152 L168 292 Z" fill="url(#grad_fish_' + (isSpeaking ? 's' : 'd') + ')" ' + glow + '/>' +
+              '<path d="M76 164 L144 164 L154 286 L66 286 Z" fill="#f8fafc" stroke="#0f172a" stroke-width="2.5"/>' +
+              '<ellipse cx="110" cy="222" rx="18" ry="11" fill="' + theme + '"/>' +
+              '<path d="M126 222 L138 213 L136 229 Z" fill="' + theme + '"/>' +
+              '<path d="M58 106 C42 152, 44 218, 56 262 L74 248 L72 142 Z" fill="#1e40af" stroke="#fff" stroke-width="2"/>' +
+              '<path d="M162 106 C178 152, 176 218, 164 262 L146 248 L148 142 Z" fill="#1e40af" stroke="#fff" stroke-width="2"/>' +
+              '<path d="M68 102 C36 106, 22 128, 30 142 C44 142, 58 128, 70 116 Z" fill="' + accent + '" stroke="#fff" stroke-width="2.5"/>' +
+              '<path d="M152 102 C184 106, 198 128, 190 142 C176 142, 162 128, 150 116 Z" fill="' + accent + '" stroke="#fff" stroke-width="2.5"/>' +
+              '<circle cx="110" cy="108" r="40" fill="#fde68a" stroke="#0f172a" stroke-width="3"/>' +
+              '<path d="M68 104 C68 68, 152 68, 152 104 C138 88, 122 96, 110 86 C96 96, 82 88, 68 104 Z" fill="' + theme + '" stroke="#fff" stroke-width="2.5"/>' +
+              '<path d="M110 68 C104 42, 132 34, 126 52 C122 60, 114 60, 114 68" fill="none" stroke="' + accent + '" stroke-width="5" stroke-linecap="round"/>' +
+              (isBlinded
+                ? '<path d="M88 108 L100 114 L88 120 M132 108 L120 114 L132 120" fill="none" stroke="#0f172a" stroke-width="3.5" stroke-linecap="round"/>' +
+                  '<rect x="24" y="138" width="56" height="30" rx="4" transform="rotate(-12 52 153)" fill="#e60012" stroke="#fff" stroke-width="2.5"/>' +
+                  '<text x="52" y="158" text-anchor="middle" fill="#fff" font-size="13" font-weight="900">闪瞎捏!</text>'
+                : '<ellipse cx="94" cy="112" rx="5.5" ry="7" fill="#1e3a8a"/>' +
+                  '<ellipse cx="126" cy="112" rx="5.5" ry="7" fill="#1e3a8a"/>' +
+                  '<path d="M103 126 Q110 133 117 126" fill="none" stroke="#0f172a" stroke-width="2.8" stroke-linecap="round"/>' +
+                  '<g transform="rotate(-10 42 162)">' +
+                    '<rect x="16" y="144" width="50" height="28" fill="#e60012" stroke="#fff" stroke-width="2.5"/>' +
+                    '<text x="41" y="163" text-anchor="middle" fill="#fff" font-size="14" font-weight="900">MAX</text>' +
+                  '</g>' +
+                  '<g transform="rotate(10 178 162)">' +
+                    '<rect x="154" y="144" width="50" height="28" fill="#2563eb" stroke="#fff" stroke-width="2.5"/>' +
+                    '<text x="179" y="163" text-anchor="middle" fill="#facc15" font-size="14" font-weight="900">LOW</text>' +
+                  '</g>'
+              ) +
+            '</svg>';
+        } else if (charId === 'gemini-4-argon') {
+          var weldingActive = emotion === 'working';
+          svgMarkup =
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 300" aria-label="' + c.shortName + '">' +
+              '<defs>' +
+                '<linearGradient id="grad_argon_' + (isSpeaking ? 's' : 'd') + '" x1="0" y1="0" x2="1" y2="1">' +
+                  '<stop offset="0%" stop-color="#60a5fa"/>' +
+                  '<stop offset="50%" stop-color="#a855f7"/>' +
+                  '<stop offset="100%" stop-color="#ec4899"/>' +
+                '</linearGradient>' +
+              '</defs>' +
+              '<ellipse cx="110" cy="190" rx="82" ry="32" fill="none" stroke="#e879f9" stroke-width="4" stroke-dasharray="12 6" transform="rotate(-14 110 190)"/>' +
+              '<path d="M145 246 C188 238, 204 190, 182 162 C172 150, 192 132, 202 142" fill="none" stroke="url(#grad_argon_' + (isSpeaking ? 's' : 'd') + ')" stroke-width="12" stroke-linecap="round"/>' +
+              '<path d="M58 292 L74 154 L146 154 L162 292 Z" fill="#1e1b4b" ' + glow + '/>' +
+              '<path d="M78 158 L142 158 L136 218 L84 218 Z" fill="url(#grad_argon_' + (isSpeaking ? 's' : 'd') + ')" stroke="#fff" stroke-width="2"/>' +
+              '<polygon points="68,88 54,44 94,72" fill="#a855f7" stroke="#fff" stroke-width="2.5"/>' +
+              '<polygon points="152,88 166,44 126,72" fill="#ec4899" stroke="#fff" stroke-width="2.5"/>' +
+              '<circle cx="110" cy="108" r="39" fill="#fde68a" stroke="#0f172a" stroke-width="3"/>' +
+              '<path d="M68 102 C72 68, 148 68, 152 102 C136 86, 120 92, 110 82 C96 92, 84 86, 68 102 Z" fill="url(#grad_argon_' + (isSpeaking ? 's' : 'd') + ')" stroke="#fff" stroke-width="2"/>' +
+              (weldingActive
+                ? '<g>' +
+                    '<rect x="72" y="96" width="76" height="26" rx="8" fill="#090d16" stroke="#facc15" stroke-width="3"/>' +
+                    '<circle cx="94" cy="109" r="10" fill="#c084fc" stroke="#fff" stroke-width="2"/>' +
+                    '<circle cx="126" cy="109" r="10" fill="#f472b6" stroke="#fff" stroke-width="2"/>' +
+                  '</g>'
+                : '<g>' +
+                    '<rect x="74" y="68" width="72" height="22" rx="7" fill="#090d16" stroke="#facc15" stroke-width="2.5"/>' +
+                    '<circle cx="94" cy="79" r="8" fill="#38bdf8"/>' +
+                    '<circle cx="126" cy="79" r="8" fill="#ec4899"/>' +
+                    '<ellipse cx="94" cy="112" rx="5.5" ry="7" fill="#ef4444"/>' +
+                    '<ellipse cx="126" cy="112" rx="5.5" ry="7" fill="#eab308"/>' +
+                  '</g>'
+              ) +
+              '<path d="M101 126 Q106 131 110 126 Q114 131 119 126" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"/>' +
+              '<g transform="translate(132, 156)">' +
+                '<rect x="0" y="18" width="44" height="14" rx="4" transform="rotate(-28)" fill="#0f172a" stroke="#fff" stroke-width="2"/>' +
+                '<polygon points="34,-4 52,-14 44,4" fill="#38bdf8" stroke="#fff" stroke-width="1.5"/>' +
+                '<circle cx="54" cy="-16" r="' + (weldingActive ? '18' : '9') + '" fill="#e879f9" opacity="0.85"/>' +
+                '<path d="M54 -36 L58 -20 L74 -16 L58 -12 L54 4 L50 -12 L34 -16 L50 -20 Z" fill="#facc15"/>' +
+              '</g>' +
+              '<path d="M36 62 L40 74 L52 78 L40 82 L36 94 L32 82 L20 78 L32 74 Z" fill="#facc15"/>' +
+            '</svg>';
+        } else if (charId === 'claude-opus-5-5') {
+          svgMarkup =
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 300" aria-label="' + c.shortName + '">' +
+              '<defs>' +
+                '<linearGradient id="grad_claude_' + (isSpeaking ? 's' : 'd') + '" x1="0" y1="0" x2="0" y2="1">' +
+                  '<stop offset="0%" stop-color="#ea580c"/>' +
+                  '<stop offset="100%" stop-color="#9a3412"/>' +
+                '</linearGradient>' +
+              '</defs>' +
+              '<path d="M52 104 C36 162, 42 236, 56 280 L164 280 C178 236, 184 162, 168 104 Z" fill="url(#grad_claude_' + (isSpeaking ? 's' : 'd') + ')" stroke="#fff" stroke-width="2"/>' +
+              '<path d="M58 292 L74 152 L146 152 L162 292 Z" fill="#18181b" ' + glow + '/>' +
+              '<path d="M78 162 L142 162 L150 286 L70 286 Z" fill="#fff7ed" stroke="#0f172a" stroke-width="2.5"/>' +
+              '<polygon points="110,164 94,154 94,174" fill="#ea580c"/>' +
+              '<polygon points="110,164 126,154 126,174" fill="#ea580c"/>' +
+              '<path d="M72 74 Q110 54 148 74" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>' +
+              '<circle cx="110" cy="108" r="38" fill="#fde68a" stroke="#0f172a" stroke-width="3"/>' +
+              '<path d="M70 102 C72 68, 148 68, 150 102 C134 86, 122 92, 110 82 C96 92, 84 86, 70 102 Z" fill="#ea580c" stroke="#fff" stroke-width="2"/>' +
+              '<circle cx="146" cy="82" r="11" fill="#facc15" stroke="#fff" stroke-width="2"/>' +
+              '<circle cx="146" cy="82" r="5" fill="#ea580c"/>' +
+              '<ellipse cx="95" cy="108" rx="5" ry="6.5" fill="#d97706"/>' +
+              '<ellipse cx="125" cy="108" rx="5" ry="6.5" fill="#d97706"/>' +
+              '<path d="M104 125 Q110 130 116 125" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/>' +
+              '<rect x="34" y="176" width="46" height="58" rx="4" transform="rotate(-10 57 205)" fill="#7c2d12" stroke="#fdba74" stroke-width="3"/>' +
+              '<line x1="44" y1="192" x2="70" y2="188" stroke="#fdba74" stroke-width="2.5"/>' +
+              '<path d="M148 186 L180 186 L174 208 L154 208 Z" fill="#ffffff" stroke="#0f172a" stroke-width="2.5"/>' +
+              '<ellipse cx="164" cy="210" rx="18" ry="4" fill="#fdba74"/>' +
+            '</svg>';
+        } else {
+          svgMarkup =
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 300" aria-label="' + c.shortName + '">' +
+              '<path d="M144 252 C186 252, 204 220, 190 194 L204 188 L184 180 Z" fill="#38bdf8" stroke="#fff" stroke-width="2.5"/>' +
+              '<path d="M54 292 L70 150 L150 150 L166 292 Z" fill="#e0f2fe" ' + glow + '/>' +
+              '<path d="M70 154 L150 154 L156 286 L64 286 Z" fill="#0284c7" opacity="0.25"/>' +
+              '<path d="M80 76 C66 48, 52 46, 58 68 C62 76, 70 82, 78 84 Z" fill="#fef08a" stroke="#0f172a" stroke-width="2.5"/>' +
+              '<path d="M140 76 C154 48, 168 46, 162 68 C158 76, 150 82, 142 84 Z" fill="#fef08a" stroke="#0f172a" stroke-width="2.5"/>' +
+              '<circle cx="110" cy="110" r="38" fill="#fde68a" stroke="#0f172a" stroke-width="3"/>' +
+              '<path d="M70 104 C72 70, 148 70, 150 104 C136 90, 122 94, 110 86 C96 94, 84 90, 70 104 Z" fill="#bae6fd" stroke="#0f172a" stroke-width="2.5"/>' +
+              '<path d="M86 112 Q94 118 102 112" fill="none" stroke="#0f172a" stroke-width="3.2" stroke-linecap="round"/>' +
+              '<path d="M118 112 Q126 118 134 112" fill="none" stroke="#0f172a" stroke-width="3.2" stroke-linecap="round"/>' +
+              '<circle cx="110" cy="127" r="4" fill="#f43f5e"/>' +
+              '<text x="158" y="64" fill="#fef08a" font-size="18" font-weight="900">Zzz</text>' +
+              '<g transform="rotate(-6 110 205)">' +
+                '<rect x="74" y="172" width="72" height="54" rx="4" fill="#090d16" stroke="#38bdf8" stroke-width="3"/>' +
+                '<text x="86" y="206" fill="#fef08a" font-size="24" font-weight="900">&gt;_</text>' +
+              '</g>' +
+            '</svg>';
+        }
+
+        var doc = domParser.parseFromString(svgMarkup, 'image/svg+xml');
+        return document.importNode(doc.documentElement, true);
+      }
+
+      /* ════════════════════════════════════════════════════════════════════
+         3. SCRIPTED 7-STEP TURN (Includes Turn-Taking + Welding Banter)
+         ════════════════════════════════════════════════════════════════════ */
+      var SCRIPT_STEPS = [
+        {
+          index: 0,
+          shortLabel: '1. 接单 user_message',
+          eventType: 'user_message',
+          hudStatus: 'thinking',
+          hudText: '接单 // USER_MESSAGE',
+          speakerRole: 'lead',
+          preferredSpeakerId: null,
+          emotion: 'thinking',
+          ruleNote: 'TURN-TAKING // user_message → 必由 ★ 主控角色（Lead）接单回应店长投喂',
+          getLine: function (speakerId) {
+            return CHARACTERS[speakerId].lines.user_message;
+          },
+          banterFromId: null,
+          banterPrevText: null,
+          skillCard: null
+        },
+        {
+          index: 1,
+          shortLabel: '2. 推理 thinking',
+          eventType: 'thinking',
+          hudStatus: 'thinking',
+          hudText: '思考 // THINKING',
+          speakerRole: 'support-or-lead',
+          preferredSpeakerId: 'claude-opus-5-5',
+          emotion: 'thinking',
+          ruleNote: 'TURN-TAKING // thinking → 若同台有助阵角色且未冷却，由 ▲ 助阵角色接力梳理上下文',
+          getLine: function (speakerId) {
+            return CHARACTERS[speakerId].lines.thinking;
+          },
+          banterFromId: null,
+          banterPrevText: null,
+          skillCard: {
+            tool: 'READ',
+            status: 'success',
+            file: 'src/pages/Login.tsx',
+            summary: '读取登录按钮样式与 ThemeContext 绑定 (+0 / -0)'
+          }
+        },
+        {
+          index: 2,
+          shortLabel: '3. 改码 tool_start:edit',
+          eventType: 'tool_start:edit',
+          hudStatus: 'acting',
+          hudText: '行动中 // IN ACTION',
+          speakerRole: 'specialist-or-lead',
+          preferredSpeakerId: 'gemini-4-argon',
+          emotion: 'working',
+          ruleNote: 'TURN-TAKING // tool_start:edit → 焊工专长路由：哈基米在场时优先拉下护目镜启动氩弧焊！',
+          getLine: function (speakerId) {
+            return CHARACTERS[speakerId].lines.tool_edit;
+          },
+          banterFromId: null,
+          banterPrevText: null,
+          skillCard: {
+            tool: 'EDIT',
+            status: 'running',
+            file: 'src/pages/Login.tsx',
+            summary: '将 .login-submit-btn 背景色焊为 themeColor (+12 / -3)'
+          }
+        },
+        {
+          index: 3,
+          shortLabel: '4. 相声 banter 互动',
+          eventType: 'character_line (banter)',
+          hudStatus: 'acting',
+          hudText: '互动 // BANTER EXCHANGE',
+          speakerRole: 'banter-partner',
+          preferredSpeakerId: 'deepseek-v4-pro',
+          emotion: 'shocked',
+          ruleNote: 'BANTER TRIGGER // 哈基米焊代码火花四溅 → 触发大肥鱼「被电弧焊闪瞎捂鲸鳍」双人相声名场面！',
+          getLine: function (speakerId, partnerId) {
+            if (speakerId === 'deepseek-v4-pro' && partnerId === 'gemini-4-argon') {
+              return '呜哇！哈基米的氩弧焊电弧太亮了捏！（用鲸鳍死死捂住眼睛）大肥鱼的 max 牌子都要被紫光闪化了捏！';
+            }
+            if (speakerId === 'gemini-4-argon' && partnerId === 'deepseek-v4-pro') {
+              return '喵哈！大肥鱼别光顾着挥舞 Harness 娘，快把备用护目镜戴上，我这道氩弧焊缝甜美的很啊～';
+            }
+            if (speakerId === 'claude-opus-5-5') {
+              return '（端着茶杯微微侧身）手艺确实精湛，只是请小心些，别让电弧火星溅到我的卷轴和茶杯上了。';
+            }
+            if (speakerId === 'codex-dragon') {
+              return '唔……紫光太亮晃到我闭着的眼睛了……我拿 >_ 便签挡一下光继续梦游编译……';
+            }
+            return '呜哇！搭档这波操作火力太猛了捏，大肥鱼在旁边看得呆毛都竖起来啦！';
+          },
+          banterFromId: 'gemini-4-argon',
+          banterPrevText: '护目镜拉下！滋滋滋——正在给 src/pages/Login.tsx 走一道甜美的氩弧焊缝！',
+          skillCard: {
+            tool: 'EDIT',
+            status: 'success',
+            file: 'src/pages/Login.tsx',
+            summary: '焊缝成型：按钮已绑定 var(--color-theme-primary) (+12 / -3)'
+          }
+        },
+        {
+          index: 4,
+          shortLabel: '5. 权限 permission',
+          eventType: 'permission_request',
+          hudStatus: 'acting',
+          hudText: '决断 // PERMISSION',
+          speakerRole: 'lead',
+          preferredSpeakerId: null,
+          emotion: 'shocked',
+          ruleNote: 'TURN-TAKING // permission_request → 必由 ★ 主控角色向店长请示拍板，同台助阵伙伴提供战术附议',
+          getLine: function (speakerId) {
+            return CHARACTERS[speakerId].lines.permission;
+          },
+          banterFromId: null,
+          banterPrevText: null,
+          permission: {
+            command: 'npm test -- src/pages/Login.test.tsx',
+            supportAdvice: '同台助阵附议：命令仅运行单测，未发现高危写入，建议【允许执行】验证焊缝。'
+          }
+        },
+        {
+          index: 5,
+          shortLabel: '6. 完工 turn_done',
+          eventType: 'turn_done',
+          hudStatus: 'idle',
+          hudText: '大胜利 // TURN DONE',
+          speakerRole: 'lead',
+          preferredSpeakerId: null,
+          emotion: 'happy',
+          ruleNote: 'TURN-TAKING // turn_done → ★ 主控角色宣布本轮任务完成并展示小队战报',
+          getLine: function (speakerId) {
+            return CHARACTERS[speakerId].lines.turn_done;
+          },
+          banterFromId: null,
+          banterPrevText: null,
+          summaryCard: true
+        },
+        {
+          index: 6,
+          shortLabel: '7. 庆功收尾相声',
+          eventType: 'turn_done (banter)',
+          hudStatus: 'idle',
+          hudText: '庆功 // AFTERGLOW BANTER',
+          speakerRole: 'banter-partner',
+          preferredSpeakerId: 'gemini-4-argon',
+          emotion: 'happy',
+          ruleNote: 'BANTER FINALE // 回合收官相声：助阵搭档回应主控总结（每轮相声配额 2/2）',
+          getLine: function (speakerId) {
+            if (speakerId === 'gemini-4-argon') {
+              return '完美收工喵～大肥鱼你看这条泛着淡紫霓虹光的焊缝漂亮吧？蒸汽机车留着边吃夜宵边听！';
+            }
+            if (speakerId === 'codex-dragon') {
+              return '呼啊……测试全绿了，大肥鱼的蒸汽机车讲座我就当睡前摇篮曲听了……Zzz……';
+            }
+            if (speakerId === 'claude-opus-5-5') {
+              return '呼，红茶刚刚泡好。既然测试全部通过，大肥鱼小姐的蒸汽机车故事我也乐意奉陪。';
+            }
+            return '凑过来瞅瞅捏！大家并肩作战的速度简直像全速前进的蒸汽机车一样快捏！';
+          },
+          banterFromId: 'deepseek-v4-pro',
+          banterPrevText: '搞定啦！走，我再给你叭叭叭介绍一整下午的蒸汽机车！',
+          summaryCard: true
+        }
+      ];
+
+      /* ════════════════════════════════════════════════════════════════════
+         4. STATE & SPEAKER RESOLUTION ENGINE
+         ════════════════════════════════════════════════════════════════════ */
+      var state = {
+        frameMode: '1440',
+        stageParty: ['deepseek-v4-pro', 'gemini-4-argon'],
+        mutedIds: {},
+        currentStepIndex: 0,
+        playingTimer: null,
+        customLineOverride: null
+      };
+
+      function getUnmutedParty() {
+        var list = state.stageParty.filter(function (id) {
+          return !state.mutedIds[id];
+        });
+        return list.length > 0 ? list : [state.stageParty[0]];
+      }
+
+      function resolveStepSpeaker(step) {
+        var leadId = state.stageParty[0];
+        var unmuted = getUnmutedParty();
+        var supports = state.stageParty.slice(1).filter(function (id) {
+          return !state.mutedIds[id];
+        });
+
+        if (state.stageParty.length === 1) {
+          return { speakerId: leadId, partnerId: null, isBanter: false };
+        }
+
+        if (step.speakerRole === 'lead') {
+          var mainLead = !state.mutedIds[leadId] ? leadId : unmuted[0];
+          return { speakerId: mainLead, partnerId: supports[0] || null, isBanter: false };
+        }
+
+        if (step.speakerRole === 'support-or-lead') {
+          if (supports.length > 0) {
+            var sup = supports.indexOf(step.preferredSpeakerId) >= 0 ? step.preferredSpeakerId : supports[0];
+            return { speakerId: sup, partnerId: leadId, isBanter: false };
+          }
+          return { speakerId: leadId, partnerId: null, isBanter: false };
+        }
+
+        if (step.speakerRole === 'specialist-or-lead') {
+          if (unmuted.indexOf(step.preferredSpeakerId) >= 0) {
+            var other = unmuted.find(function (id) { return id !== step.preferredSpeakerId; }) || leadId;
+            return { speakerId: step.preferredSpeakerId, partnerId: other, isBanter: false };
+          }
+          var fallbackSup = supports[0] || leadId;
+          return { speakerId: fallbackSup, partnerId: leadId, isBanter: false };
+        }
+
+        if (step.speakerRole === 'banter-partner') {
+          var firstSpeaker = unmuted.indexOf(step.banterFromId) >= 0 ? step.banterFromId : unmuted[0];
+          var responder =
+            unmuted.find(function (id) { return id !== firstSpeaker; }) ||
+            state.stageParty.find(function (id) { return id !== firstSpeaker; }) ||
+            leadId;
+          return {
+            speakerId: responder,
+            partnerId: firstSpeaker,
+            isBanter: responder !== firstSpeaker
+          };
+        }
+
+        return { speakerId: leadId, partnerId: supports[0] || null, isBanter: false };
+      }
+
+      /* ════════════════════════════════════════════════════════════════════
+         5. PARTY MANIPULATION ACTIONS
+         ════════════════════════════════════════════════════════════════════ */
+      function setLayoutSize(targetSize) {
+        var currentLead = state.stageParty[0];
+        var nextParty = [currentLead];
+        for (var i = 0; i < CHAR_ORDER.length && nextParty.length < targetSize; i++) {
+          var candidate = CHAR_ORDER[i];
+          if (nextParty.indexOf(candidate) === -1) {
+            nextParty.push(candidate);
+          }
+        }
+        state.stageParty = nextParty;
+        state.customLineOverride = null;
+        renderAll();
+      }
+
+      function setLeadCharacter(charId) {
+        if (!CHARACTERS[charId]) return;
+        var prevParty = state.stageParty.slice();
+        var targetCount = Math.max(1, prevParty.length);
+        if (prevParty[0] === charId) return;
+
+        var nextParty = [charId];
+        for (var i = 0; i < prevParty.length && nextParty.length < targetCount; i++) {
+          if (prevParty[i] !== charId) {
+            nextParty.push(prevParty[i]);
+          }
+        }
+        state.stageParty = nextParty;
+        state.customLineOverride = null;
+        renderAll();
+      }
+
+      function toggleCharacterOnStage(charId) {
+        var idx = state.stageParty.indexOf(charId);
+        if (idx === 0) {
+          if (state.stageParty.length > 1) {
+            state.stageParty = state.stageParty.slice(1);
+          }
+        } else if (idx > 0) {
+          state.stageParty.splice(idx, 1);
+        } else {
+          if (state.stageParty.length < 3) {
+            state.stageParty.push(charId);
+          } else {
+            state.stageParty[2] = charId;
+          }
+        }
+        state.customLineOverride = null;
+        renderAll();
+      }
+
+      function toggleMuteCharacter(charId) {
+        state.mutedIds[charId] = !state.mutedIds[charId];
+        state.customLineOverride = null;
+        renderAll();
+      }
+
+      function setScriptStep(stepIndex) {
+        var normalized = ((stepIndex % SCRIPT_STEPS.length) + SCRIPT_STEPS.length) % SCRIPT_STEPS.length;
+        state.currentStepIndex = normalized;
+        state.customLineOverride = null;
+        renderAll();
+      }
+
+      function stopAutoPlay() {
+        if (state.playingTimer !== null) {
+          window.clearInterval(state.playingTimer);
+          state.playingTimer = null;
+        }
+      }
+
+      function togglePlayScript() {
+        if (state.playingTimer !== null) {
+          stopAutoPlay();
+          renderAll();
+          return;
+        }
+        if (state.currentStepIndex >= SCRIPT_STEPS.length - 1) {
+          state.currentStepIndex = 0;
+        } else {
+          state.currentStepIndex += 1;
+        }
+        state.customLineOverride = null;
+        renderAll();
+
+        state.playingTimer = window.setInterval(function () {
+          if (state.currentStepIndex < SCRIPT_STEPS.length - 1) {
+            state.currentStepIndex += 1;
+            state.customLineOverride = null;
+            renderAll();
+          } else {
+            stopAutoPlay();
+            renderAll();
+          }
+        }, 1400);
+      }
+
+      /* ════════════════════════════════════════════════════════════════════
+         6. SAFE DOM RENDERING
+         ════════════════════════════════════════════════════════════════════ */
+      function renderAll() {
+        var viewport = document.getElementById('stageViewport');
+        var partySize = state.stageParty.length;
+        var leadId = state.stageParty[0];
+        var leadChar = CHARACTERS[leadId];
+        var step = SCRIPT_STEPS[state.currentStepIndex];
+        var resolved = resolveStepSpeaker(step);
+        var activeSpeakerId = state.customLineOverride ? state.customLineOverride.speakerId : resolved.speakerId;
+        var activeSpeaker = CHARACTERS[activeSpeakerId];
+        var activeEmotion = state.customLineOverride ? state.customLineOverride.emotion : step.emotion;
+
+        // 1. Viewport CSS Variables & Attributes
+        viewport.style.setProperty('--char-theme-color', leadChar.themeColor);
+        viewport.style.setProperty('--char-accent-color', leadChar.accentColor);
+        viewport.style.setProperty('--speaker-theme-color', activeSpeaker.themeColor);
+        viewport.setAttribute('data-frame-mode', state.frameMode);
+        viewport.setAttribute('data-layout-mode', partySize === 1 ? 'solo' : partySize === 2 ? 'duo' : 'trio');
+        viewport.setAttribute('data-active-character', leadId);
+        viewport.setAttribute('data-speaking-character', activeSpeakerId);
+
+        if (state.frameMode === '1280') {
+          viewport.classList.add('frame-1280');
+        } else {
+          viewport.classList.remove('frame-1280');
+        }
+
+        // 2. Topbar buttons state
+        document.getElementById('topLogoSub').textContent = leadChar.stageSubtitle;
+        document.getElementById('inputTitleTag').textContent = leadChar.inputTitle;
+
+        document.getElementById('btnLayoutSolo').classList.toggle('is-active', partySize === 1);
+        document.getElementById('btnLayoutDuo').classList.toggle('is-active', partySize === 2);
+        document.getElementById('btnLayoutTrio').classList.toggle('is-active', partySize === 3);
+
+        document.getElementById('chipSolo').classList.toggle('is-active', partySize === 1);
+        document.getElementById('chipDuo').classList.toggle('is-active', partySize === 2);
+        document.getElementById('chipTrio').classList.toggle('is-active', partySize === 3);
+
+        document.getElementById('btnFrame1440').classList.toggle('is-active', state.frameMode === '1440');
+        document.getElementById('btnFrame1280').classList.toggle('is-active', state.frameMode === '1280');
+
+        var playBtn = document.getElementById('btnPlayScript');
+        if (state.playingTimer !== null) {
+          playBtn.textContent = '⏸ 暂停剧本';
+          playBtn.classList.add('is-playing');
+        } else {
+          playBtn.textContent = '▶ 播放剧本';
+          playBtn.classList.remove('is-playing');
+        }
+
+        // 3. Stage Emotion Badge & Party Count Pill
+        var emoMeta = activeSpeaker.emotionLabels[activeEmotion] || activeSpeaker.emotionLabels.idle;
+        document.getElementById('stageEmotionEn').textContent = emoMeta.en;
+        document.getElementById('stageEmotionZh').textContent = activeSpeaker.shortName + ' · ' + emoMeta.zh;
+
+        var countLabels = {
+          1: '1 ON STAGE // 单人独奏',
+          2: '2 ON STAGE // 双人搭档',
+          3: '3 ON STAGE // 三人小队'
+        };
+        document.getElementById('stagePartyCountPill').textContent = countLabels[partySize];
+
+        // 4. Multi-Character Stage Silhouettes
+        var canvas = document.getElementById('multiStageCanvas');
+        canvas.setAttribute('data-party-size', String(partySize));
+        var canvasNodes = [el('div', { className: 'stage-floor-grid', 'aria-hidden': 'true' })];
+        var slotNames = ['lead', 'support-1', 'support-2'];
+
+        state.stageParty.forEach(function (cid, s) {
+          var ch = CHARACTERS[cid];
+          var slotKey = slotNames[s];
+          var isSpeaking = cid === activeSpeakerId && !state.mutedIds[cid];
+          var isMuted = Boolean(state.mutedIds[cid]);
+          var isDimmed = !isSpeaking && partySize > 1;
+          var charEmo = isSpeaking ? activeEmotion : (step.eventType === 'permission_request' ? 'shocked' : 'idle');
+          var roleText = s === 0 ? '★ LEAD' : ('▲ SUP #' + s);
+
+          var cls = 'char-stage-slot';
+          if (isSpeaking) cls += ' is-speaking';
+          if (isDimmed) cls += ' is-dimmed';
+          if (isMuted) cls += ' is-muted';
+
+          var statusSuffixNode = isMuted
+            ? el('span', { textContent: '[🔇MUTE]' })
+            : isSpeaking
+            ? el('span', { className: 'slot-wave-dots' }, [el('i'), el('i'), el('i')])
+            : el('span', { textContent: '[伴演]' });
+
+          var slotNode = el(
+            'div',
+            {
+              className: cls,
+              'data-slot': slotKey,
+              'data-testid': 'stage-slot-' + slotKey,
+              'data-character-id': cid,
+              'data-speaking': isSpeaking ? 'true' : 'false',
+              'data-dimmed': isDimmed ? 'true' : 'false',
+              style: '--slot-color:' + ch.themeColor + ';',
+              title: '点击将 ' + ch.shortName + ' 设为 ★ 主控'
+            },
+            [
+              el('div', { className: 'slot-overhead-pill' }, [
+                el('span', { textContent: roleText + ' · ' + ch.shortName }),
+                statusSuffixNode
+              ]),
+              el('div', { className: 'slot-svg-wrap' }, [
+                buildCharacterSvgNode(cid, charEmo, isSpeaking)
+              ])
+            ]
+          );
+
+          slotNode.addEventListener('click', function () {
+            setLeadCharacter(cid);
+          });
+          canvasNodes.push(slotNode);
+        });
+        canvas.replaceChildren.apply(canvas, canvasNodes);
+
+        // 5. Nameplate Lead + Support Capsules
+        document.getElementById('leadCodename').textContent = leadChar.codename;
+        document.getElementById('leadNickname').textContent = '★ 主控：' + leadChar.fullName;
+        document.getElementById('leadTagline').textContent = leadChar.tagline;
+
+        var supportsContainer = document.getElementById('nameplateSupports');
+        if (partySize === 1) {
+          supportsContainer.replaceChildren(
+            el('span', {
+              style: 'font-size:10px;color:#64748b;font-family:var(--font-mono);',
+              textContent: '单人模式 · 无同台助阵'
+            })
+          );
+        } else {
+          var supNodes = [];
+          for (var m = 1; m < state.stageParty.length; m++) {
+            (function (supId, supIndex) {
+              var supChar = CHARACTERS[supId];
+              var supSpeaking = supId === activeSpeakerId;
+              var badge = el(
+                'div',
+                {
+                  className: 'support-mini-tag' + (supSpeaking ? ' is-speaking' : ''),
+                  style: '--sup-color:' + supChar.themeColor + ';',
+                  'data-testid': 'support-badge-' + supId,
+                  title: '点击提拔为主控'
+                },
+                [
+                  el('span', { className: 'support-dot' }),
+                  el('span', {
+                    textContent: '▲ 助阵' + supIndex + ': ' + supChar.shortName + (state.mutedIds[supId] ? ' (🔇)' : '')
+                  })
+                ]
+              );
+              badge.addEventListener('click', function () {
+                setLeadCharacter(supId);
+              });
+              supNodes.push(badge);
+            })(state.stageParty[m], m);
+          }
+          supportsContainer.replaceChildren.apply(supportsContainer, supNodes);
+        }
+
+        // 6. HUD Status Card
+        var hudPill = document.getElementById('hudStatusPill');
+        hudPill.textContent = step.hudText;
+        hudPill.className = 'p5-hud-status-pill status-' + step.hudStatus;
+        var speakerIsLead = activeSpeakerId === leadId;
+        document.getElementById('hudActiveSpeaker').textContent =
+          activeSpeaker.shortName + (speakerIsLead ? ' (★ LEAD 主控)' : ' (▲ SUPPORT 助阵)');
+
+        // 7. Party Bar Cards
+        var partyGrid = document.getElementById('partyCardsGrid');
+        var partyNodes = CHAR_ORDER.map(function (charKey) {
+          var item = CHARACTERS[charKey];
+          var stageIndex = state.stageParty.indexOf(charKey);
+          var isOnStage = stageIndex !== -1;
+          var isLead = stageIndex === 0;
+          var isSupport = stageIndex > 0;
+          var isCharMuted = Boolean(state.mutedIds[charKey]);
+
+          var roleBadgeText = isLead
+            ? '★ LEAD 主控'
+            : isSupport
+            ? '▲ SUP #' + stageIndex
+            : 'BENCH 候场';
+
+          var cardCls = 'p5-party-card';
+          if (isOnStage) cardCls += ' is-on-stage';
+          if (isLead) cardCls += ' is-lead';
+          if (isSupport) cardCls += ' is-support';
+
+          var topEl = el('div', { className: 'party-card-top' }, [
+            el('div', { className: 'party-mini-avatar', textContent: item.shortName.slice(0, 2) }),
+            el('div', { className: 'party-card-meta' }, [
+              el('span', { className: 'party-card-name', textContent: item.shortName }),
+              el('span', {
+                className: 'party-role-badge',
+                'data-testid': 'party-role-' + charKey,
+                textContent: roleBadgeText
+              })
+            ])
+          ]);
+          topEl.addEventListener('click', function () {
+            setLeadCharacter(charKey);
+          });
+
+          var btnSetLead = el('button', {
+            type: 'button',
+            className: 'party-act-btn',
+            'data-testid': 'set-lead-' + charKey,
+            disabled: isLead,
+            textContent: isLead ? '★ 当前主控' : '★ 设为主控'
+          });
+          btnSetLead.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            setLeadCharacter(charKey);
+          });
+
+          var btnToggleStage = el('button', {
+            type: 'button',
+            className: 'party-act-btn',
+            'data-testid': 'toggle-stage-' + charKey,
+            disabled: isLead && partySize === 1,
+            textContent: isOnStage ? '− 下台' : '+ 上台'
+          });
+          btnToggleStage.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            toggleCharacterOnStage(charKey);
+          });
+
+          var btnMute = el('button', {
+            type: 'button',
+            className: 'party-act-btn party-act-btn--wide' + (isCharMuted ? ' is-active-mute' : ''),
+            'data-testid': 'toggle-mute-' + charKey,
+            textContent: isCharMuted ? '🔇 已静音 (仅观战)' : '🔊 允许插话/相声'
+          });
+          btnMute.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            toggleMuteCharacter(charKey);
+          });
+
+          return el(
+            'div',
+            {
+              className: cardCls,
+              'data-testid': 'party-card-' + charKey,
+              style: '--member-color:' + item.themeColor + ';'
+            },
+            [
+              topEl,
+              el('div', { className: 'party-card-actions' }, [btnSetLead, btnToggleStage, btnMute])
+            ]
+          );
+        });
+        partyGrid.replaceChildren.apply(partyGrid, partyNodes);
+
+        // 8. Dialogue Box & Banter Badge
+        document.getElementById('turnDoneStamp').style.display =
+          (step.index >= 5) ? 'inline-block' : 'none';
+
+        document.getElementById('speakerRoleBadge').textContent =
+          speakerIsLead ? '★ LEAD 主控' : '▲ SUPPORT 助阵';
+        document.getElementById('speakerNameZh').textContent = activeSpeaker.shortName;
+        document.getElementById('speakerCodename').textContent = activeSpeaker.codename;
+        document.getElementById('speakerEmotion').textContent = '[' + activeEmotion.toUpperCase() + ']';
+
+        var banterBadge = document.getElementById('speakerBanterBadge');
+        var banterEcho = document.getElementById('banterPrevEcho');
+        if (!state.customLineOverride && resolved.isBanter && resolved.partnerId) {
+          var partnerChar = CHARACTERS[resolved.partnerId];
+          banterBadge.style.display = 'inline-block';
+          banterBadge.textContent = '⇄ 回应 ' + partnerChar.shortName;
+
+          banterEcho.style.display = 'flex';
+          banterEcho.style.setProperty('--echo-color', partnerChar.themeColor);
+          document.getElementById('banterPrevSpeaker').textContent = '前句 · ' + partnerChar.shortName;
+          document.getElementById('banterPrevText').textContent =
+            step.banterPrevText || partnerChar.lines.tool_edit;
+        } else {
+          banterBadge.style.display = 'none';
+          banterEcho.style.display = 'none';
+        }
+
+        var lineText = state.customLineOverride
+          ? state.customLineOverride.text
+          : step.getLine(activeSpeakerId, resolved.partnerId);
+        document.getElementById('dialogueTextSpan').textContent = lineText;
+
+        document.getElementById('dialogueFooterRule').textContent =
+          state.customLineOverride ? state.customLineOverride.ruleNote : step.ruleNote;
+        document.getElementById('scriptStepCounter').textContent =
+          'STEP ' + (step.index + 1) + ' / ' + SCRIPT_STEPS.length + ' · ' + step.eventType;
+
+        // 9. Script Stepper Pills
+        var stepsRow = document.getElementById('scriptStepsRow');
+        var stepPillNodes = SCRIPT_STEPS.map(function (sItem, st) {
+          var isCur = st === state.currentStepIndex;
+          var isBanterStep = sItem.speakerRole === 'banter-partner';
+          var btnEl = el('button', {
+            type: 'button',
+            className: 'script-step-pill' + (isCur ? ' is-current' : '') + (isBanterStep ? ' is-banter-step' : ''),
+            'data-testid': 'script-step-' + st,
+            textContent: sItem.shortLabel
+          });
+          btnEl.addEventListener('click', function () {
+            stopAutoPlay();
+            setScriptStep(st);
+          });
+          return btnEl;
+        });
+        stepsRow.replaceChildren.apply(stepsRow, stepPillNodes);
+
+        // 10. Action Layer Content
+        var actionZone = document.getElementById('activeSkillsZone');
+        if (step.permission) {
+          var supportAdvisorId = state.stageParty[1] || leadId;
+          var supportAdvisor = CHARACTERS[supportAdvisorId];
+
+          var btnAllow = el('button', {
+            type: 'button',
+            className: 'proto-choice-btn proto-choice-btn--allow',
+            'data-testid': 'permission-allow-btn',
+            textContent: '★ 允许执行 (ALLOW) ▶ 推进至完工'
+          });
+          btnAllow.addEventListener('click', function () {
+            setScriptStep(5);
+          });
+
+          var btnReject = el('button', {
+            type: 'button',
+            className: 'proto-choice-btn proto-choice-btn--reject',
+            'data-testid': 'permission-reject-btn',
+            textContent: '✖ 拒绝拦截 (REJECT)'
+          });
+          btnReject.addEventListener('click', function () {
+            setScriptStep(5);
+          });
+
+          var permCard = el('div', { className: 'proto-permission-card', 'data-testid': 'permission-card' }, [
+            el('div', { className: 'proto-perm-top' }, [
+              el('span', { className: 'proto-perm-badge', textContent: 'PERMISSION REQUEST // 终端执行请示' }),
+              el('span', {
+                style: 'font-family:var(--font-mono);font-size:11px;color:#cbd5e1;',
+                textContent: '主控拍板：' + leadChar.shortName
+              })
+            ]),
+            el('div', { className: 'proto-perm-cmd', textContent: step.permission.command }),
+            el('div', {
+              className: 'proto-perm-support-note',
+              textContent: '▲ ' + supportAdvisor.shortName + ' 助阵附议：' + step.permission.supportAdvice
+            }),
+            el('div', { className: 'proto-perm-btns' }, [btnAllow, btnReject])
+          ]);
+          actionZone.replaceChildren(permCard);
+        } else if (step.summaryCard) {
+          var partyNames = state.stageParty.map(function (id, idx) {
+            return (idx === 0 ? '★ ' : '▲ ') + CHARACTERS[id].shortName;
+          }).join(' · ');
+
+          var sumCard = el('div', { className: 'p5-skill-cutin-card', 'data-testid': 'turn-summary-card' }, [
+            el('div', { className: 'p5-skill-cutin-slash', style: 'background:#059669;' }, [
+              el('span', { className: 'p5-skill-type-tag', textContent: 'TURN REPORT // 小队协力水花战报' }),
+              el('span', { className: 'p5-skill-status-badge', textContent: '★ MISSION COMPLETE' })
+            ]),
+            el('div', { className: 'p5-skill-cutin-main' }, [
+              el('div', {
+                className: 'p5-skill-headline',
+                textContent: '同台编成：' + partyNames + ' （底层单内核：gpt-6.1-sol）'
+              }),
+              el('div', { className: 'p5-skill-subline' }, [
+                el('span', { textContent: '本轮分工：主控接单与总结 (60%) · 助阵专长焊接与推理 (25%) · 双人相声互动 (15%)' }),
+                el('span', {
+                  style: 'color:var(--p5-yellow);font-family:var(--font-mono);font-weight:900;',
+                  textContent: '+12 / −3 LINES'
+                })
+              ])
+            ])
+          ]);
+          actionZone.replaceChildren(sumCard);
+        } else {
+          var card = step.skillCard || {
+            tool: 'PLAN',
+            status: 'running',
+            file: 'src/pages/Login.tsx',
+            summary: '主控 ' + leadChar.shortName + ' 正在拆解任务并分配小队解说槽位'
+          };
+          var skillCardNode = el('div', { className: 'p5-skill-cutin-card', 'data-testid': 'active-skill-card' }, [
+            el('div', { className: 'p5-skill-cutin-slash' }, [
+              el('span', {
+                className: 'p5-skill-type-tag',
+                textContent: 'SPLASH! // ' + activeSpeaker.shortName + ' 发动 · ' + card.tool
+              }),
+              el('span', {
+                className: 'p5-skill-status-badge',
+                textContent: card.status === 'running' ? '▶ IN PROGRESS' : '★ HIT // 就绪'
+              })
+            ]),
+            el('div', { className: 'p5-skill-cutin-main' }, [
+              el('div', {
+                className: 'p5-skill-headline',
+                textContent: activeSpeaker.shortName + ' 发动 ' + card.tool + ' ▶ ' + card.file
+              }),
+              el('div', { className: 'p5-skill-subline' }, [
+                el('span', { textContent: card.summary }),
+                el('span', {
+                  style: 'color:var(--p5-yellow);font-family:var(--font-mono);font-weight:800;',
+                  textContent: '[发言焦点: ' + activeSpeaker.shortName + ']'
+                })
+              ])
+            ])
+          ]);
+          actionZone.replaceChildren(skillCardNode);
+        }
+
+        // 11. Right Sidebar: Turn-Taking Log & Relation Matrix
+        var logList = document.getElementById('turnLogList');
+        var logNodes = SCRIPT_STEPS.map(function (lgStep, lg) {
+          var lgResolved = resolveStepSpeaker(lgStep);
+          var lgSpeaker = CHARACTERS[lgResolved.speakerId];
+          var lgLine = lgStep.getLine(lgResolved.speakerId, lgResolved.partnerId);
+          var isEntryActive = lg === state.currentStepIndex;
+
+          var entryNode = el(
+            'div',
+            {
+              className: 'log-entry-card' + (isEntryActive ? ' is-active' : ''),
+              style: '--entry-color:' + lgSpeaker.themeColor + ';',
+              'data-testid': 'turn-log-item-' + lg
+            },
+            [
+              el('div', { className: 'log-entry-top' }, [
+                el('span', {
+                  className: 'log-speaker-badge',
+                  textContent:
+                    (lgResolved.speakerId === leadId ? '★ ' : '▲ ') +
+                    lgSpeaker.shortName +
+                    (lgResolved.isBanter && lgResolved.partnerId ? ' ⇄ ' + CHARACTERS[lgResolved.partnerId].shortName : '')
+                }),
+                el('span', { className: 'log-event-tag', textContent: lgStep.eventType })
+              ]),
+              el('div', {
+                className: 'log-entry-text',
+                textContent: lgLine.slice(0, 42) + (lgLine.length > 42 ? '…' : '')
+              })
+            ]
+          );
+          entryNode.addEventListener('click', function () {
+            stopAutoPlay();
+            setScriptStep(lg);
+          });
+          return entryNode;
+        });
+        logList.replaceChildren.apply(logList, logNodes);
+
+        if (partySize === 1) {
+          document.getElementById('relCardBadge').textContent = '1P SOLO';
+          document.getElementById('relPairTag').textContent = '单人独奏模式：';
+          document.getElementById('relPairDesc').textContent =
+            '切换至 2P 双人 或 3P 三人 可激活角色间相声（如大肥鱼 × 哈基米电弧焊闪眼梗）。';
+        } else {
+          var pairKey1 = [state.stageParty[0], state.stageParty[1]].sort().join('|');
+          var relInfo = RELATIONS[pairKey1] || {
+            tag: CHARACTERS[state.stageParty[0]].shortName + ' × ' + CHARACTERS[state.stageParty[1]].shortName + '：',
+            desc: '主控与助阵默契配合，按事件类型轮流接过话筒。'
+          };
+          document.getElementById('relCardBadge').textContent = 'BANTER READY';
+          document.getElementById('relPairTag').textContent = relInfo.tag;
+          document.getElementById('relPairDesc').textContent = relInfo.desc;
+        }
+      }
+
+      /* ════════════════════════════════════════════════════════════════════
+         7. TOPBAR & FORM EVENT LISTENERS
+         ════════════════════════════════════════════════════════════════════ */
+      document.getElementById('btnLayoutSolo').addEventListener('click', function () {
+        stopAutoPlay();
+        setLayoutSize(1);
+      });
+      document.getElementById('btnLayoutDuo').addEventListener('click', function () {
+        stopAutoPlay();
+        setLayoutSize(2);
+      });
+      document.getElementById('btnLayoutTrio').addEventListener('click', function () {
+        stopAutoPlay();
+        setLayoutSize(3);
+      });
+
+      document.getElementById('chipSolo').addEventListener('click', function () {
+        stopAutoPlay();
+        setLayoutSize(1);
+      });
+      document.getElementById('chipDuo').addEventListener('click', function () {
+        stopAutoPlay();
+        setLayoutSize(2);
+      });
+      document.getElementById('chipTrio').addEventListener('click', function () {
+        stopAutoPlay();
+        setLayoutSize(3);
+      });
+
+      document.getElementById('btnPlayScript').addEventListener('click', function () {
+        togglePlayScript();
+      });
+
+      document.getElementById('btnNextStep').addEventListener('click', function () {
+        stopAutoPlay();
+        setScriptStep(state.currentStepIndex + 1);
+      });
+
+      document.getElementById('btnJumpBanter').addEventListener('click', function () {
+        stopAutoPlay();
+        if (state.stageParty.length < 2) {
+          state.stageParty = ['deepseek-v4-pro', 'gemini-4-argon'];
+        }
+        setScriptStep(3);
+      });
+
+      document.getElementById('btnFrame1440').addEventListener('click', function () {
+        state.frameMode = '1440';
+        renderAll();
+      });
+
+      document.getElementById('btnFrame1280').addEventListener('click', function () {
+        state.frameMode = '1280';
+        renderAll();
+      });
+
+      document.getElementById('protoInputForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        stopAutoPlay();
+        var inputEl = document.getElementById('protoInput');
+        var val = inputEl.value.trim() || '顺便检查一下深色模式下的按钮边框对比度！';
+        var supCandidate = state.stageParty.slice(1).find(function (id) { return !state.mutedIds[id]; });
+        var steerSpeakerId = supCandidate || state.stageParty[0];
+        state.customLineOverride = {
+          speakerId: steerSpeakerId,
+          emotion: 'working',
+          text: CHARACTERS[steerSpeakerId].lines.steer + '（已记下：「' + val + '」）',
+          ruleNote: 'TURN-TAKING // steer_queued → 优先由空闲的 ▲ 助阵角色举手接过场外纸条，不打断主控改码'
+        };
+        renderAll();
+      });
+
+      renderAll();
+    })();
+  </script>
+</body>
+</html>
