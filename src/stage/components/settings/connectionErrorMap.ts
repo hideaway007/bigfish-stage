@@ -9,8 +9,7 @@ export type ConnectionFailureCategory =
   | 'model_not_found'
   | 'timeout'
   | 'invalid_url'
-  | 'codex_not_found'
-  | 'codex_auth_or_config'
+  | 'dsh_not_found'
   | 'rate_limit'
   | 'server_error'
   | 'generic_endpoint'
@@ -37,36 +36,19 @@ export function mapConnectionFailure(
 ): FriendlyConnectionDiagnosis {
   const raw = (rawMessage || '').trim() || '未知连接错误';
 
-  // 1. Codex CLI executable missing / ENOENT
+  // 1. DSH executable missing / ENOENT
   if (
-    /找不到可用的\s*codex|无法启动\s*Codex|未检测到命令|codex.*not\s*found|ENOENT.*codex|spawn\s+codex\s+ENOENT|command\s+not\s+found.*codex/i.test(
+    /找不到可用的\s*dsh|无法启动\s*DSH|未检测到命令|dsh.*not\s*found|ENOENT.*dsh|spawn\s+dsh\s+ENOENT|command\s+not\s+found.*dsh|未安装或找不到\s*dsh/i.test(
       raw
     )
   ) {
     return {
-      category: 'codex_not_found',
-      title: '未找到本机 Codex 可执行程序',
+      category: 'dsh_not_found',
+      title: '未找到本机 DSH 可执行程序',
       explanation:
-        '系统在环境变量 PATH 中找不到 codex 命令，后台无法拉起执行 Agent 进程。',
+        '系统在环境变量 PATH 中找不到 dsh 命令，后台无法拉起 DeepSeek Harness 进程。',
       nextStep:
-        '请先在终端安装 OpenAI Codex CLI 并确认运行 `codex --version` 正常输出，或将「模型连接方式」切换为「自定义接口」。',
-      rawMessage: raw,
-    };
-  }
-
-  // 2. Codex built-in login / RPC / config failure
-  if (
-    /无法读取\s*Agent\s*自带配置|检查\s*Codex\s*登录与配置|Codex\s*RPC\s*失败|Codex\s*协议数据无效/i.test(
-      raw
-    )
-  ) {
-    return {
-      category: 'codex_auth_or_config',
-      title: 'Codex 自带登录状态或本机配置不可用',
-      explanation:
-        '当前选择了「使用 Agent 自带登录」，但本机 Codex CLI 尚未完成登录或配置文件异常。',
-      nextStep:
-        '请在终端运行 `codex` 完成账号登录，或将上方「模型连接方式」切换为「自定义接口」以直连本地网关。',
+        '请先在终端安装 DeepSeek Harness（`npm i -g @deepseek-ai/dsh`）并确认 `dsh --version` 正常输出。',
       rawMessage: raw,
     };
   }
@@ -153,7 +135,7 @@ export function mapConnectionFailure(
       explanation:
         '连接已发出但在限定时间内未收到模型返回，可能是上游推理网关负载过高、网络代理阻塞或模型冷启动过慢。',
       nextStep:
-        '请检查网络或代理链路是否顺畅，或先切换为响应更快的轻量模型（如 `remote-magpie/antigravity/gemini-3.8-flash`）后重试。',
+        '请检查网络或代理链路是否顺畅，或先切换为响应更快的轻量模型（如 `remote-magpie/auto/deepseek-v4.1-flash`）后重试。',
       rawMessage: raw,
     };
   }

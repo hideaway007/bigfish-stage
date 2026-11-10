@@ -1,6 +1,5 @@
 import type { WorkerSettings } from '../../../src/shared/settings';
 import type { WorkerAdapter } from './types';
-import { CodexAdapter } from './codex';
 import { DshAdapter } from './dsh';
 
 export class AdapterRegistry {
@@ -15,5 +14,4 @@ export class AdapterRegistry {
 }
 export const createRegistry = (home: string) => new AdapterRegistry([
   new DshAdapter(home),
-  new CodexAdapter(home),
 ]);

@@ -73,7 +73,7 @@ export async function startServer(options: ServerOptions = {}) {
   const charactersRoot = options.charactersRoot ?? join(repository, 'public/characters');
   const distRoot = options.distRoot ?? join(repository, 'dist');
   const characters = new CharacterCatalog(charactersRoot); await characters.load();
-  const registry = options.registry ?? createRegistry(join(dirname(settingsPath), 'codex'));
+  const registry = options.registry ?? createRegistry(join(dirname(settingsPath), 'worker'));
   const sockets = new Set<WebSocket>();
   const send = (socket: WebSocket, message: ServerMessage) => {
     if (socket.readyState !== WebSocket.OPEN) return;

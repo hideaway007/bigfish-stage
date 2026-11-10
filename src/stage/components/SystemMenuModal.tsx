@@ -207,7 +207,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         ? pack.recommendedModels
                         : [
                             'remote-magpie/antigravity/gemini-3.8-flash',
-                            'codex/gpt-6.1-sol',
+                            'remote-magpie/auto/deepseek-v4.1-flash',
                             'deepseek-v4-pro',
                           ];
 

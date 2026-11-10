@@ -15,7 +15,7 @@ export interface ProviderEndpoint {
 export type ModelEndpoint = ProviderEndpoint & { model: string };
 
 export interface WorkerSettings {
-  /** 执行 Agent 适配器 ID。Phase 1 只有 'codex'，以后加 'claude-code' 等 */
+  /** 执行 Agent 适配器 ID（当前为 'dsh'） */
   adapter: string;
   /** 执行 Agent 使用的模型，由用户自选（传给适配器） */
   model: string;
@@ -23,7 +23,7 @@ export interface WorkerSettings {
   connection: 'endpoint' | 'agent-default';
   endpoint: ProviderEndpoint;
   sandbox: 'read-only' | 'workspace-write';
-  /** 适配器专属的额外选项（如 codex 可执行文件路径） */
+  /** 适配器专属的额外选项（如 dsh 可执行文件路径） */
   extra?: Record<string, string>;
 }
 
@@ -74,7 +74,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   projectDir: null,
   recentProjects: [],
   worker: {
-    adapter: 'codex', model: 'gpt-6.1-sol', sandbox: 'workspace-write',
+    adapter: 'dsh', model: 'remote-magpie/auto/deepseek-v4.1-flash', sandbox: 'workspace-write',
     connection: 'endpoint', endpoint: { baseUrl: 'http://127.0.0.1:3425/v1' },
   },
   voice: {
@@ -90,7 +90,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export interface WorkerAdapterInfo {
   id: string;
   name: string;
-  /** 本机是否可用（如 codex 命令是否存在），不可用时附原因 */
+  /** 本机是否可用（如 dsh 命令是否存在），不可用时附原因 */
   available: boolean;
   unavailableReason?: string;
 }

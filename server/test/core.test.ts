@@ -9,7 +9,6 @@ import type { StageEvent } from '../../src/shared/stage-events';
 import { CharacterCatalog, findReaction } from '../src/characters';
 import { deepMerge, publicSettings, SettingsStore } from '../src/settings-store';
 import { SentenceBuffer } from '../src/text-buffer';
-import { CodexEventMapper, verifyEffectivePolicy } from '../src/adapters/codex';
 import { validOrigin } from '../src/index';
 import { eventFact, Voice } from '../src/voice/voice';
 import { parseCommand } from '../src/session';
@@ -34,53 +33,10 @@ test('文字增量：标点、空闲计时、final 刷新，无逐 token 广播'
   buffer.push('句'); buffer.flush(true); assert.deepEqual(output[2], { text: '句', final: true });
   buffer.close();
 });
-test('打断与进程异常：补齐工具、interrupted 和唯一 turn_done', () => {
-  const events: StageEvent[] = [], mapper = new CodexEventMapper(event => events.push(event));
-  mapper.begin(); mapper.translate({ method: 'item/started', params: { item: { type: 'commandExecution', id: 'cmd', command: 'test' } } });
-  mapper.end(false, 'interrupted', true); mapper.end(false, 'duplicate', true);
-  assert.deepEqual(events.map(e => e.type), ['tool_start', 'tool_end', 'interrupted', 'turn_done']);
-  assert.equal((events[1] as any).ok, false); assert.equal((events[3] as any).ok, false);
-  mapper.dispose();
-});
-test('只有 userMessage clientId 回显才确认插话；final 文字不重复', () => {
-  const events: StageEvent[] = [], mapper = new CodexEventMapper(event => events.push(event));
-  mapper.begin(); mapper.registerSteer('steer-1');
-  mapper.translate({ id: 1, result: {} }); assert.equal(events.length, 0);
-  mapper.translate({ method: 'item/started', params: { item: { type: 'userMessage', clientId: 'steer-1' } } });
-  mapper.translate({ method: 'item/agentMessage/delta', params: { itemId: 'text', delta: '好了。' } });
-  mapper.translate({ method: 'item/completed', params: { item: { type: 'agentMessage', id: 'text', text: '好了。', phase: 'final_answer' } } });
-  assert.equal(events.filter(e => e.type === 'steer_acked').length, 1);
-  assert.equal(events.filter(e => e.type === 'worker_text' && e.text).length, 1);
-  assert.ok(events.some(e => e.type === 'worker_text' && e.final)); mapper.dispose();
-});
-test('必须以回显策略为准，拒绝 never、full access、额外可写目录', () => {
-  const good = { approvalPolicy: 'on-request', sandbox: { type: 'workspaceWrite', excludeSlashTmp: true, excludeTmpdirEnvVar: true }, thread: { cwd: '/project' } };
-  assert.doesNotThrow(() => verifyEffectivePolicy(good, 'workspace-write', '/project'));
-  for (const bad of [{ ...good, approvalPolicy: 'never' }, { ...good, sandbox: { type: 'dangerFullAccess' } }, { ...good, sandbox: { ...good.sandbox, writableRoots: ['/elsewhere'] } }, { ...good, sandbox: { ...good.sandbox, excludeSlashTmp: false } }]) assert.throws(() => verifyEffectivePolicy(bad, 'workspace-write', '/project'));
-  assert.doesNotThrow(() => verifyEffectivePolicy({ approvalPolicy: 'on-request', sandbox: { type: 'readOnly' } }, 'read-only'));
-});
-test('深合并、清除密钥、PublicSettings 脱敏与 600 持久化', async () => {
-  const directory = await temporary();
-  try {
-    const path = join(directory, 'settings.json'), store = new SettingsStore(path); await store.load();
-    await store.update({ voice: { endpoint: { apiKey: 'unit-secret', model: 'test-model' } } });
-    assert.equal(store.current.voice.endpoint.baseUrl, DEFAULT_SETTINGS.voice.endpoint.baseUrl);
-    assert.equal(store.public.voice.endpoint.apiKeySet, true);
-    assert.ok(!JSON.stringify(store.public).includes('unit-secret'));
-    assert.ok(!('apiKey' in store.public.voice.endpoint));
-    assert.equal((await stat(path)).mode & 0o777, 0o600);
-    const reloaded = new SettingsStore(path); await reloaded.load(); assert.equal(reloaded.current.voice.endpoint.model, 'test-model');
-    await store.update({ voice: { endpoint: { apiKey: '' } } }); assert.equal(store.public.voice.endpoint.apiKeySet, false);
-    assert.ok(!(await readFile(path, 'utf8')).includes('unit-secret'));
-    assert.equal(({} as any).polluted, undefined);
-    deepMerge({}, JSON.parse('{"__proto__":{"polluted":true}}')); assert.equal(({} as any).polluted, undefined);
-    await assert.rejects(store.update({ voice: { endpoint: { baseUrl: 'file:///private' } } }));
-  } finally { await rm(directory, { recursive: true, force: true }); }
-});
 test('旧设置默认合并；worker Key 不进入 PublicSettings，undefined 保留而空串清除', async () => {
   const directory = await temporary(), path = join(directory, 'settings.json');
   try {
-    const legacy = { ...structuredClone(DEFAULT_SETTINGS), worker: { adapter: 'codex', model: 'legacy-model', sandbox: 'workspace-write' } };
+    const legacy = { ...structuredClone(DEFAULT_SETTINGS), worker: { adapter: 'dsh', model: 'legacy-model', sandbox: 'workspace-write' } };
     await writeFile(path, JSON.stringify(legacy));
     const store = new SettingsStore(path); await store.load();
     assert.equal(store.current.worker.connection, 'endpoint');
@@ -105,7 +61,24 @@ test('旧设置默认合并；worker Key 不进入 PublicSettings，undefined �
     await assert.rejects(store.update({ worker: { connection: 'invalid' as any } }));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
-
+test('深合并、清除密钥、PublicSettings 脱敏与 600 持久化', async () => {
+  const directory = await temporary();
+  try {
+    const path = join(directory, 'settings.json'), store = new SettingsStore(path); await store.load();
+    await store.update({ voice: { endpoint: { apiKey: 'unit-secret', model: 'test-model' } } });
+    assert.equal(store.current.voice.endpoint.baseUrl, DEFAULT_SETTINGS.voice.endpoint.baseUrl);
+    assert.equal(store.public.voice.endpoint.apiKeySet, true);
+    assert.ok(!JSON.stringify(store.public).includes('unit-secret'));
+    assert.ok(!('apiKey' in store.public.voice.endpoint));
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+    const reloaded = new SettingsStore(path); await reloaded.load(); assert.equal(reloaded.current.voice.endpoint.model, 'test-model');
+    await store.update({ voice: { endpoint: { apiKey: '' } } }); assert.equal(store.public.voice.endpoint.apiKeySet, false);
+    assert.ok(!(await readFile(path, 'utf8')).includes('unit-secret'));
+    assert.equal(({} as any).polluted, undefined);
+    deepMerge({}, JSON.parse('{"__proto__":{"polluted":true}}')); assert.equal(({} as any).polluted, undefined);
+    await assert.rejects(store.update({ voice: { endpoint: { baseUrl: 'file:///private' } } }));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 test('Origin 严格限定本机 HTTP 来源', () => {
   for (const origin of ['http://127.0.0.1:5173', 'http://localhost:5300', 'http://localhost']) assert.equal(validOrigin(origin), true, origin);
   for (const origin of [undefined, 'null', 'https://localhost:5300', 'http://localhost.evil:5300', 'http://127.0.0.2:5300', 'http://user@localhost:5300', 'http://localhost:5300/path', 'http://localhost:5300?x=1', 'http://localhost:5300#x']) assert.equal(validOrigin(origin), false, String(origin));

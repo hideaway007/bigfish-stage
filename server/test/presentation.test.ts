@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { approvalPresentation, displayCommand, displayPath, uncoveredGitDiff, unwrapShellCommand } from '../src/adapters/presentation';
-import { CodexEventMapper } from '../src/adapters/codex';
 import type { StageEvent } from '../../src/shared/stage-events';
 
 const cwd = '/private/tmp/bigfish-final/project';
@@ -73,20 +72,9 @@ test('Git 回退按完整文件段处理空格、删除、重命名与二进制�
   assert.equal(uncoveredGitDiff('', after, new Set(['my file.js', 'old.js', 'new name.js', 'image.png', 'tab\tname.js']), cwd), '');
 });
 
-test('映射卡片展示短命令和相对路径，rawName 保持原值且覆盖记录每轮清空', () => {
-  const events: StageEvent[] = [], mapper = new CodexEventMapper(e => events.push(e), cwd);
-  try {
-    mapper.begin();
-    mapper.translate({ method: 'item/started', params: { item: { type: 'commandExecution', id: 'cmd', command: "/bin/zsh -lc 'cat math.js'" } } });
-    assert.ok(events.some(e => e.type === 'tool_start' && e.summary === 'cat math.js' && e.rawName === 'commandExecution'));
-    mapper.translate({ method: 'item/completed', params: { item: { type: 'fileChange', id: 'edit', status: 'completed', changes: [
-      { path: '/tmp/bigfish-final/project/math.js', kind: { type: 'update' }, diff: '-old\n+new' },
-      { path: `${cwd}/empty.js`, kind: { type: 'update' }, diff: '' },
-    ] } } });
-    assert.ok(events.some(e => e.type === 'tool_start' && e.file === 'math.js' && e.summary === 'edit math.js' && e.rawName === 'fileChange'));
-    assert.ok(events.some(e => e.type === 'tool_end' && e.summary === 'math.js' && e.diff === '-old\n+new'));
-    assert.equal(uncoveredGitDiff('', patch('math.js') + patch('empty.js'), mapper.structuredDiffFiles, cwd), patch('empty.js'));
-    mapper.end(true, 'done'); mapper.begin();
-    assert.equal(mapper.structuredDiffFiles.size, 0);
-  } finally { mapper.dispose(); }
+test('结构化 diff 覆盖文件跳过 git 回退补全', () => {
+  const structuredDiffFiles = new Set(['math.js']);
+  assert.equal(uncoveredGitDiff('', patch('math.js') + patch('empty.js'), structuredDiffFiles, cwd), patch('empty.js'));
+  structuredDiffFiles.clear();
+  assert.equal(structuredDiffFiles.size, 0);
 });

@@ -55,21 +55,21 @@ function buildInitialPublicSettings(): PublicSettings {
 
 const DEMO_ADAPTERS: WorkerAdapterInfo[] = [
   {
-    id: 'codex',
-    name: 'OpenAI Codex (codex app-server)',
+    id: 'dsh',
+    name: 'DeepSeek Harness (DSH)',
     available: true,
   },
   {
     id: 'claude-code',
     name: 'Claude Code CLI',
     available: false,
-    unavailableReason: 'Phase 1 仅开放 Codex 适配器（接口已预留）',
+    unavailableReason: 'Phase 1 仅开放 DSH 适配器（接口已预留）',
   },
 ];
 
 const DEMO_MODELS = [
-  'codex/gpt-6.1-sol',
-  'codex/codex-mini-latest',
+  'remote-magpie/auto/deepseek-v4.1-flash',
+  'remote-magpie/devin/swe-2',
   'remote-magpie/antigravity/gemini-3.8-flash',
   'remote-magpie/antigravity/gemini-4-argon',
   'gpt-6.1-sol',

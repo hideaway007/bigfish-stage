@@ -242,8 +242,8 @@ export function createInitialStageState(
     characters: defaultChars,
     workerAdapters: [
       {
-        id: 'codex',
-        name: 'OpenAI Codex (app-server)',
+        id: 'dsh',
+        name: 'DeepSeek Harness (DSH)',
         available: true,
       },
     ],
