@@ -5,6 +5,7 @@ import {
   type ServerMessage,
 } from '../../shared/wire';
 import type { SettingsPatch } from '../../shared/settings';
+import { SessionListFeed } from './SessionListFeed';
 import { fetchCharacterPack } from '../characterLoader';
 import type {
   ConnectionStatus,
@@ -23,6 +24,9 @@ function resolveDefaultWsUrl(): string {
 export class LiveSource implements StageDataSource {
   public readonly mode = 'live' as const;
   private callbacks: StageDataSourceCallbacks;
+  private sessionList = new SessionListFeed();
+  public subscribeSessions = this.sessionList.subscribe;
+  private sessionListRequested = false;
   private wsUrl: string;
   private ws: WebSocket | null = null;
   private disposed = false;
@@ -44,29 +48,31 @@ export class LiveSource implements StageDataSource {
   public retryNow(): void {
     if (this.disposed) return;
     this.clearReconnectTimer();
-    if (this.ws) {
-      try {
-        this.ws.onclose = null;
-        this.ws.onerror = null;
-        this.ws.onmessage = null;
-        this.ws.close();
-      } catch {
-        // ignore
-      }
-      this.ws = null;
-    }
+    this.closeSocket();
     this.openSocket();
   }
 
   public dispose(): void {
     this.disposed = true;
+    this.sessionList.dispose();
     this.clearReconnectTimer();
+    this.closeSocket();
+  }
+
+  private closeSocket(): void {
     if (this.ws) {
       try {
         this.ws.onclose = null;
         this.ws.onerror = null;
         this.ws.onmessage = null;
-        this.ws.close();
+        // StrictMode 会立即清理首次连接；握手完成后再关闭，避免浏览器记录连接取消错误。
+        if (this.ws.readyState === WebSocket.CONNECTING) {
+          const pendingSocket = this.ws;
+          pendingSocket.onopen = () => pendingSocket.close();
+        } else {
+          this.ws.onopen = null;
+          this.ws.close();
+        }
       } catch {
         // ignore
       }
@@ -94,6 +100,12 @@ export class LiveSource implements StageDataSource {
       requestId,
       allowed,
     });
+  }
+
+  public listSessions(): void {
+    this.sessionListRequested = true;
+    this.sessionList.request();
+    this.sendRawCommand({ type: 'list_sessions', limit: 100 });
   }
 
   public newSession(): void {
@@ -126,11 +138,13 @@ export class LiveSource implements StageDataSource {
 
   public sendRawCommand(cmd: ClientCommand): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.callbacks.onServerMessage({
+      const error: ServerMessage = {
         type: 'command_error',
         commandType: cmd.type,
         message: '鱼塘连接未就绪，请等待重连或运行 npm run dev:server 启动本地服务',
-      });
+      };
+      this.sessionList.receive(error);
+      if (cmd.type !== 'list_sessions') this.callbacks.onServerMessage(error);
       return;
     }
     this.ws.send(JSON.stringify(cmd));
@@ -191,6 +205,11 @@ export class LiveSource implements StageDataSource {
         } else if (msg.type === 'settings' && msg.settings?.activeCharacterId) {
           void fetchCharacterPack(msg.settings.activeCharacterId);
         }
+        this.sessionList.receive(msg);
+        if ((msg.type === 'session' || msg.type === 'welcome') && this.sessionListRequested) {
+          this.listSessions();
+        }
+        if (msg.type === 'command_error' && msg.commandType === 'list_sessions') return;
         this.callbacks.onServerMessage(msg);
       } catch {
         // ignore malformed frames

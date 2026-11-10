@@ -24,20 +24,17 @@ import { CharacterRenderer } from './components/CharacterRenderer';
 import { ArchiveModal } from './components/ArchiveModal';
 import { PermissionModal } from './components/PermissionModal';
 import { BacklogModal } from './components/BacklogModal';
+import { SessionListControl } from './components/SessionListModal';
 import { EngineeringView } from './components/EngineeringView';
+import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
-import type { Emotion, ToolKind } from '../shared/stage-events';
+import { defaultCharacterLine, resolveEmotionLabel, resolveUiCopy } from './uiCopy';
+import { SwitchTransition, SfxMuteButton } from './components/SwitchTransition';
+import { playSfx } from './sfx';
+import { OnboardingCard } from './components/OnboardingCard';
+import type { ToolKind } from '../shared/stage-events';
 import type { SettingsPatch } from '../shared/settings';
 import type { ServerMessage } from '../shared/wire';
-
-const EMOTION_LABELS: Record<Emotion, { en: string; zh: string }> = {
-  idle: { en: 'IDLE', zh: '待机 · 傻敷敷' },
-  thinking: { en: 'THINKING', zh: '思考 · MAX / LOW?' },
-  working: { en: 'WORKING', zh: '行动 · 挥舞 HARNESS' },
-  happy: { en: 'HAPPY', zh: '大胜利 · 蒸汽机车!' },
-  worried: { en: 'WORRIED', zh: '慌张 · 抱箱跑路?!' },
-  shocked: { en: 'SHOCKED', zh: '决断 · 权限请求!' },
-};
 
 const HUD_STATUS_TEXT = {
   idle: { zh: '待机', en: 'STANDBY', gauge: 38 },
@@ -126,6 +123,7 @@ export const StageApp: React.FC = () => {
 
   const character = getCachedCharacterPack(state.characterId);
   const shortNickname = character.name.split('（')[0];
+  const uiCopy = resolveUiCopy(character);
   const dialogueCharacter = getCachedCharacterPack(state.currentLine?.characterId ?? state.characterId);
 
   // Connect data source on mount
@@ -248,6 +246,7 @@ export const StageApp: React.FC = () => {
 
   const handleConfirmPermission = (allowed: boolean) => {
     if (!state.pendingPermission) return;
+    playSfx(allowed ? 'allow' : 'deny');
     sourceRef.current?.decidePermission(
       state.pendingPermission.requestId,
       allowed
@@ -283,6 +282,8 @@ export const StageApp: React.FC = () => {
   // Global keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.metaKey || e.altKey || (e.ctrlKey && e.key !== 'Control') || e.repeat) return;
+      if (isTypingTarget(e.target) && e.key !== 'Escape') return;
       if (e.key === 'Control') {
         dispatch({ type: 'SET_FAST_FORWARD', fast: true });
       }
@@ -320,7 +321,7 @@ export const StageApp: React.FC = () => {
         }
       }
 
-      if (state.pendingPermission && !state.systemMenuOpen) {
+      if (state.pendingPermission && !state.systemMenuOpen && !state.backlogOpen && state.selectedToolUseId === null) {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
           e.preventDefault();
           dispatch({ type: 'SET_PERMISSION_CHOICE', choice: 'allow' });
@@ -344,7 +345,7 @@ export const StageApp: React.FC = () => {
         activeTag === 'textarea' ||
         activeTag === 'select';
 
-      if (!isTypingInInput && !state.systemMenuOpen) {
+      if (!isTypingInInput && !state.systemMenuOpen && !state.engineeringView) {
         if (e.key === 'l' || e.key === 'L') {
           e.preventDefault();
           dispatch({ type: 'TOGGLE_BACKLOG' });
@@ -380,6 +381,7 @@ export const StageApp: React.FC = () => {
 
   const handleSubmitInput = (e: React.FormEvent) => {
     e.preventDefault();
+    if (needsOnboarding) return;
     const trimmed = inputValue.trim();
 
     if (state.turnActive) {
@@ -419,7 +421,7 @@ export const StageApp: React.FC = () => {
   const idleWaitSec = (state.idleWaitMs / 1000).toFixed(1);
   const isLongWaiting = state.turnActive && state.idleWaitMs >= 15000;
   const hudStatusMeta = HUD_STATUS_TEXT[state.hudStatus];
-  const emotionMeta = EMOTION_LABELS[state.currentEmotion];
+  const emotionMeta = resolveEmotionLabel(character, state.currentEmotion);
 
   const selectedCard: SkillCardItem | null =
     state.skillCards.find((c) => c.toolUseId === state.selectedToolUseId) ??
@@ -475,11 +477,12 @@ export const StageApp: React.FC = () => {
 
   const displayedText =
     fullLineText.slice(0, typedLength) ||
-    character.persona.catchphrases[0] ||
-    '远看肥鱼大，近看大肥鱼，鱼之大，一锅炖不下～今天要炖哪个任务捏？';
+    defaultCharacterLine(character);
 
   const isDisconnected =
     sourceMode === 'live' && connStatus.state !== 'connected';
+  const needsOnboarding =
+    sourceMode === 'live' && !state.serverSettings.projectDir;
 
   const viewportStyle = {
     '--char-theme-color': character.themeColor,
@@ -543,7 +546,7 @@ export const StageApp: React.FC = () => {
         <div className="p5-topbar-left">
           <div className="p5-logo-plate">
             <span className="p5-logo-main">BIG FISH STAGE</span>
-            <span className="p5-logo-sub">大肥鱼 · 深海工作台</span>
+            <span className="p5-logo-sub">{uiCopy.stageSubtitle}</span>
           </div>
           <div
             className="p5-cwd-pill"
@@ -636,6 +639,8 @@ export const StageApp: React.FC = () => {
             <span className="kbd-tag">ESC</span> SYSTEM
           </button>
 
+          <SfxMuteButton />
+
           {sourceMode === 'demo' && (
             <button
               type="button"
@@ -701,6 +706,7 @@ export const StageApp: React.FC = () => {
           <div className="p5-hud-card" data-testid="hud-status-card">
             <div className="p5-hud-header">
               <span className="p5-hud-label">POND STATUS // 鱼塘状态</span>
+              <SessionListControl sourceRef={sourceRef} turnActive={state.turnActive} />
               <span
                 className={`p5-hud-live-dot status-${state.hudStatus}`}
               />
@@ -806,18 +812,18 @@ export const StageApp: React.FC = () => {
           <section className="p5-dialogue-section" data-testid="dialogue-layer">
             {/* Active user mission strip */}
             <div className="p5-mission-strip">
-              <span className="p5-mission-tag">FEED // 投喂指令</span>
+              <span className="p5-mission-tag">{uiCopy.inputTag}</span>
               <span className="p5-mission-text">
                 {latestUserMsg && latestUserMsg.type === 'user_message'
                   ? latestUserMsg.text
-                  : '等待店长下达第一条潜入指令……'}
+                  : `等待${uiCopy.userTitle}下达第一条任务指令……`}
               </span>
               {state.lastTurnOk !== null && !state.turnActive && (
                 <span
                   className="p5-mission-done-stamp"
                   data-testid="turn-done-badge"
                 >
-                  {state.lastTurnOk ? 'FULL! // 吃饱啦' : 'STOP // 已中止'}
+                  {state.lastTurnOk ? 'DONE // 已完成' : 'STOP // 已中止'}
                 </span>
               )}
             </div>
@@ -907,7 +913,7 @@ export const StageApp: React.FC = () => {
 
             <div className="p5-active-skills-zone">
               {/* Friendly non-scary Error Notice Banner */}
-              {state.lastError && (
+              {state.lastError && !needsOnboarding && (
                 <div
                   className="p5-error-notice-card"
                   data-testid="stage-error-banner"
@@ -1089,15 +1095,28 @@ export const StageApp: React.FC = () => {
                     )}
                   </div>
                 </div>
+              ) : needsOnboarding ? (
+                <OnboardingCard
+                  character={character}
+                  settings={state.serverSettings}
+                  workerAdapters={state.workerAdapters}
+                  lastError={state.lastError}
+                  onStartWithDir={handleStartNewSessionWithDir}
+                  onOpenSystemMenu={(tab) =>
+                    dispatch({
+                      type: 'TOGGLE_SYSTEM_MENU',
+                      open: true,
+                      tab: tab ?? 'pond',
+                    })
+                  }
+                  onDismissError={() => dispatch({ type: 'DISMISS_ERROR' })}
+                />
               ) : (
                 <div className="p5-skill-idle-stage">
                   <div className="p5-skill-placeholder">
                     <span className="p5-placeholder-star">★</span>
                     <span>
-                      待命舞台：发送右下角投喂指令后，{shortNickname}
-                      的每次工具调用将以
-                      <strong>「甩尾发动」切入卡</strong>
-                      在此演出，随后收进右侧「水花记录」条。
+                      {uiCopy.idleHint}
                     </span>
                   </div>
                 </div>
@@ -1134,17 +1153,25 @@ export const StageApp: React.FC = () => {
               <span className="p5-input-mode-tag">
                 {state.turnActive
                   ? 'SHOUT // 游动中随时喊话'
-                  : 'FEED THE FISH // 投喂大肥鱼'}
+                  : uiCopy.inputTitle}
               </span>
 
               <div className="p5-quick-chips">
-                {!state.turnActive ? (
+                {needsOnboarding ? (
+                  <span
+                    className="p5-input-onboarding-hint"
+                    data-testid="stage-input-disabled-hint"
+                  >
+                    ▲ 请先在上方引导卡选定项目文件夹后再投喂任务
+                  </span>
+                ) : !state.turnActive ? (
                   <button
                     type="button"
                     className="p5-chip-btn"
+                    data-testid="example-instruction-btn"
                     onClick={() => setInputValue(DEFAULT_FIRST_USER_PROMPT)}
                   >
-                    填入示例投喂指令
+                    填入示例任务指令
                   </button>
                 ) : (
                   <>
@@ -1179,24 +1206,28 @@ export const StageApp: React.FC = () => {
                 type="text"
                 className="p5-command-input"
                 data-testid="stage-input"
+                disabled={needsOnboarding}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder={
-                  state.turnActive
+                  needsOnboarding
+                    ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
+                    : state.turnActive
                     ? '任务进行中：输入消息并回车立即插话（触发 steer_queued -> 已传达，待接收）...'
-                    : '输入投喂任务并按 Enter 发送...'
+                    : uiCopy.inputPlaceholder
                 }
               />
               <button
                 type="submit"
                 className="p5-send-btn"
                 data-testid="stage-send-btn"
+                disabled={needsOnboarding}
               >
                 <span className="send-en">
-                  {state.turnActive ? 'SHOUT' : 'FEED'}
+                  {state.turnActive ? 'SHOUT' : 'SEND'}
                 </span>
                 <span className="send-zh">
-                  {state.turnActive ? '喊一嗓子 ▶' : '扔进鱼塘 ▶'}
+                  {state.turnActive ? '喊一嗓子 ▶' : uiCopy.sendLabel}
                 </span>
               </button>
             </form>
@@ -1270,6 +1301,23 @@ export const StageApp: React.FC = () => {
         </aside>
       </div>
 
+      <SwitchTransition
+        characterId={character.id}
+        characterSwitchKey={state.characterSwitchKey}
+        name={character.name}
+        codename={character.codename}
+        tagline={character.tagline}
+        themeColor={character.themeColor}
+        accentColor={character.accentColor}
+        portraitUrl={
+          state.characters.find((c) => c.id === character.id)?.portraitUrl
+        }
+      />
+
+      <ShortcutHelp
+        archiveAvailable={state.skillCards.length > 0 && !state.backlogOpen && !state.systemMenuOpen && !state.pendingPermission && !selectedCard}
+        onOpenArchive={() => dispatch({ type: 'SELECT_SKILL_CARD', toolUseId: state.skillCards[state.skillCards.length - 1].toolUseId })}
+      />
       {/* ── OVERLAYS: 权限选择肢 / 档案层 / BACKLOG / SYSTEM 菜单 ── */}
       <PermissionModal
         permission={state.pendingPermission}

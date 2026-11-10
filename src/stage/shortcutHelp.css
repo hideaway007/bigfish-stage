@@ -1,0 +1,14 @@
+.p5-shortcut-trigger { position: fixed; right: 18px; top: 58px; z-index: 54; padding: 5px 9px; border: 1px solid #64748b; background: #0b0f17; color: #e2e8f0; font: 11px var(--font-mono, monospace); cursor: pointer; }
+.p5-shortcut-trigger:hover, .p5-shortcut-trigger:focus-visible { border-color: #fbbf24; color: #fbbf24; }
+.p5-shortcut-backdrop { z-index: 100; color: #f8fafc; }
+.p5-shortcut-panel { width: min(650px, 92vw); max-height: 86vh; overflow-y: auto; background: #0a0a0c; border: 3px solid #f8fafc; box-shadow: 9px 9px 0 #dc2626; padding: 20px; font-family: var(--font-body, sans-serif); }
+.p5-shortcut-panel header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.p5-shortcut-panel header span { color: #f87171; font: 11px var(--font-mono, monospace); letter-spacing: 0.08em; }
+.p5-shortcut-panel h2 { margin: 5px 0; font-size: 24px; }
+.p5-shortcut-panel p { color: #94a3b8; font-size: 12px; margin-block: 12px; line-height: 1.6; }
+.p5-shortcut-panel dl { margin: 0; }
+.p5-shortcut-panel dl > div { display: grid; grid-template-columns: 170px minmax(0, 1fr); padding: 8px 0; border-top: 1px solid #334155; gap: 12px; align-items: center; }
+.p5-shortcut-panel dt { font-size: 12px; }
+.p5-shortcut-panel kbd { font-family: var(--font-mono, monospace); color: #fbbf24; }
+.p5-shortcut-panel dd { margin: 0; font-size: 13px; }
+.p5-shortcut-panel small { display: block; margin-top: 3px; color: #94a3b8; font-size: 11px; }

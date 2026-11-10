@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { playSfx } from '../sfx';
 import type { PendingPermission } from '../stageReducer';
 
 interface PermissionModalProps {
@@ -16,6 +17,18 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
   onSelectChoice,
   onConfirm,
 }) => {
+  const prevChoiceRef = useRef(selectedChoice);
+  useEffect(() => {
+    if (prevChoiceRef.current !== selectedChoice) {
+      prevChoiceRef.current = selectedChoice;
+      playSfx('select');
+    }
+  }, [selectedChoice]);
+
+  useEffect(() => {
+    if (permission) playSfx('hover');
+  }, [permission?.requestId]);
+
   if (!permission) return null;
 
   return (
@@ -66,7 +79,10 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
               className={`p5-choice-blade p5-choice-blade--allow ${
                 selectedChoice === 'allow' ? 'is-selected' : ''
               }`}
-              onMouseEnter={() => onSelectChoice('allow')}
+              onMouseEnter={() => {
+                playSfx('hover');
+                onSelectChoice('allow');
+              }}
               onClick={() => onConfirm(true)}
             >
               <span className="p5-choice-arrow">
@@ -85,7 +101,10 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
               className={`p5-choice-blade p5-choice-blade--reject ${
                 selectedChoice === 'reject' ? 'is-selected' : ''
               }`}
-              onMouseEnter={() => onSelectChoice('reject')}
+              onMouseEnter={() => {
+                playSfx('hover');
+                onSelectChoice('reject');
+              }}
               onClick={() => onConfirm(false)}
             >
               <span className="p5-choice-arrow">

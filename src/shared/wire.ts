@@ -22,6 +22,22 @@ export interface SessionInfo {
   turnActive: boolean;
 }
 
+/** 会话列表摘要；由 B 侧后续基于 DSH 原生会话等实现服务端查询。 */
+export interface SessionSummary {
+  sessionId: string;
+  /** 会话标题（通常取首条用户消息前若干字） */
+  title?: string;
+  adapter?: string;
+  model?: string;
+  cwd?: string;
+  characterId?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  turnCount?: number;
+  /** 是否是当前会话 */
+  current?: boolean;
+}
+
 // ── 网页 → 服务端 ──
 export type ClientCommand =
   | { type: 'hello'; protocolVersion: number }
@@ -34,6 +50,8 @@ export type ClientCommand =
   /** 用当前设置（projectDir / worker）开新会话 */
   | { type: 'new_session' }
   | { type: 'resume_session'; sessionId: string }
+  /** 请求历史会话；服务端查询由 B 侧后续实现。 */
+  | { type: 'list_sessions'; limit?: number }
   | { type: 'switch_character'; characterId: string }
   | { type: 'update_settings'; patch: SettingsPatch }
   /** 列出某个接口可用的模型（worker 由适配器提供；voice 调 baseUrl/models） */
@@ -56,6 +74,8 @@ export type ServerMessage =
   | { type: 'event'; event: StageEvent }
   | { type: 'settings'; settings: PublicSettings }
   | { type: 'session'; session: SessionInfo | null }
+  /** 历史会话列表；服务端由 B 侧后续接入 DSH 等会话存储。 */
+  | { type: 'sessions'; sessions: SessionSummary[]; error?: string }
   | { type: 'models'; target: 'worker' | 'voice'; models: string[]; error?: string }
   | { type: 'connection_test'; target: 'worker' | 'voice'; ok: boolean; message: string; latencyMs?: number }
   /** 某条命令无法执行（如未选项目文件夹就 send） */

@@ -1,0 +1,23 @@
+.p5-backlog-searchable { height: min(760px, 86vh); }
+.p5-backlog-searchable .p5-archive-header { flex-shrink: 0; }
+.p5-backlog-toolbar { padding: 12px 18px; background: #111827; border-bottom: 2px solid #334155; }
+.p5-backlog-search-row { display: flex; align-items: center; gap: 8px; }
+.p5-backlog-search-row input { min-width: 0; flex: 1; background: #0b0f17; color: #f8fafc; border: 1px solid #475569; padding: 9px 10px; font: inherit; font-size: 14px; }
+.p5-backlog-count { color: #cbd5e1; font: 12px var(--font-mono); white-space: nowrap; }
+.p5-backlog-searchable button:not(.p5-close-btn) { background: #1e293b; color: #e2e8f0; border: 1px solid #475569; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.p5-backlog-searchable button:not(.p5-close-btn):hover { border-color: var(--p5-yellow); }
+.p5-backlog-searchable button:disabled { opacity: 0.4; cursor: default; }
+.p5-backlog-searchable button:focus-visible, .p5-backlog-searchable input:focus-visible { outline: 2px solid var(--p5-yellow); outline-offset: 2px; }
+.p5-backlog-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.p5-backlog-filters button[aria-pressed="true"] { background: var(--p5-yellow); color: #0b0f17; border-color: var(--p5-yellow); font-weight: 900; }
+.p5-backlog-search-hint { margin: 7px 0 0; color: #94a3b8; font-size: 11px; }
+.p5-backlog-searchable .p5-backlog-list { min-height: 0; overscroll-behavior: contain; }
+.p5-backlog-searchable .p5-backlog-item { flex-shrink: 0; grid-template-columns: 156px minmax(0, 1fr) 68px; }
+.p5-backlog-content, .p5-backlog-badge { min-width: 0; overflow-wrap: anywhere; }
+.p5-backlog-searchable .p5-backlog-text, .p5-backlog-searchable .p5-backlog-mono, .p5-backlog-searchable .p5-backlog-subtext { white-space: pre-wrap; overflow-wrap: anywhere; }
+.p5-backlog-searchable .p5-backlog-item--skill { cursor: default; }
+.p5-backlog-searchable .p5-backlog-item--error { border-color: #f87171; }
+.p5-backlog-searchable mark { background: #fbbf24; color: #0b0f17; padding: 0 1px; }
+.p5-backlog-searchable mark[data-active-match="true"] { outline: 2px solid #f8fafc; background: var(--p5-red); color: #fff; }
+.p5-backlog-open-archive { margin-top: 8px; }
+.p5-backlog-empty { color: #94a3b8; padding: 24px 0; text-align: center; }

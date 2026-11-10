@@ -6,6 +6,10 @@ import type {
   WorkerAdapterInfo,
 } from '../../shared/settings';
 import { getCachedCharacterPack } from '../characterLoader';
+import { ModelPicker } from './settings/ModelPicker';
+import { ConnectionTestResult } from './settings/ConnectionTestResult';
+import { RecommendedModelChips } from './settings/RecommendedModelChips';
+import './settings/settings.css';
 import type {
   ConnectionTestState,
   ModelListState,
@@ -162,7 +166,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
         <header className="p5-system-header">
           <div className="p5-system-title-group">
             <span className="p5-system-badge">SYSTEM CONFIG // 深海控制台</span>
-            <h2 className="p5-system-title">大肥鱼工作台 · 全局设置</h2>
+            <h2 className="p5-system-title">鱼塘工作台 · 全局设置</h2>
           </div>
 
           <div className="p5-system-header-right">
@@ -284,7 +288,22 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           <p>{pack.persona.speechStyle}</p>
                         </div>
 
-                        {recModels.length > 0 && (
+                        {isCurrent && recModels.length > 0 && (
+                          <RecommendedModelChips
+                            characterId={ch.id}
+                            isCurrentCharacter
+                            recommendedModels={recModels}
+                            currentWorkerModel={settings.worker.model}
+                            currentVoiceModel={settings.voice.endpoint.model}
+                            onApplyWorkerModel={(model) =>
+                              onUpdateSettings({ worker: { model } })
+                            }
+                            onApplyVoiceModel={(model) =>
+                              onUpdateSettings({ voice: { endpoint: { model } } })
+                            }
+                          />
+                        )}
+                        {!isCurrent && recModels.length > 0 && (
                           <div className="p5-char-card-models">
                             <span className="p5-field-tag">
                               推荐搭配模型（仅提示）
@@ -473,88 +492,19 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                   )}
 
                   {/* Worker Model Input + List */}
-                  <div className="p5-form-group">
-                    <div className="p5-form-label-row">
-                      <label className="p5-form-label" htmlFor="worker-model-input">
-                        执行模型 (WORKER MODEL) — 当前服务端值：
-                        <code data-testid="worker-current-model-val">
-                          {settings.worker.model}
-                        </code>
-                      </label>
-                      <button
-                        type="button"
-                        className="p5-mini-action-btn"
-                        data-testid="worker-refresh-models-btn"
-                        onClick={() => onListModels('worker')}
-                      >
-                        {workerModels.loading ? '拉取中…' : '↻ 刷新可选模型'}
-                      </button>
-                    </div>
-
-                    <div className="p5-input-inline-row">
-                      <input
-                        id="worker-model-input"
-                        data-testid="worker-model-input"
-                        type="text"
-                        className="p5-form-input"
-                        value={workerModelDraft}
-                        onChange={(e) => setWorkerModelDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            const trimmed = workerModelDraft.trim();
-                            if (trimmed) {
-                              onUpdateSettings({ worker: { model: trimmed } });
-                            }
-                          }
-                        }}
-                        placeholder="输入模型名（如 gpt-6.1-sol）或从下方列表点选"
-                      />
-                      <button
-                        type="button"
-                        className="p5-apply-btn"
-                        data-testid="worker-model-save-btn"
-                        onClick={() => {
-                          const trimmed = workerModelDraft.trim();
-                          if (trimmed) {
-                            onUpdateSettings({ worker: { model: trimmed } });
-                          }
-                        }}
-                      >
-                        应用模型
-                      </button>
-                    </div>
-
-                    {workerModels.error && (
-                      <div className="p5-form-hint-err">
-                        模型列表获取提示：{workerModels.error}
-                      </div>
-                    )}
-
-                    {workerModels.models.length > 0 && (
-                      <div
-                        className="p5-model-select-chips"
-                        data-testid="worker-model-list"
-                      >
-                        {workerModels.models.map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            data-testid={`worker-model-option-${m}`}
-                            className={`p5-model-chip-btn ${
-                              settings.worker.model === m ? 'is-selected' : ''
-                            }`}
-                            onClick={() => {
-                              setWorkerModelDraft(m);
-                              onUpdateSettings({ worker: { model: m } });
-                            }}
-                          >
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <ModelPicker
+                    target="worker"
+                    label="执行模型 (WORKER MODEL)"
+                    currentModel={settings.worker.model}
+                    draft={workerModelDraft}
+                    onDraftChange={setWorkerModelDraft}
+                    modelList={workerModels}
+                    placeholder="输入模型名（如 gpt-6.1-sol）或从下方列表点选"
+                    onRefresh={() => onListModels('worker')}
+                    onApplyModel={(model) =>
+                      onUpdateSettings({ worker: { model } })
+                    }
+                  />
 
                   {/* Sandbox Policy */}
                   <div className="p5-form-group">
@@ -599,24 +549,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         : '⚡ 测试执行 Agent 连接'}
                     </button>
 
-                    {workerConnTest.message && (
-                      <div
-                        className={`p5-conn-result ${
-                          workerConnTest.ok ? 'is-ok' : 'is-fail'
-                        }`}
-                        data-testid="worker-conn-result"
-                      >
-                        <strong>
-                          {workerConnTest.ok ? '✓ 连接成功' : '✗ 连接失败'}
-                        </strong>
-                        <span>{workerConnTest.message}</span>
-                        {workerConnTest.latencyMs !== undefined && (
-                          <span className="p5-conn-latency">
-                            {workerConnTest.latencyMs} ms
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    <ConnectionTestResult target="worker" state={workerConnTest} />
                   </div>
                 </div>
               </div>
@@ -690,78 +623,20 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                   </div>
 
                   {/* Voice Model */}
-                  <div className="p5-form-group">
-                    <div className="p5-form-label-row">
-                      <label className="p5-form-label" htmlFor="voice-model-input">
-                        台词生成模型 (VOICE MODEL) — 当前：
-                        <code data-testid="voice-current-model-val">
-                          {settings.voice.endpoint.model}
-                        </code>
-                      </label>
-                      <button
-                        type="button"
-                        className="p5-mini-action-btn"
-                        data-testid="voice-refresh-models-btn"
-                        onClick={() => onListModels('voice')}
-                      >
-                        {voiceModels.loading ? '拉取中…' : '↻ 刷新模型列表'}
-                      </button>
-                    </div>
-
-                    <div className="p5-input-inline-row">
-                      <input
-                        id="voice-model-input"
-                        data-testid="voice-model-input"
-                        type="text"
-                        className="p5-form-input"
-                        value={voiceModelDraft}
-                        onChange={(e) => setVoiceModelDraft(e.target.value)}
-                        placeholder="remote-magpie/antigravity/gemini-3.8-flash"
-                      />
-                      <button
-                        type="button"
-                        className="p5-apply-btn"
-                        data-testid="voice-model-save-btn"
-                        onClick={() => {
-                          const trimmed = voiceModelDraft.trim();
-                          if (trimmed) {
-                            onUpdateSettings({
-                              voice: { endpoint: { model: trimmed } },
-                            });
-                          }
-                        }}
-                      >
-                        应用模型
-                      </button>
-                    </div>
-
-                    {voiceModels.models.length > 0 && (
-                      <div
-                        className="p5-model-select-chips"
-                        data-testid="voice-model-list"
-                      >
-                        {voiceModels.models.map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            className={`p5-model-chip-btn ${
-                              settings.voice.endpoint.model === m
-                                ? 'is-selected'
-                                : ''
-                            }`}
-                            onClick={() => {
-                              setVoiceModelDraft(m);
-                              onUpdateSettings({
-                                voice: { endpoint: { model: m } },
-                              });
-                            }}
-                          >
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <ModelPicker
+                    target="voice"
+                    label="台词生成模型 (VOICE MODEL)"
+                    currentModel={settings.voice.endpoint.model}
+                    draft={voiceModelDraft}
+                    onDraftChange={setVoiceModelDraft}
+                    modelList={voiceModels}
+                    placeholder="remote-magpie/antigravity/gemini-3.8-flash"
+                    refreshLabel="↻ 刷新模型列表"
+                    onRefresh={() => onListModels('voice')}
+                    onApplyModel={(model) =>
+                      onUpdateSettings({ voice: { endpoint: { model } } })
+                    }
+                  />
 
                   {/* API Key (Write-only, never read back) */}
                   <div className="p5-form-group">
@@ -872,24 +747,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         : '⚡ 测试台词模型连接'}
                     </button>
 
-                    {voiceConnTest.message && (
-                      <div
-                        className={`p5-conn-result ${
-                          voiceConnTest.ok ? 'is-ok' : 'is-fail'
-                        }`}
-                        data-testid="voice-conn-result"
-                      >
-                        <strong>
-                          {voiceConnTest.ok ? '✓ 连接成功' : '✗ 连接失败'}
-                        </strong>
-                        <span>{voiceConnTest.message}</span>
-                        {voiceConnTest.latencyMs !== undefined && (
-                          <span className="p5-conn-latency">
-                            {voiceConnTest.latencyMs} ms
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    <ConnectionTestResult target="voice" state={voiceConnTest} />
                   </div>
                 </div>
               </div>
