@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { CharacterPack } from '../../shared/character-pack';
 import type { PublicSettings, WorkerAdapterInfo } from '../../shared/settings';
 import type { StageErrorNotice, SystemMenuTab } from '../stageReducer';
@@ -31,6 +31,50 @@ export const OnboardingCard: React.FC<OnboardingCardProps> = ({
 }) => {
   const [dirDraft, setDirDraft] = useState<string>(settings.projectDir ?? '');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [defaultCwd, setDefaultCwd] = useState<string | null>(null);
+  const [browsing, setBrowsing] = useState<boolean>(false);
+
+  useEffect(() => {
+    fetch('/api/default-directory')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.ok && data.cwd) {
+          setDefaultCwd(data.cwd);
+          setDirDraft((current) => current || settings.projectDir || data.cwd);
+        }
+      })
+      .catch(() => {});
+  }, [settings.projectDir]);
+
+  const handleBrowse = async () => {
+    setBrowsing(true);
+    try {
+      const electronAPI = (window as unknown as { electronAPI?: { pickDirectory: () => Promise<string | null> } }).electronAPI;
+      if (electronAPI?.pickDirectory) {
+        const selected = await electronAPI.pickDirectory();
+        if (selected) {
+          setDirDraft(selected);
+          setLocalError(null);
+          if (lastError) onDismissError();
+        }
+        return;
+      }
+
+      const res = await fetch('/api/pick-directory', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.path) {
+          setDirDraft(data.path);
+          setLocalError(null);
+          if (lastError) onDismissError();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to pick directory:', e);
+    } finally {
+      setBrowsing(false);
+    }
+  };
 
   const shortName = character.name.split('（')[0] || character.name;
   const inCharLine = `${shortName}（${character.codename}）已就位 —— 请先选定本地项目文件夹，开启新会话！`;
@@ -212,7 +256,7 @@ export const OnboardingCard: React.FC<OnboardingCardProps> = ({
           </p>
         </div>
 
-        {/* Path Input + Start Button */}
+        {/* Path Input + Browse Button + Start Button */}
         <form className="p5-onboard-form" onSubmit={handleSubmit}>
           <input
             type="text"
@@ -243,6 +287,16 @@ export const OnboardingCard: React.FC<OnboardingCardProps> = ({
             placeholder="/tmp/my-project（输入本地项目文件夹绝对路径）"
             aria-label="项目文件夹绝对路径"
           />
+          <button
+            type="button"
+            className="p5-onboard-browse-btn"
+            data-testid="onboarding-browse-btn"
+            onClick={handleBrowse}
+            disabled={browsing}
+            title="点击唤起系统文件夹选择器直接点选"
+          >
+            {browsing ? '⏳ 唤起中...' : '📁 浏览...'}
+          </button>
           <button
             type="submit"
             className="p5-onboard-start-btn"
@@ -291,27 +345,42 @@ export const OnboardingCard: React.FC<OnboardingCardProps> = ({
           data-testid="onboarding-recent-list"
         >
           <span className="p5-onboard-recent-label">
-            最近项目 (RECENT) //
+            快捷与最近项目 //
           </span>
-          {settings.recentProjects.length > 0 ? (
-            settings.recentProjects.map((dir, idx) => (
-              <button
-                key={dir}
-                type="button"
-                className={`p5-onboard-chip ${
-                  trimmed === dir ? 'is-selected' : ''
-                }`}
-                data-testid={`onboarding-recent-chip-${idx}`}
-                onClick={() => handlePickRecent(dir)}
-              >
-                {dir}
-              </button>
-            ))
-          ) : (
-            <span className="p5-onboard-hint hint-neutral">
-              暂无最近项目记录，请在上方输入绝对路径
-            </span>
+          {defaultCwd && (
+            <button
+              type="button"
+              className={`p5-onboard-chip ${
+                trimmed === defaultCwd ? 'is-selected' : ''
+              }`}
+              style={{ borderColor: 'var(--p5-yellow)', color: 'var(--p5-yellow)' }}
+              onClick={() => handlePickRecent(defaultCwd)}
+              title="点击快速选中当前项目仓库"
+            >
+              ⚡ 本项目: {defaultCwd.split('/').pop()}
+            </button>
           )}
+          {settings.recentProjects.length > 0 ? (
+            settings.recentProjects
+              .filter((dir) => dir !== defaultCwd)
+              .map((dir, idx) => (
+                <button
+                  key={dir}
+                  type="button"
+                  className={`p5-onboard-chip ${
+                    trimmed === dir ? 'is-selected' : ''
+                  }`}
+                  data-testid={`onboarding-recent-chip-${idx}`}
+                  onClick={() => handlePickRecent(dir)}
+                >
+                  {dir}
+                </button>
+              ))
+          ) : !defaultCwd ? (
+            <span className="p5-onboard-hint hint-neutral">
+              暂无最近项目记录，可点击上方「📁 浏览...」直接选择
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
