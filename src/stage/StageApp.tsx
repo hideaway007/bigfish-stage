@@ -28,21 +28,13 @@ import { SessionListControl } from './components/SessionListModal';
 import { EngineeringView } from './components/EngineeringView';
 import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
+import { defaultCharacterLine, resolveEmotionLabel, resolveUiCopy } from './uiCopy';
 import { SwitchTransition, SfxMuteButton } from './components/SwitchTransition';
 import { playSfx } from './sfx';
 import { OnboardingCard } from './components/OnboardingCard';
-import type { Emotion, ToolKind } from '../shared/stage-events';
+import type { ToolKind } from '../shared/stage-events';
 import type { SettingsPatch } from '../shared/settings';
 import type { ServerMessage } from '../shared/wire';
-
-const EMOTION_LABELS: Record<Emotion, { en: string; zh: string }> = {
-  idle: { en: 'IDLE', zh: '待机 · 傻敷敷' },
-  thinking: { en: 'THINKING', zh: '思考 · MAX / LOW?' },
-  working: { en: 'WORKING', zh: '行动 · 挥舞 HARNESS' },
-  happy: { en: 'HAPPY', zh: '大胜利 · 蒸汽机车!' },
-  worried: { en: 'WORRIED', zh: '慌张 · 抱箱跑路?!' },
-  shocked: { en: 'SHOCKED', zh: '决断 · 权限请求!' },
-};
 
 const HUD_STATUS_TEXT = {
   idle: { zh: '待机', en: 'STANDBY', gauge: 38 },
@@ -131,6 +123,7 @@ export const StageApp: React.FC = () => {
 
   const character = getCachedCharacterPack(state.characterId);
   const shortNickname = character.name.split('（')[0];
+  const uiCopy = resolveUiCopy(character);
   const dialogueCharacter = getCachedCharacterPack(state.currentLine?.characterId ?? state.characterId);
 
   // Connect data source on mount
@@ -428,7 +421,7 @@ export const StageApp: React.FC = () => {
   const idleWaitSec = (state.idleWaitMs / 1000).toFixed(1);
   const isLongWaiting = state.turnActive && state.idleWaitMs >= 15000;
   const hudStatusMeta = HUD_STATUS_TEXT[state.hudStatus];
-  const emotionMeta = EMOTION_LABELS[state.currentEmotion];
+  const emotionMeta = resolveEmotionLabel(character, state.currentEmotion);
 
   const selectedCard: SkillCardItem | null =
     state.skillCards.find((c) => c.toolUseId === state.selectedToolUseId) ??
@@ -484,8 +477,7 @@ export const StageApp: React.FC = () => {
 
   const displayedText =
     fullLineText.slice(0, typedLength) ||
-    character.persona.catchphrases[0] ||
-    '远看肥鱼大，近看大肥鱼，鱼之大，一锅炖不下～今天要炖哪个任务捏？';
+    defaultCharacterLine(character);
 
   const isDisconnected =
     sourceMode === 'live' && connStatus.state !== 'connected';
@@ -554,7 +546,7 @@ export const StageApp: React.FC = () => {
         <div className="p5-topbar-left">
           <div className="p5-logo-plate">
             <span className="p5-logo-main">BIG FISH STAGE</span>
-            <span className="p5-logo-sub">大肥鱼 · 深海工作台</span>
+            <span className="p5-logo-sub">{uiCopy.stageSubtitle}</span>
           </div>
           <div
             className="p5-cwd-pill"
@@ -819,18 +811,18 @@ export const StageApp: React.FC = () => {
           <section className="p5-dialogue-section" data-testid="dialogue-layer">
             {/* Active user mission strip */}
             <div className="p5-mission-strip">
-              <span className="p5-mission-tag">FEED // 投喂指令</span>
+              <span className="p5-mission-tag">{uiCopy.inputTag}</span>
               <span className="p5-mission-text">
                 {latestUserMsg && latestUserMsg.type === 'user_message'
                   ? latestUserMsg.text
-                  : '等待店长下达第一条潜入指令……'}
+                  : `等待${uiCopy.userTitle}下达第一条任务指令……`}
               </span>
               {state.lastTurnOk !== null && !state.turnActive && (
                 <span
                   className="p5-mission-done-stamp"
                   data-testid="turn-done-badge"
                 >
-                  {state.lastTurnOk ? 'FULL! // 吃饱啦' : 'STOP // 已中止'}
+                  {state.lastTurnOk ? 'DONE // 已完成' : 'STOP // 已中止'}
                 </span>
               )}
             </div>
@@ -1123,10 +1115,7 @@ export const StageApp: React.FC = () => {
                   <div className="p5-skill-placeholder">
                     <span className="p5-placeholder-star">★</span>
                     <span>
-                      待命舞台：发送右下角投喂指令后，{shortNickname}
-                      的每次工具调用将以
-                      <strong>「甩尾发动」切入卡</strong>
-                      在此演出，随后收进右侧「水花记录」条。
+                      {uiCopy.idleHint}
                     </span>
                   </div>
                 </div>
@@ -1163,7 +1152,7 @@ export const StageApp: React.FC = () => {
               <span className="p5-input-mode-tag">
                 {state.turnActive
                   ? 'SHOUT // 游动中随时喊话'
-                  : 'FEED THE FISH // 投喂大肥鱼'}
+                  : uiCopy.inputTitle}
               </span>
 
               <div className="p5-quick-chips">
@@ -1178,9 +1167,10 @@ export const StageApp: React.FC = () => {
                   <button
                     type="button"
                     className="p5-chip-btn"
+                    data-testid="example-instruction-btn"
                     onClick={() => setInputValue(DEFAULT_FIRST_USER_PROMPT)}
                   >
-                    填入示例投喂指令
+                    填入示例任务指令
                   </button>
                 ) : (
                   <>
@@ -1223,7 +1213,7 @@ export const StageApp: React.FC = () => {
                     ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
                     : state.turnActive
                     ? '任务进行中：输入消息并回车立即插话（触发 steer_queued -> 已传达，待接收）...'
-                    : '输入投喂任务并按 Enter 发送...'
+                    : uiCopy.inputPlaceholder
                 }
               />
               <button
@@ -1233,10 +1223,10 @@ export const StageApp: React.FC = () => {
                 disabled={needsOnboarding}
               >
                 <span className="send-en">
-                  {state.turnActive ? 'SHOUT' : 'FEED'}
+                  {state.turnActive ? 'SHOUT' : 'SEND'}
                 </span>
                 <span className="send-zh">
-                  {state.turnActive ? '喊一嗓子 ▶' : '扔进鱼塘 ▶'}
+                  {state.turnActive ? '喊一嗓子 ▶' : uiCopy.sendLabel}
                 </span>
               </button>
             </form>

@@ -1,4 +1,5 @@
 import type { StageEvent } from '../shared/stage-events';
+import { defaultCharacterLine, resolveUiCopy } from '../stage/uiCopy';
 import {
   DEFAULT_CHARACTER_ID,
   getCachedCharacterPack,
@@ -46,7 +47,7 @@ export function buildInitialBootEvents(
       emotion: bootReaction?.emotion ?? 'idle',
       text:
         bootReaction?.text ??
-        '远看肥鱼大，近看大肥鱼，鱼之大，一锅炖不下～今天要炖哪个任务捏？',
+        defaultCharacterLine(pack),
     },
   ];
 }
@@ -219,7 +220,7 @@ export function buildPrePermissionSteps(
         emotion: startReaction?.emotion ?? 'thinking',
         text:
           startReaction?.text ??
-          '（左手举起 max 牌子，右手举起 low 牌子，歪着脑袋一脸懵……）收到指令捏！',
+          '收到任务，先检查相关文件。',
       },
     },
     {
@@ -277,7 +278,7 @@ export function buildPrePermissionSteps(
         emotion: editReaction?.emotion ?? 'working',
         text:
           editReaction?.text ??
-          '如何使用 V4 Pro？很简单！首先，握住 Harness 娘，然后用力挥舞吧！',
+          '正在修改相关代码。',
       },
     },
     {
@@ -307,7 +308,7 @@ export function buildPrePermissionSteps(
         emotion: permReaction?.emotion ?? 'shocked',
         text:
           permReaction?.text ??
-          '店长店长！前面要跑终端命令了捏，快帮大肥鱼拍板：到底是【允许】还是【拒绝】捏？',
+          `即将运行终端命令，请${resolveUiCopy(pack).userTitle}确认允许或拒绝。`,
       },
     },
     {
@@ -384,7 +385,7 @@ export function buildAllowBranchSteps(
         emotion: failReaction?.emotion ?? 'worried',
         text:
           failReaction?.text ??
-          '呜哇，报错了捏……1 个测试挂掉了，我先抱起纸箱收拾东西跑路了捏！',
+          '有 1 项测试未通过，继续检查并修复。',
       },
     },
     {
@@ -453,7 +454,7 @@ export function buildAllowBranchSteps(
         emotion: doneReaction?.emotion ?? 'happy',
         text:
           doneReaction?.text ??
-          '搞定啦！3 个测试全部绿灯通过，不管怎么说，小鲸鱼是没有错的捏！',
+          '修改完成，3 项测试全部通过。',
       },
     },
     {
@@ -508,10 +509,8 @@ export function buildRejectBranchSteps(
         characterId,
         emotion: 'worried',
         text:
-          characterId === 'deepseek-v4-pro'
-            ? '唔……明白捏！既然店长拒绝了终端权限，那大肥鱼就乖乖放下 Harness 娘、不跑 `npm test -- Login` 啦。不过登录页按钮的主题色已经改好保存了捏！'
-            : rejectReaction?.text ??
-              '明白，已按店长要求跳过终端测试，代码修改已妥善保存。',
+          rejectReaction?.text ??
+          '明白，已按要求跳过终端测试，代码修改已妥善保存。',
       },
     },
     {
