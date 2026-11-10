@@ -31,7 +31,7 @@
 ## 协作规则（所有 Agent 必须遵守）
 
 1. **只改自己目录下的文件**。A 不碰 `bridge/`，B 不碰 `src/`（只读 import 除外）。两边都不要改 `docs/DESIGN.md`、`src/characters/roster.ts`。
-2. 从 `main` 切出自己的分支开发，完成后推送分支并开 PR，**不要直接推 `main`**，不要 force push。A、B 同时进行时**各用独立的工作目录**（`git worktree add ../p5-task-a -b task-a-prototype` 或单独 clone），不要两个 Agent 共用一个目录来回切分支。
+2. 从 `main` 切出自己的分支开发，完成后推送分支并开 PR，**不要直接推 `main`**，不要 force push。A、B 同时进行时**各用独立的工作目录**（`git worktree add .worktrees/task-a -b task-a-prototype`，统一放在仓库内的 `.worktrees/` 下，禁止用 `../` 建到桌面），不要两个 Agent 共用一个目录来回切分支。
 3. 仓库是**公开**的：不提交任何密钥、token、账号信息、个人路径以外的隐私数据；不提交第三方游戏素材或他人美术作品。
 4. 完成后在 `docs/tasks/reports/` 下写报告（各任务书里有格式要求）。报告要如实：没做完、没验证、有疑问的地方直接写出来。
 5. 不确定的产品问题不要自己拍板，记进报告的「待确认」一节。

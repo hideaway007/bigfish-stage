@@ -77,6 +77,20 @@ export type StageEvent = Base &
       }
     | { type: 'error'; message: string }
 
+    // ── DSH 扩展特性：上下文警戒槽 (Context Meter) 与 记忆凝炼压缩 (Compaction) ──
+    | {
+        type: 'context_usage';
+        usedTokens: number;
+        maxTokens: number;
+      }
+    | {
+        type: 'context_compacted';
+        turnsCompacted: number;
+        freedTokens: number;
+        afterTokens?: number;
+        summary?: string;
+      }
+
     // ── 前台角色（任务 A 手写；以后由前台人设模型生成，B 不产生）──
     | {
         type: 'character_line';
