@@ -26,7 +26,7 @@ import { PermissionModal } from './components/PermissionModal';
 import { BacklogModal } from './components/BacklogModal';
 import { SessionListControl } from './components/SessionListModal';
 import { EngineeringView } from './components/EngineeringView';
-import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
+import { isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
 import { defaultCharacterLine, resolveEmotionLabel, resolveUiCopy } from './uiCopy';
 import { SwitchTransition, SfxMuteButton } from './components/SwitchTransition';
@@ -38,7 +38,7 @@ import type { ServerMessage } from '../shared/wire';
 
 const HUD_STATUS_TEXT = {
   idle: { zh: '待机', en: 'STANDBY', gauge: 38 },
-  thinking: { zh: '思考', en: 'THINKING', gauge: 72 },
+  thinking: { zh: '思考中', en: 'THINKING', gauge: 72 },
   acting: { zh: '行动中', en: 'IN ACTION', gauge: 100 },
 } as const;
 
@@ -50,7 +50,7 @@ const TOOL_DISPLAY_LABELS: Record<ToolKind, string> = {
   search: 'SEARCH',
   web: 'WEB',
   task: 'TASK',
-  other: 'OTHER · 通用水花',
+  other: 'TOOL',
 };
 
 function detectSourceMode(): DataSourceMode {
@@ -62,19 +62,21 @@ function detectSourceMode(): DataSourceMode {
   return 'live';
 }
 
-function formatSkillHeader(
-  charName: string,
-  tool: ToolKind,
-  fileOrSummary: string,
-  diffStats?: { added: number; removed: number }
-): string {
-  const shortName = charName.split('（')[0];
-  const toolTag = TOOL_DISPLAY_LABELS[tool] ?? tool.toUpperCase();
-  const base = `${shortName} 发动 ${toolTag} ▶ ${fileOrSummary}`;
-  if (diffStats) {
-    return `${base} +${diffStats.added} −${diffStats.removed}`;
+function extractInlineDiffLines(diff?: string): { kind: 'add' | 'del'; text: string }[] {
+  if (!diff) return [];
+  const rows: { kind: 'add' | 'del'; text: string }[] = [];
+  for (const raw of diff.split('\n')) {
+    if (raw.startsWith('+++') || raw.startsWith('---') || raw.startsWith('@@')) {
+      continue;
+    }
+    if (raw.startsWith('+')) {
+      rows.push({ kind: 'add', text: raw });
+    } else if (raw.startsWith('-')) {
+      rows.push({ kind: 'del', text: raw });
+    }
+    if (rows.length >= 4) break;
   }
-  return base;
+  return rows;
 }
 
 export const StageApp: React.FC = () => {
@@ -106,6 +108,24 @@ export const StageApp: React.FC = () => {
   );
   const [typedLength, setTypedLength] = useState<number>(0);
   const [fadeReplaceKey, setFadeReplaceKey] = useState<number>(0);
+  const [inlinePreviewId, setInlinePreviewId] = useState<string | null>(null);
+  const [contextTokens, setContextTokens] = useState<{
+    used: number;
+    max: number;
+  }>({ used: 45000, max: 1000000 });
+  const [compactionState, setCompactionState] = useState<{
+    activeCutin: boolean;
+    turnsCompacted: number;
+    freedTokens: number;
+    summaryText: string;
+    compactedAt: number | null;
+  }>({
+    activeCutin: false,
+    turnsCompacted: 10,
+    freedTokens: 80000,
+    summaryText: '已将前 10 轮历史压缩为摘要卡，释放 80,000 Tokens！',
+    compactedAt: null,
+  });
 
   const sourceRef = useRef<StageDataSource | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -124,7 +144,9 @@ export const StageApp: React.FC = () => {
   const character = getCachedCharacterPack(state.characterId);
   const shortNickname = character.name.split('（')[0];
   const uiCopy = resolveUiCopy(character);
-  const dialogueCharacter = getCachedCharacterPack(state.currentLine?.characterId ?? state.characterId);
+  const dialogueCharacter = getCachedCharacterPack(
+    state.currentLine?.characterId ?? state.characterId
+  );
 
   // Connect data source on mount
   useEffect(() => {
@@ -160,7 +182,82 @@ export const StageApp: React.FC = () => {
     sourceRef.current?.setFastForward?.(state.fastForward);
   }, [state.fastForward]);
 
-  // Schedule auto-collapse of finished skill cards into the side Action Log after ~2.6s
+  // Auto-select latest card with diff for inline preview & sync DSH context/compaction events
+  useEffect(() => {
+    const latestDiffCard = [...state.skillCards]
+      .reverse()
+      .find((c) => Boolean(c.diff));
+    if (latestDiffCard) {
+      setInlinePreviewId(latestDiffCard.toolUseId);
+    } else if (state.skillCards.length === 0) {
+      setInlinePreviewId(null);
+    }
+  }, [state.skillCards]);
+
+  useEffect(() => {
+    if (state.events.length === 0) return;
+    const lastEv = state.events[state.events.length - 1];
+    if (lastEv.type === 'context_usage') {
+      setContextTokens({
+        used: lastEv.usedTokens,
+        max: lastEv.maxTokens || 1000000,
+      });
+    } else if (lastEv.type === 'context_compacted') {
+      const msg =
+        lastEv.summary ||
+        `已成功将前 ${lastEv.turnsCompacted} 轮历史压缩为摘要卡，释放 ${lastEv.freedTokens.toLocaleString()} Tokens！`;
+      setCompactionState({
+        activeCutin: true,
+        turnsCompacted: lastEv.turnsCompacted,
+        freedTokens: lastEv.freedTokens,
+        summaryText: msg,
+        compactedAt: Date.now(),
+      });
+      setContextTokens((prev) => ({
+        used:
+          lastEv.afterTokens ??
+          Math.max(18000, prev.used - lastEv.freedTokens),
+        max: prev.max,
+      }));
+    } else {
+      // Estimate realistic token growth from trajectory events when backend hasn't sent explicit context_usage yet
+      const baseTokens = 45000;
+      const dynamicTokens =
+        baseTokens +
+        state.skillCards.length * 14500 +
+        state.events.length * 1200 -
+        (compactionState.compactedAt ? compactionState.freedTokens : 0);
+      setContextTokens((prev) => ({
+        used: Math.max(18000, Math.min(prev.max, dynamicTokens)),
+        max: prev.max,
+      }));
+    }
+  }, [state.events, state.skillCards.length, compactionState.compactedAt, compactionState.freedTokens]);
+
+  useEffect(() => {
+    if (!compactionState.activeCutin) return;
+    const tId = window.setTimeout(() => {
+      setCompactionState((prev) => ({ ...prev, activeCutin: false }));
+    }, 2800);
+    return () => window.clearTimeout(tId);
+  }, [compactionState.activeCutin]);
+
+  const handleTriggerCompactionDemo = () => {
+    playSfx('allow');
+    setCompactionState({
+      activeCutin: true,
+      turnsCompacted: 10,
+      freedTokens: 80000,
+      summaryText: '已成功将前 10 轮历史压缩为摘要卡，释放 80,000 Tokens！',
+      compactedAt: Date.now(),
+    });
+    setContextTokens((prev) => ({
+      used: Math.max(24000, prev.used > 90000 ? prev.used - 80000 : 45000),
+      max: prev.max,
+    }));
+  };
+
+  // Schedule auto-collapse of finished skill cards after ~2.6s
   useEffect(() => {
     for (const card of state.skillCards) {
       if (
@@ -199,10 +296,8 @@ export const StageApp: React.FC = () => {
 
     if (isInPlaceReplace) {
       if (prev.wasTyping) {
-        // Was still typing when replaced -> re-type from the beginning
         setTypedLength(0);
       } else {
-        // Was already fully displayed -> show full replaced text with fade-in
         setTypedLength(fullLineText.length);
         setFadeReplaceKey((k) => k + 1);
       }
@@ -217,13 +312,11 @@ export const StageApp: React.FC = () => {
     };
   }, [currentLineKey, currentReplaceVersion, fullLineText]);
 
-  // Keep track of whether typewriter is still in progress
   const isTypingLine = typedLength < fullLineText.length;
   useEffect(() => {
     prevLineTrackRef.current.wasTyping = isTypingLine;
   }, [isTypingLine]);
 
-  // Advance typewriter characters using settings.performance.typingCharsPerSec
   const typingCharsPerSec =
     state.serverSettings?.performance?.typingCharsPerSec || 40;
 
@@ -282,7 +375,15 @@ export const StageApp: React.FC = () => {
   // Global keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing || e.metaKey || e.altKey || (e.ctrlKey && e.key !== 'Control') || e.repeat) return;
+      if (
+        e.defaultPrevented ||
+        e.isComposing ||
+        e.metaKey ||
+        e.altKey ||
+        (e.ctrlKey && e.key !== 'Control') ||
+        e.repeat
+      )
+        return;
       if (isTypingTarget(e.target) && e.key !== 'Escape') return;
       if (e.key === 'Control') {
         dispatch({ type: 'SET_FAST_FORWARD', fast: true });
@@ -297,7 +398,6 @@ export const StageApp: React.FC = () => {
         }
       }
 
-      // Escape: close active modal, or open SYSTEM menu when no other modal is open
       if (e.key === 'Escape') {
         if (state.selectedToolUseId !== null) {
           e.preventDefault();
@@ -321,7 +421,12 @@ export const StageApp: React.FC = () => {
         }
       }
 
-      if (state.pendingPermission && !state.systemMenuOpen && !state.backlogOpen && state.selectedToolUseId === null) {
+      if (
+        state.pendingPermission &&
+        !state.systemMenuOpen &&
+        !state.backlogOpen &&
+        state.selectedToolUseId === null
+      ) {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
           e.preventDefault();
           dispatch({ type: 'SET_PERMISSION_CHOICE', choice: 'allow' });
@@ -350,6 +455,16 @@ export const StageApp: React.FC = () => {
           e.preventDefault();
           dispatch({ type: 'TOGGLE_BACKLOG' });
           return;
+        }
+        if (e.key === 'o' || e.key === 'O') {
+          if (state.skillCards.length > 0 && !selectedCard) {
+            e.preventDefault();
+            dispatch({
+              type: 'SELECT_SKILL_CARD',
+              toolUseId: state.skillCards[state.skillCards.length - 1].toolUseId,
+            });
+            return;
+          }
         }
         if (e.key === ' ') {
           e.preventDefault();
@@ -427,17 +542,29 @@ export const StageApp: React.FC = () => {
     state.skillCards.find((c) => c.toolUseId === state.selectedToolUseId) ??
     null;
 
-  const stageSkillCards = state.skillCards.filter((c) => !c.collapsedToLog);
-
   const latestUserMsg = [...state.events]
     .reverse()
     .find((ev) => ev.type === 'user_message');
 
-  // Compute Turn Summary statistics for the post-turn report card
+  const latestWorkerFinal = [...state.events]
+    .reverse()
+    .find((ev) => ev.type === 'worker_text');
+
+  const usedK = Math.round(contextTokens.used / 1000);
+  const maxK = Math.round(contextTokens.max / 1000);
+  const contextPercent = Math.min(
+    100,
+    Math.max(4, Math.round((contextTokens.used / contextTokens.max) * 100))
+  );
+
   const touchedFiles = Array.from(
     new Set(
       state.skillCards
-        .map((c) => c.file || (c.tool === 'edit' || c.tool === 'write' ? c.summary : undefined))
+        .map(
+          (c) =>
+            c.file ||
+            (c.tool === 'edit' || c.tool === 'write' ? c.summary : undefined)
+        )
         .filter((f): f is string => Boolean(f))
     )
   );
@@ -452,7 +579,6 @@ export const StageApp: React.FC = () => {
     { added: 0, removed: 0 }
   );
 
-  // If Engineering View is active, render plain developer timeline
   if (state.engineeringView) {
     return (
       <EngineeringView
@@ -476,13 +602,18 @@ export const StageApp: React.FC = () => {
   }
 
   const displayedText =
-    fullLineText.slice(0, typedLength) ||
-    defaultCharacterLine(character);
+    fullLineText.slice(0, typedLength) || defaultCharacterLine(character);
 
   const isDisconnected =
     sourceMode === 'live' && connStatus.state !== 'connected';
   const needsOnboarding =
     sourceMode === 'live' && !state.serverSettings.projectDir;
+
+  const backlogCount = state.events.filter((e) =>
+    ['user_message', 'character_line', 'tool_start', 'worker_text'].includes(
+      e.type
+    )
+  ).length;
 
   const viewportStyle = {
     '--char-theme-color': character.themeColor,
@@ -496,10 +627,14 @@ export const StageApp: React.FC = () => {
       data-active-character={character.id}
       style={viewportStyle}
     >
-      {/* Background comic rays & halftone textures */}
+      {/* ── P5X GEOMETRIC STAGE BACKDROP LAYERS ── */}
+      <div className="p5-bg-crimson-wedge" aria-hidden="true" />
       <div className="p5-bg-halftone" aria-hidden="true" />
-      <div className="p5-bg-slash-red" aria-hidden="true" />
-      <div className="p5-bg-slash-black" aria-hidden="true" />
+      <div className="p5-bg-right-red-corner" aria-hidden="true" />
+      <div className="p5-bg-right-halftone" aria-hidden="true" />
+      <div className="p5-bg-vertical-watermark" aria-hidden="true">
+        CHARACTER
+      </div>
 
       {/* ── DISCONNECT / RECONNECT BANNER (LiveSource) ── */}
       {isDisconnected && (
@@ -510,13 +645,11 @@ export const StageApp: React.FC = () => {
         >
           <div className="p5-disconnect-left">
             <span className="p5-disconnect-badge">OFFLINE // 信号中断</span>
-            <strong className="p5-disconnect-title">
-              鱼塘断线，重连中…
-            </strong>
+            <strong className="p5-disconnect-title">鱼塘断线，重连中…</strong>
             <span className="p5-disconnect-detail">
               {connStatus.hasEverConnected
-                ? `正在进行第 ${connStatus.attempt} 次指数退避重连（重连后由 welcome.history 自动恢复）— 若服务已停止请运行：`
-                : `尚未连上本地服务（第 ${Math.max(1, connStatus.attempt)} 次尝试）— 请启动本地服务：`}
+                ? `正在第 ${connStatus.attempt} 次重连 — 若服务已停止请运行：`
+                : `尚未连上本地服务（第 ${Math.max(1, connStatus.attempt)} 次尝试）— 请启动服务：`}
             </span>
             <code className="p5-disconnect-cmd">npm run dev:server</code>
           </div>
@@ -541,130 +674,45 @@ export const StageApp: React.FC = () => {
         </div>
       )}
 
-      {/* ── TOP COMMAND & HOTKEY RIBBON ── */}
-      <header className="p5-topbar">
-        <div className="p5-topbar-left">
-          <div className="p5-logo-plate">
-            <span className="p5-logo-main">BIG FISH STAGE</span>
-            <span className="p5-logo-sub">{uiCopy.stageSubtitle}</span>
-          </div>
-          <div
-            className="p5-cwd-pill"
-            title={state.cwd}
-            onClick={() =>
-              dispatch({
-                type: 'TOGGLE_SYSTEM_MENU',
-                open: true,
-                tab: 'pond',
-              })
-            }
-          >
-            <span className="p5-cwd-prefix">鱼塘 //</span> {state.cwd}
-          </div>
-          <span
-            className={`p5-mode-pill mode-${sourceMode}`}
-            data-testid="data-source-badge"
-          >
-            {sourceMode === 'demo' ? 'DEMO // 剧本模式' : 'LIVE // 实时鱼塘'}
-          </span>
-        </div>
-
-        <div className="p5-topbar-right">
-          <button
-            type="button"
-            className={`p5-top-btn ${state.fastForward ? 'is-active-ff' : ''}`}
-            onClick={() =>
-              dispatch({
-                type: 'SET_FAST_FORWARD',
-                fast: !state.fastForward,
-              })
-            }
-            data-testid="fast-forward-btn"
-            title="按住 Ctrl 快进演出（也可点击切换）"
-          >
-            <span className="kbd-tag">CTRL</span>{' '}
-            {state.fastForward ? '>> 快进中' : '快进'}
-          </button>
-
-          <button
-            type="button"
-            className="p5-top-btn"
-            onClick={skipTypewriter}
-            data-testid="skip-line-btn"
-            title="按 Space 或点击对话框立即显示整句"
-          >
-            <span className="kbd-tag">SPACE</span> 跳过打字
-          </button>
-
-          <button
-            type="button"
-            className="p5-top-btn"
-            onClick={() => dispatch({ type: 'TOGGLE_BACKLOG' })}
-            data-testid="backlog-open-btn"
-          >
-            <span className="kbd-tag">L</span> 回看 (
-            {
-              state.events.filter((e) =>
-                [
-                  'user_message',
-                  'character_line',
-                  'tool_start',
-                  'worker_text',
-                ].includes(e.type)
-              ).length
-            }
-            )
-          </button>
-
-          <button
-            type="button"
-            className="p5-top-btn p5-top-btn--eng"
-            onClick={() => dispatch({ type: 'TOGGLE_ENGINEERING_VIEW' })}
-            data-testid="engineering-view-btn"
-          >
-            <span className="kbd-tag">`</span> 工程视图
-          </button>
-
-          <button
-            type="button"
-            className="p5-top-btn p5-top-btn--system"
-            onClick={() =>
-              dispatch({
-                type: 'TOGGLE_SYSTEM_MENU',
-                open: !state.systemMenuOpen,
-              })
-            }
-            data-testid="system-menu-btn"
-          >
-            <span className="kbd-tag">ESC</span> SYSTEM
-          </button>
-
-          <SfxMuteButton />
-
-          {sourceMode === 'demo' && (
-            <button
-              type="button"
-              className="p5-top-btn p5-top-btn--replay"
-              onClick={handleReplayOrNewSession}
-              data-testid="replay-script-btn"
-            >
-              ↻ 重播剧本
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* ── MAIN 3-COLUMN STAGE GRID ── */}
+      {/* ── MAIN 2-ZONE P5X STAGE (LEFT CHARACTER STAGE / RIGHT WORKSPACE) ── */}
       <div className="p5-main-grid">
-        {/* ══ LEFT COLUMN: CHARACTER PORTRAIT + HUD STATUS CARD + PARTY BAR ══ */}
+        {/* ══ LEFT ZONE: P5X BREAK-THE-FRAME CHARACTER STAGE + INTEGRATED HUD ══ */}
         <aside className="p5-left-column" data-testid="hud-layer">
-          {/* Character Portrait Frame */}
+          {/* Top Brand & Live Connection Pill */}
+          <div className="p5-brand-strip">
+            <div className="p5-brand-tag">P5 AGENT STAGE</div>
+            <div
+              className={`p5-live-pill mode-${sourceMode}`}
+              data-testid="data-source-badge"
+            >
+              <span
+                className={`p5-live-dot status-${state.hudStatus}`}
+              />
+              <span>
+                {sourceMode === 'demo'
+                  ? 'DEMO · 剧本演示'
+                  : connStatus.state === 'connected'
+                  ? '实时连接 · 已就绪'
+                  : '连接中…'}
+              </span>
+            </div>
+          </div>
+
+          {/* Break-the-Frame Character Showcase */}
           <div
             key={`stage_frame_${state.characterSwitchKey}`}
             className="p5-portrait-stage p5-portrait-stage--theme"
           >
-            <div className="p5-portrait-emotion-tag" data-testid="emotion-badge">
-              <span className="emotion-en">{emotionMeta.en}</span>
+            <div
+              className="p5-char-tilted-card"
+              data-watermark={character.codename}
+              aria-hidden="true"
+            />
+            <div
+              className="p5-portrait-emotion-tag"
+              data-testid="emotion-badge"
+              title={`${emotionMeta.en} · ${emotionMeta.zh}`}
+            >
               <span className="emotion-zh">{emotionMeta.zh}</span>
             </div>
 
@@ -684,68 +732,35 @@ export const StageApp: React.FC = () => {
                   isLongWaiting)
               }
             />
-
-            <div className="p5-character-nameplate">
-              <div
-                className="p5-char-codename"
-                data-testid="character-codename"
-              >
-                {character.codename}
-              </div>
-              <div
-                className="p5-char-nickname"
-                data-testid="character-nickname"
-              >
-                {character.name}
-              </div>
-              <div className="p5-char-attribute">{character.tagline}</div>
-            </div>
           </div>
 
-          {/* RPG HUD Status Card */}
-          <div className="p5-hud-card" data-testid="hud-status-card">
-            <div className="p5-hud-header">
-              <span className="p5-hud-label">POND STATUS // 鱼塘状态</span>
-              <SessionListControl sourceRef={sourceRef} turnActive={state.turnActive} />
+          {/* P5X Overlapping Nameplate + Compact Workspace Attributes + Circular Party Medals */}
+          <div className="p5-char-info-cluster" data-testid="hud-status-card">
+            <div
+              className="p5-char-codename-giant"
+              data-testid="character-codename"
+            >
+              {character.codename}
+            </div>
+
+            <div className="p5-char-name-pill">
               <span
-                className={`p5-hud-live-dot status-${state.hudStatus}`}
-              />
-            </div>
-
-            <div className="p5-hud-row">
-              <span className="p5-hud-key">MODEL // 模型</span>
-              <strong
-                className="p5-hud-val p5-hud-model"
-                data-testid="hud-model-name"
+                className="p5-char-name-main"
+                data-testid="character-nickname"
               >
-                {state.modelName}
-              </strong>
-            </div>
+                {shortNickname} · {character.tagline.split('，')[0]}
+              </span>
 
-            <div className="p5-hud-row">
-              <span className="p5-hud-key">STATE // 状态</span>
-              <div className="p5-hud-status-group">
-                <strong
-                  className={`p5-hud-status-pill status-${state.hudStatus}`}
-                  data-testid="hud-status-text"
-                >
-                  {hudStatusMeta.zh} // {hudStatusMeta.en}
+              <span
+                className={`p5-char-status-inline status-${state.hudStatus}`}
+                data-testid="hud-status-text"
+              >
+                <span>★ {hudStatusMeta.zh}</span>
+                <span>·</span>
+                <strong data-testid="hud-elapsed-time">
+                  {turnDurationSec}s
                 </strong>
-              </div>
-            </div>
-
-            <div className="p5-hud-gauge-track">
-              <div
-                className={`p5-hud-gauge-fill status-${state.hudStatus}`}
-                style={{ width: `${hudStatusMeta.gauge}%` }}
-              />
-            </div>
-
-            <div className="p5-hud-row p5-hud-row--timer">
-              <span className="p5-hud-key">TIME // 本轮耗时</span>
-              <strong className="p5-hud-timer" data-testid="hud-elapsed-time">
-                {turnDurationSec}s
-              </strong>
+              </span>
             </div>
 
             {isLongWaiting && (
@@ -755,19 +770,85 @@ export const StageApp: React.FC = () => {
               >
                 <span className="p5-wait-pulse" />
                 <span>
-                  潜航思考中 · 已等待新水花 <strong>{idleWaitSec}s</strong>
+                  深度思考中 · 已等待 <strong>{idleWaitSec}s</strong>
                 </span>
               </div>
             )}
-          </div>
 
-          {/* Party Switcher Bar (Section 4: 左侧 HUD 下方一排队伍头像) */}
-          <div className="p5-party-bar" data-testid="party-bar">
-            <div className="p5-party-header">
-              <span className="p5-party-label">PARTY // 队伍切换</span>
-              <span className="p5-party-hint">点选换人 · 任务不中断</span>
+            <div className="p5-char-meta-pills">
+              <button
+                type="button"
+                className="p5-meta-pill"
+                onClick={() =>
+                  dispatch({
+                    type: 'TOGGLE_SYSTEM_MENU',
+                    open: true,
+                    tab: 'worker',
+                  })
+                }
+                title="点击切换或配置 AI 模型"
+              >
+                <span>模型</span>
+                <strong data-testid="hud-model-name">
+                  {state.modelName} ▾
+                </strong>
+              </button>
+
+              <button
+                type="button"
+                className="p5-meta-pill"
+                onClick={() =>
+                  dispatch({
+                    type: 'TOGGLE_SYSTEM_MENU',
+                    open: true,
+                    tab: 'pond',
+                  })
+                }
+                title={state.cwd}
+              >
+                <span>工作区</span>
+                <strong>📁 {state.cwd} ▾</strong>
+              </button>
             </div>
-            <div className="p5-party-list">
+
+            {/* P5 Palace Security Level / DSH Context Meter */}
+            <div className="p5-context-meter" data-testid="context-meter">
+              <div className="p5-context-meter-top">
+                <span className="p5-context-label">
+                  SECURITY // 上下文警戒槽
+                </span>
+                <span
+                  className="p5-context-tokens"
+                  data-testid="context-meter-value"
+                >
+                  <strong>{usedK}k</strong> / {maxK}k Tokens ({contextPercent}%)
+                </span>
+                <button
+                  type="button"
+                  className="p5-compaction-trigger-btn"
+                  data-testid="trigger-compaction-btn"
+                  onClick={handleTriggerCompactionDemo}
+                  title="触发 DSH 历史上下文记忆蒸馏压缩演出"
+                >
+                  ✦ 记忆凝炼
+                </button>
+              </div>
+              <div className="p5-context-gauge-track">
+                <div
+                  className={`p5-context-gauge-fill ${
+                    contextPercent >= 75
+                      ? 'is-high'
+                      : contextPercent >= 40
+                      ? 'is-mid'
+                      : 'is-low'
+                  }`}
+                  style={{ width: `${Math.max(8, contextPercent)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Circular Party Medallions */}
+            <div className="p5-party-medals" data-testid="party-bar">
               {state.characters.map((ch) => {
                 const isActive = ch.id === character.id;
                 const shortLabel = ch.name.split('（')[0];
@@ -776,7 +857,7 @@ export const StageApp: React.FC = () => {
                     key={ch.id}
                     type="button"
                     data-testid={`party-member-${ch.id}`}
-                    className={`p5-party-btn ${isActive ? 'is-active' : ''}`}
+                    className={`p5-medal-item ${isActive ? 'is-active' : ''}`}
                     style={
                       {
                         '--member-color': ch.themeColor,
@@ -785,7 +866,7 @@ export const StageApp: React.FC = () => {
                     onClick={() => handleSwitchCharacter(ch.id)}
                     title={`${ch.name} (${ch.codename})`}
                   >
-                    <div className="p5-party-avatar-wrap">
+                    <div className="p5-medal-ring">
                       {ch.portraitUrl ? (
                         <img
                           src={ch.portraitUrl}
@@ -798,7 +879,7 @@ export const StageApp: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <span className="p5-party-name">{shortLabel}</span>
+                    <span className="p5-medal-name">{shortLabel}</span>
                   </button>
                 );
               })}
@@ -806,13 +887,89 @@ export const StageApp: React.FC = () => {
           </div>
         </aside>
 
-        {/* ══ CENTER STAGE: 1. DIALOGUE LAYER (TOP) / 2. ACTION LAYER (MID) / 3. INPUT BAR (BOTTOM-RIGHT) ══ */}
+        {/* ══ RIGHT ZONE: AI CODING WORKSPACE (TOPBAR + COMIC BUBBLE + ACTION STREAM + INPUT) ══ */}
         <main className="p5-center-stage">
-          {/* ── LAYER 1: 台词层 (MAIN DIALOGUE BOX) ── */}
+          {/* ── 1. MINIMAL WORKSPACE HEADER ── */}
+          <header className="p5-workspace-header">
+            <div className="p5-workspace-header-left">
+              <div className="p5-session-switcher-wrap">
+                <span className="p5-session-badge">SESSION</span>
+                <SessionListControl
+                  sourceRef={sourceRef}
+                  turnActive={state.turnActive}
+                />
+              </div>
+
+              {sourceMode === 'demo' && (
+                <button
+                  type="button"
+                  className="p5-pill-btn p5-pill-btn--replay"
+                  onClick={handleReplayOrNewSession}
+                  data-testid="replay-script-btn"
+                >
+                  ↻ 重播剧本
+                </button>
+              )}
+            </div>
+
+            <div className="p5-workspace-header-right">
+              <button
+                type="button"
+                className={`p5-pill-btn p5-pill-btn--ghost ${
+                  state.fastForward ? 'is-active-ff' : ''
+                }`}
+                onClick={() =>
+                  dispatch({
+                    type: 'SET_FAST_FORWARD',
+                    fast: !state.fastForward,
+                  })
+                }
+                data-testid="fast-forward-btn"
+                title="按住 Ctrl 快进演出（也可点击切换）"
+              >
+                <kbd>CTRL</kbd> {state.fastForward ? '快进中' : '快进'}
+              </button>
+
+              <button
+                type="button"
+                className="p5-pill-btn"
+                onClick={() => dispatch({ type: 'TOGGLE_BACKLOG' })}
+                data-testid="backlog-open-btn"
+              >
+                <kbd>L</kbd> 对话回看 ({backlogCount})
+              </button>
+
+              <button
+                type="button"
+                className="p5-pill-btn"
+                onClick={() => dispatch({ type: 'TOGGLE_ENGINEERING_VIEW' })}
+                data-testid="engineering-view-btn"
+              >
+                <kbd>`</kbd> 工程视图
+              </button>
+
+              <SfxMuteButton />
+
+              <button
+                type="button"
+                className="p5-pill-btn is-accent"
+                onClick={() =>
+                  dispatch({
+                    type: 'TOGGLE_SYSTEM_MENU',
+                    open: !state.systemMenuOpen,
+                  })
+                }
+                data-testid="system-menu-btn"
+              >
+                <kbd>ESC</kbd> 设置
+              </button>
+            </div>
+          </header>
+
+          {/* ── 2. P5 COMIC SPEECH BUBBLE WITH POINTER TAIL ── */}
           <section className="p5-dialogue-section" data-testid="dialogue-layer">
-            {/* Active user mission strip */}
-            <div className="p5-mission-strip">
-              <span className="p5-mission-tag">{uiCopy.inputTag}</span>
+            <div className="p5-user-mission-bar">
+              <strong>当前指令 //</strong>
               <span className="p5-mission-text">
                 {latestUserMsg && latestUserMsg.type === 'user_message'
                   ? latestUserMsg.text
@@ -823,48 +980,42 @@ export const StageApp: React.FC = () => {
                   className="p5-mission-done-stamp"
                   data-testid="turn-done-badge"
                 >
-                  {state.lastTurnOk ? 'DONE // 已完成' : 'STOP // 已中止'}
+                  {state.lastTurnOk ? '✓ 已完成' : '■ 已中止'}
                 </span>
               )}
             </div>
 
-            {/* One-line-at-a-time comic dialogue box */}
-            <div
-              className="p5-dialogue-box"
-              onClick={skipTypewriter}
-              data-testid="dialogue-box"
-              role="region"
-              aria-label="角色当前台词"
-            >
-              <div className="p5-dialogue-speaker-tab">
-                <span
-                  className="speaker-zh"
-                  data-testid="dialogue-speaker-name"
-                >
+            <div className="p5-comic-bubble-wrap">
+              <div className="p5-speaker-sticker">
+                <span data-testid="dialogue-speaker-name">
                   {dialogueCharacter.name.split('（')[0]}
                 </span>
                 <span
-                  className="speaker-en"
+                  className="p5-speaker-codename-sr"
                   data-testid="dialogue-speaker-codename"
                 >
                   {dialogueCharacter.codename}
                 </span>
-                <span className="speaker-emotion">
-                  [{(state.currentLine?.emotion ?? state.currentEmotion).toUpperCase()}]
-                </span>
                 {state.currentLine?.source && (
                   <span
-                    className={`speaker-source source-${state.currentLine.source}`}
+                    className="p5-speaker-source-sr"
                     data-testid="dialogue-line-source"
                   >
-                    {state.currentLine.source === 'model'
-                      ? 'MODEL · 即兴台词'
-                      : 'PRESET · 预置台词'}
+                    {state.currentLine.source}
                   </span>
                 )}
               </div>
 
-              <div className="p5-dialogue-content">
+              <div className="p5-comic-tail" aria-hidden="true" />
+
+              <div
+                className="p5-dialogue-box"
+                onClick={skipTypewriter}
+                data-testid="dialogue-box"
+                role="region"
+                aria-label="角色当前台词"
+                title="点击对话框或按 Space 立即显示整句"
+              >
                 <p
                   key={fadeReplaceKey}
                   className={`p5-dialogue-text ${
@@ -872,7 +1023,7 @@ export const StageApp: React.FC = () => {
                   }`}
                   data-testid="dialogue-line-text"
                 >
-                  {displayedText}
+                  「{displayedText}」
                   <span
                     className={`p5-dialogue-cursor ${
                       isTypingLine ? 'is-typing' : 'is-ready'
@@ -881,38 +1032,92 @@ export const StageApp: React.FC = () => {
                     ▼
                   </span>
                 </p>
-              </div>
 
-              <div className="p5-dialogue-footer">
-                <span>
-                  {isTypingLine
-                    ? 'TYPING... 点击对话框或按 [SPACE] 立即显示整句'
-                    : 'LINE READY // 单句台词模式（历史台词按 [L] 回看）'}
-                </span>
-                {state.fastForward && (
-                  <span className="p5-ff-badge">
-                    &gt;&gt; FAST FORWARD 加速中
-                  </span>
-                )}
+                <button
+                  type="button"
+                  className="p5-skip-sr-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    skipTypewriter();
+                  }}
+                  data-testid="skip-line-btn"
+                  tabIndex={-1}
+                >
+                  跳过打字
+                </button>
               </div>
             </div>
           </section>
 
-          {/* ── LAYER 2: 行动层 (SKILL CUT-IN CARDS, TURN SUMMARY, ERROR BANNER & STEER STATUS) ── */}
+          {/* ── 3. DSH TRAJECTORY ROUTE MAP (P5 怪盗行动路线图 + 代码改动 + 回答正文) ── */}
           <section className="p5-action-section" data-testid="action-layer">
-            <div className="p5-action-section-header">
-              <span className="p5-action-kicker">
-                SPLASH // 甩尾行动（工具调用不进聊天流，点击卡片展开档案层）
-              </span>
-              {state.turnActive && (
-                <span className="p5-action-live-indicator">
-                  ● EXECUTING IN POND
+            <div className="p5-deck-header">
+              <div className="p5-deck-title-group">
+                <span
+                  className="p5-deck-slash-badge"
+                  data-testid="summary-splash-count"
+                >
+                  TRAJECTORY // 怪盗行动路线 ({state.skillCards.length})
                 </span>
+                {touchedFiles.length > 0 ? (
+                  <span
+                    className="p5-deck-summary-text"
+                    data-testid="summary-files-touched"
+                  >
+                    目标{' '}
+                    <strong>
+                      {touchedFiles.map((f) => f.split('/').pop()).join(', ')}
+                    </strong>
+                    {(totalDiffStats.added > 0 ||
+                      totalDiffStats.removed > 0) && (
+                      <>
+                        {' · '}
+                        <span className="diff-add">
+                          +{totalDiffStats.added}
+                        </span>{' '}
+                        /{' '}
+                        <span className="diff-del">
+                          −{totalDiffStats.removed}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                ) : state.turnActive ? (
+                  <span className="p5-deck-summary-text">
+                    ● 正在实时推进 DSH 行动轨迹…
+                  </span>
+                ) : (
+                  <span className="p5-deck-summary-text">
+                    实时展开工具执行参数、耗时、代码 Diff 与回答正文
+                  </span>
+                )}
+              </div>
+
+              {state.skillCards.length > 0 && (
+                <button
+                  type="button"
+                  className="p5-mini-chip p5-mini-chip--btn"
+                  onClick={() => {
+                    const last =
+                      state.skillCards[state.skillCards.length - 1];
+                    if (last) {
+                      dispatch({
+                        type: 'SELECT_SKILL_CARD',
+                        toolUseId: last.toolUseId,
+                      });
+                    }
+                  }}
+                >
+                  展开完整档案 ▶
+                </button>
               )}
             </div>
 
-            <div className="p5-active-skills-zone">
-              {/* Friendly non-scary Error Notice Banner */}
+            <div
+              className="p5-active-skills-zone"
+              data-testid="action-log-strip"
+            >
+              {/* Friendly Error Notice Banner */}
               {state.lastError && !needsOnboarding && (
                 <div
                   className="p5-error-notice-card"
@@ -920,7 +1125,7 @@ export const StageApp: React.FC = () => {
                 >
                   <div className="p5-error-notice-left">
                     <span className="p5-error-notice-tag">
-                      WAVE NOTICE // 鱼塘小状况
+                      NOTICE // 运行提示
                     </span>
                     <span className="p5-error-notice-msg">
                       {state.lastError.message}
@@ -936,166 +1141,25 @@ export const StageApp: React.FC = () => {
                 </div>
               )}
 
-              {/* Active Skill Cut-in Cards */}
-              {stageSkillCards.length > 0 ? (
-                stageSkillCards.map((card) => (
-                  <div
-                    key={card.toolUseId}
-                    className={`p5-skill-cutin-card status-${card.status} tool-${card.tool}`}
-                    onClick={() =>
-                      dispatch({
-                        type: 'SELECT_SKILL_CARD',
-                        toolUseId: card.toolUseId,
-                      })
-                    }
-                    data-testid={`active-skill-card-${card.toolUseId}`}
-                  >
-                    <div className="p5-skill-cutin-slash">
-                      <span className="p5-skill-type-tag">
-                        SPLASH! // 甩尾发动 ·{' '}
-                        {TOOL_DISPLAY_LABELS[card.tool] ??
-                          card.tool.toUpperCase()}
-                      </span>
-                      <span className="p5-skill-status-badge">
-                        {card.status === 'running'
-                          ? '▶ IN PROGRESS · 发动中'
-                          : card.status === 'success'
-                          ? '★ HIT // 成功'
-                          : '✖ MISS // 失败'}
-                      </span>
-                    </div>
-
-                    <div className="p5-skill-cutin-main">
-                      <div className="p5-skill-headline">
-                        {formatSkillHeader(
-                          character.name,
-                          card.tool,
-                          card.file ?? card.summary,
-                          card.diffStats
-                        )}
-                      </div>
-                      <div className="p5-skill-subline">
-                        <span>
-                          {card.endSummary ??
-                            `${card.rawName}: ${card.summary}`}
-                        </span>
-                        <span className="p5-skill-inspect-cta">
-                          [点击查看 DIFF / 输出 ▶]
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : !state.turnActive &&
-                (state.lastTurnOk !== null || state.skillCards.length > 0) ? (
-                /* ── POST-TURN SUMMARY CARD (Section 6: 回合结束后本轮小结卡片填满中间区域) ── */
+              {/* DSH Memory Compaction Summary Card in Trajectory */}
+              {compactionState.compactedAt && (
                 <div
-                  className="p5-turn-summary-card"
-                  data-testid="turn-summary-card"
+                  className="p5-compaction-summary-node"
+                  data-testid="compaction-summary-card"
                 >
-                  <div className="p5-turn-summary-ribbon">
-                    <span className="p5-turn-summary-kicker">
-                      TURN REPORT // 本轮水花战报
-                    </span>
-                    <span
-                      className={`p5-turn-summary-stamp ${
-                        state.lastTurnOk ? 'is-ok' : 'is-fail'
-                      }`}
-                    >
-                      {state.lastTurnOk
-                        ? '★ MISSION COMPLETE // 满载而归'
-                        : '▲ TURN ENDED // 本轮中止'}
-                    </span>
-                  </div>
-
-                  <div className="p5-turn-summary-grid">
-                    <div className="p5-summary-stat-box">
-                      <span className="p5-summary-stat-label">
-                        SPLASHES // 甩尾次数
-                      </span>
-                      <strong
-                        className="p5-summary-stat-val"
-                        data-testid="summary-splash-count"
-                      >
-                        {state.skillCards.length} 次
-                      </strong>
-                      <span className="p5-summary-stat-sub">
-                        命中{' '}
-                        {
-                          state.skillCards.filter((c) => c.status === 'success')
-                            .length
-                        }{' '}
-                        次 · 失误{' '}
-                        {
-                          state.skillCards.filter((c) => c.status === 'error')
-                            .length
-                        }{' '}
-                        次
-                      </span>
-                    </div>
-
-                    <div className="p5-summary-stat-box">
-                      <span className="p5-summary-stat-label">
-                        FILES // 涉及文件与变更
-                      </span>
-                      <strong
-                        className="p5-summary-stat-val p5-summary-stat-val--files"
-                        data-testid="summary-files-touched"
-                      >
-                        {touchedFiles.length > 0
-                          ? touchedFiles.map((f) => f.split('/').pop()).join(', ')
-                          : '终端巡检 / 无文件写入'}
-                      </strong>
-                      <span className="p5-summary-stat-sub">
-                        {totalDiffStats.added > 0 || totalDiffStats.removed > 0
-                          ? `代码增删 +${totalDiffStats.added} / −${totalDiffStats.removed} 行`
-                          : '点击右侧水花记录查看完整输出'}
-                      </span>
-                    </div>
-
-                    <div className="p5-summary-stat-box">
-                      <span className="p5-summary-stat-label">
-                        DURATION // 本轮耗时
-                      </span>
-                      <strong
-                        className="p5-summary-stat-val"
-                        data-testid="summary-turn-duration"
-                      >
-                        {turnDurationSec}s
-                      </strong>
-                      <span className="p5-summary-stat-sub">
-                        模型：{state.modelName}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p5-turn-summary-footer">
-                    <span className="p5-turn-summary-note">
-                      {state.lastTurnSummary
-                        ? `小结：${state.lastTurnSummary}`
-                        : '本轮所有甩尾已归档至右侧「水花记录」'}
-                    </span>
-                    {state.skillCards.length > 0 && (
-                      <button
-                        type="button"
-                        className="p5-summary-inspect-btn"
-                        onClick={() => {
-                          const last =
-                            state.skillCards[state.skillCards.length - 1];
-                          if (last) {
-                            dispatch({
-                              type: 'SELECT_SKILL_CARD',
-                              toolUseId: last.toolUseId,
-                            });
-                          }
-                        }}
-                      >
-                        查看最新档案 ▶
-                      </button>
-                    )}
-                  </div>
+                  <span className="p5-compaction-node-badge">
+                    ✦ MEMORY DISTILLED // 记忆摘要卡
+                  </span>
+                  <span className="p5-compaction-node-text">
+                    {compactionState.summaryText}
+                  </span>
+                  <span className="p5-compaction-node-freed">
+                    −{Math.round(compactionState.freedTokens / 1000)}k Tokens
+                  </span>
                 </div>
-              ) : needsOnboarding ? (
+              )}
+
+              {needsOnboarding ? (
                 <OnboardingCard
                   character={character}
                   settings={state.serverSettings}
@@ -1111,18 +1175,172 @@ export const StageApp: React.FC = () => {
                   }
                   onDismissError={() => dispatch({ type: 'DISMISS_ERROR' })}
                 />
+              ) : state.skillCards.length > 0 ? (
+                <div
+                  className="p5-action-list p5-trajectory-route"
+                  data-testid="turn-summary-card"
+                >
+                  {state.skillCards.map((card, index) => {
+                    const isPreviewOpen = inlinePreviewId === card.toolUseId;
+                    const inlineDiffRows = isPreviewOpen
+                      ? extractInlineDiffLines(card.diff)
+                      : [];
+                    const stepDurationMs =
+                      card.endedAt && card.startedAt
+                        ? Math.max(120, card.endedAt - card.startedAt)
+                        : null;
+                    return (
+                      <React.Fragment key={card.toolUseId}>
+                        <div
+                          className={`p5-action-row status-${card.status} tool-${card.tool} ${
+                            isPreviewOpen ||
+                            state.selectedToolUseId === card.toolUseId
+                              ? 'is-expanded'
+                              : ''
+                          }`}
+                          onClick={() =>
+                            dispatch({
+                              type: 'SELECT_SKILL_CARD',
+                              toolUseId: card.toolUseId,
+                            })
+                          }
+                          data-testid={`action-log-item-${index}`}
+                        >
+                          <div className="p5-step-badge-group">
+                            <span className="p5-step-num">
+                              {String(index + 1).padStart(2, '0')}
+                            </span>
+                            <span
+                              className={`p5-tool-tag tool-${card.tool}`}
+                              data-testid={`active-skill-card-${card.toolUseId}`}
+                            >
+                              {TOOL_DISPLAY_LABELS[card.tool] ??
+                                card.tool.toUpperCase()}
+                            </span>
+                          </div>
+
+                          <div className="p5-action-target">
+                            <strong>{card.file ?? card.summary}</strong>
+                            <span>
+                              {card.endSummary ??
+                                `${card.rawName} · ${card.summary}`}
+                            </span>
+                          </div>
+
+                          <span className="p5-action-stat">
+                            {card.diffStats ? (
+                              <>
+                                <span className="add">
+                                  +{card.diffStats.added}
+                                </span>{' '}
+                                <span className="del">
+                                  −{card.diffStats.removed}
+                                </span>
+                              </>
+                            ) : (
+                              card.rawName
+                            )}
+                            {stepDurationMs && (
+                              <em className="p5-step-ms">
+                                {' '}
+                                · {stepDurationMs}ms
+                              </em>
+                            )}
+                          </span>
+
+                          <span
+                            className={`p5-action-status status-${card.status}`}
+                          >
+                            {card.status === 'running'
+                              ? '▶ 执行中'
+                              : card.status === 'success'
+                              ? card.diff
+                                ? '▼ Diff 预览'
+                                : '✓ 完成'
+                              : '✖ 失败'}
+                          </span>
+                        </div>
+
+                        {inlineDiffRows.length > 0 && (
+                          <div
+                            className="p5-inline-diff-box"
+                            onClick={() =>
+                              dispatch({
+                                type: 'SELECT_SKILL_CARD',
+                                toolUseId: card.toolUseId,
+                              })
+                            }
+                            title="点击打开完整代码对比档案"
+                          >
+                            {inlineDiffRows.map((row, rIdx) => (
+                              <div
+                                key={rIdx}
+                                className={
+                                  row.kind === 'add'
+                                    ? 'p5-diff-line-add'
+                                    : 'p5-diff-line-del'
+                                }
+                              >
+                                {row.text}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+
+                  {/* Worker Answer Body Card in Trajectory */}
+                  {(latestWorkerFinal ||
+                    (!state.turnActive && state.lastTurnSummary)) && (
+                    <div
+                      className="p5-worker-answer-card"
+                      data-testid="trajectory-answer-card"
+                    >
+                      <div className="p5-worker-answer-head">
+                        <span className="p5-worker-answer-badge">
+                          ★ CONCLUSION // {shortNickname}的行动结论正文
+                        </span>
+                        <span className="p5-worker-answer-meta">
+                          耗时 {turnDurationSec}s · 模型 {state.modelName}
+                        </span>
+                      </div>
+                      <p className="p5-worker-answer-body">
+                        {latestWorkerFinal &&
+                        latestWorkerFinal.type === 'worker_text'
+                          ? latestWorkerFinal.text
+                          : state.lastTurnSummary}
+                      </p>
+                    </div>
+                  )}
+                </div>
               ) : (
-                <div className="p5-skill-idle-stage">
+                <div className="p5-trajectory-standby">
+                  <div className="p5-standby-route-nodes">
+                    <div className="p5-standby-node is-ready">
+                      <span className="node-step">STEP 01</span>
+                      <strong>侦察目标文件与上下文</strong>
+                      <span>展开 READ / SEARCH 参数与耗时</span>
+                    </div>
+                    <div className="p5-standby-node">
+                      <span className="node-step">STEP 02</span>
+                      <strong>斜切轨迹卡片 + 内联 Diff</strong>
+                      <span>实时展示代码增删与红绿对比</span>
+                    </div>
+                    <div className="p5-standby-node">
+                      <span className="node-step">STEP 03</span>
+                      <strong>终端验证 + 回答正文归档</strong>
+                      <span>汇总测试结果与完整结论正文</span>
+                    </div>
+                  </div>
                   <div className="p5-skill-placeholder">
                     <span className="p5-placeholder-star">★</span>
-                    <span>
-                      {uiCopy.idleHint}
-                    </span>
+                    <span>{uiCopy.idleHint}</span>
                   </div>
                 </div>
               )}
 
-              {/* Steer (插话) Live Status Pills — stays visible throughout turn */}
+              {/* Steer (插话) Live Status Pills */}
               {state.steers.length > 0 && (
                 <div className="p5-steer-strip" data-testid="steer-strip">
                   {state.steers.map((st) => (
@@ -1147,16 +1365,10 @@ export const StageApp: React.FC = () => {
             </div>
           </section>
 
-          {/* ── BOTTOM-RIGHT: 玩家输入框 (PLAYER COMMAND INPUT) ── */}
-          <section className="p5-input-section" data-testid="player-input-zone">
-            <div className="p5-input-quick-row">
-              <span className="p5-input-mode-tag">
-                {state.turnActive
-                  ? 'SHOUT // 游动中随时喊话'
-                  : uiCopy.inputTitle}
-              </span>
-
-              <div className="p5-quick-chips">
+          {/* ── 4. SLEEK SLANTED COMMAND INPUT BAR ── */}
+          <section className="p5-command-dock" data-testid="player-input-zone">
+            <div className="p5-dock-quick-chips">
+              <div className="p5-chip-group">
                 {needsOnboarding ? (
                   <span
                     className="p5-input-onboarding-hint"
@@ -1165,19 +1377,28 @@ export const StageApp: React.FC = () => {
                     ▲ 请先在上方引导卡选定项目文件夹后再投喂任务
                   </span>
                 ) : !state.turnActive ? (
-                  <button
-                    type="button"
-                    className="p5-chip-btn"
-                    data-testid="example-instruction-btn"
-                    onClick={() => setInputValue(DEFAULT_FIRST_USER_PROMPT)}
-                  >
-                    填入示例任务指令
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="p5-mini-chip p5-mini-chip--btn"
+                      onClick={handleReplayOrNewSession}
+                    >
+                      + 新建会话
+                    </button>
+                    <button
+                      type="button"
+                      className="p5-mini-chip p5-mini-chip--btn"
+                      data-testid="example-instruction-btn"
+                      onClick={() => setInputValue(DEFAULT_FIRST_USER_PROMPT)}
+                    >
+                      ⚡ 填入示例任务指令
+                    </button>
+                  </>
                 ) : (
                   <>
                     <button
                       type="button"
-                      className="p5-chip-btn p5-chip-btn--steer"
+                      className="p5-mini-chip p5-mini-chip--btn is-steer"
                       data-testid="quick-steer-btn"
                       onClick={() => {
                         sourceRef.current?.steer(
@@ -1189,7 +1410,7 @@ export const StageApp: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      className="p5-chip-btn p5-chip-btn--stop"
+                      className="p5-mini-chip p5-mini-chip--btn is-stop"
                       data-testid="stop-turn-btn"
                       onClick={() => sourceRef.current?.stop()}
                     >
@@ -1200,105 +1421,36 @@ export const StageApp: React.FC = () => {
               </div>
             </div>
 
-            <form className="p5-input-form" onSubmit={handleSubmitInput}>
-              <input
-                ref={inputRef}
-                type="text"
-                className="p5-command-input"
-                data-testid="stage-input"
-                disabled={needsOnboarding}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder={
-                  needsOnboarding
-                    ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
-                    : state.turnActive
-                    ? '任务进行中：输入消息并回车立即插话（触发 steer_queued -> 已传达，待接收）...'
-                    : uiCopy.inputPlaceholder
-                }
-              />
+            <form className="p5-input-bar-slash" onSubmit={handleSubmitInput}>
+              <div className="p5-input-field-box">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  className="p5-command-input"
+                  data-testid="stage-input"
+                  disabled={needsOnboarding}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={
+                    needsOnboarding
+                      ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
+                      : state.turnActive
+                      ? '任务进行中：输入消息并回车立即插话补充要求…'
+                      : `向${shortNickname}下达新任务，或在执行中直接插话补充要求…`
+                  }
+                />
+              </div>
               <button
                 type="submit"
-                className="p5-send-btn"
+                className="p5-send-slash-btn"
                 data-testid="stage-send-btn"
                 disabled={needsOnboarding}
               >
-                <span className="send-en">
-                  {state.turnActive ? 'SHOUT' : 'SEND'}
-                </span>
-                <span className="send-zh">
-                  {state.turnActive ? '喊一嗓子 ▶' : uiCopy.sendLabel}
-                </span>
+                {state.turnActive ? '插话 ▶' : '投喂 ▶'}
               </button>
             </form>
           </section>
         </main>
-
-        {/* ══ RIGHT SIDEBAR STRIP: 「水花记录」 (COLLAPSED SKILL LOG) ══ */}
-        <aside className="p5-right-action-log" data-testid="action-log-strip">
-          <div className="p5-log-header">
-            <span className="p5-log-title-en">SPLASH LOG</span>
-            <span className="p5-log-title-zh">
-              水花记录 ({state.skillCards.length})
-            </span>
-          </div>
-          <div className="p5-log-sub">点击任一技能条展开【档案层】</div>
-
-          <div className="p5-log-list">
-            {state.skillCards.length === 0 ? (
-              <div className="p5-log-empty">暂无已发动水花</div>
-            ) : (
-              state.skillCards.map((card, index) => (
-                <button
-                  key={card.toolUseId}
-                  type="button"
-                  className={`p5-log-slot status-${card.status} ${
-                    state.selectedToolUseId === card.toolUseId
-                      ? 'is-selected'
-                      : ''
-                  }`}
-                  onClick={() =>
-                    dispatch({
-                      type: 'SELECT_SKILL_CARD',
-                      toolUseId: card.toolUseId,
-                    })
-                  }
-                  data-testid={`action-log-item-${index}`}
-                >
-                  <div className="p5-log-slot-top">
-                    <span className="p5-log-tool-badge">
-                      #{index + 1} {card.tool.toUpperCase()}
-                    </span>
-                    <span className={`p5-log-state status-${card.status}`}>
-                      {card.status === 'running'
-                        ? '发动中'
-                        : card.status === 'success'
-                        ? '成功'
-                        : '失败'}
-                    </span>
-                  </div>
-
-                  <div className="p5-log-slot-title">
-                    {shortNickname} 发动 {card.tool.toUpperCase()} ▶{' '}
-                    {card.file ?? card.summary}
-                  </div>
-
-                  <div className="p5-log-slot-bottom">
-                    {card.diffStats ? (
-                      <span className="p5-log-diff-nums">
-                        <span className="add">+{card.diffStats.added}</span>{' '}
-                        <span className="del">−{card.diffStats.removed}</span>
-                      </span>
-                    ) : (
-                      <span className="p5-log-raw">{card.rawName}</span>
-                    )}
-                    <span className="p5-log-open-tag">档案 ▶</span>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </aside>
       </div>
 
       <SwitchTransition
@@ -1314,10 +1466,29 @@ export const StageApp: React.FC = () => {
         }
       />
 
-      <ShortcutHelp
-        archiveAvailable={state.skillCards.length > 0 && !state.backlogOpen && !state.systemMenuOpen && !state.pendingPermission && !selectedCard}
-        onOpenArchive={() => dispatch({ type: 'SELECT_SKILL_CARD', toolUseId: state.skillCards[state.skillCards.length - 1].toolUseId })}
-      />
+      {/* ── DSH MEMORY COMPACTION CUT-IN EFFECT (记忆凝炼专属技能演出) ── */}
+      {compactionState.activeCutin && (
+        <div
+          className="p5-compaction-cutin"
+          data-testid="compaction-cutin-banner"
+          onClick={() =>
+            setCompactionState((prev) => ({ ...prev, activeCutin: false }))
+          }
+        >
+          <div className="p5-compaction-blade">
+            <div className="p5-compaction-kicker">
+              ✦ MEMORY DISTILLATION // 记忆凝炼技能发动！
+            </div>
+            <div className="p5-compaction-headline">
+              {compactionState.summaryText}
+            </div>
+            <div className="p5-compaction-sub">
+              DSH 上下文蒸馏完成 · 警戒槽已回落至 {usedK}k / {maxK}k Tokens
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── OVERLAYS: 权限选择肢 / 档案层 / BACKLOG / SYSTEM 菜单 ── */}
       <PermissionModal
         permission={state.pendingPermission}
