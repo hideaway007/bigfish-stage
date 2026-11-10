@@ -5,10 +5,8 @@ import type {
   SettingsPatch,
   WorkerAdapterInfo,
 } from '../../shared/settings';
-import { getCachedCharacterPack } from '../characterLoader';
 import { ModelPicker } from './settings/ModelPicker';
 import { ConnectionTestResult } from './settings/ConnectionTestResult';
-import { RecommendedModelChips } from './settings/RecommendedModelChips';
 import './settings/settings.css';
 import type {
   ConnectionTestState,
@@ -20,66 +18,50 @@ interface SystemMenuModalProps {
   open: boolean;
   activeTab: SystemMenuTab;
   settings: PublicSettings;
-  settingsSyncedAt: number | null;
+  settingsSyncedAt?: number | null;
   characters: CharacterSummary[];
   workerAdapters: WorkerAdapterInfo[];
-  workerModels: ModelListState;
-  voiceModels: ModelListState;
-  workerConnTest: ConnectionTestState;
-  voiceConnTest: ConnectionTestState;
+  workerModels?: ModelListState;
+  voiceModels?: ModelListState;
+  workerConnTest?: ConnectionTestState;
+  voiceConnTest?: ConnectionTestState;
   onSelectTab: (tab: SystemMenuTab) => void;
   onClose: () => void;
   onSwitchCharacter: (characterId: string) => void;
   onUpdateSettings: (patch: SettingsPatch) => void;
   onListModels: (target: 'worker' | 'voice') => void;
   onTestConnection: (target: 'worker' | 'voice') => void;
-  onStartNewSessionWithDir: (projectDir: string) => void;
+  onStartNewSessionWithDir?: (projectDir: string) => void;
 }
 
-const TABS: Array<{ id: SystemMenuTab; en: string; zh: string; desc: string }> = [
-  {
-    id: 'characters',
-    en: 'CHARACTERS',
-    zh: '角色',
-    desc: '前台看板娘人设与队伍编成',
-  },
-  {
-    id: 'worker',
-    en: 'WORKER AGENT',
-    zh: '执行 Agent',
-    desc: '后台执行适配器、模型与沙箱',
-  },
-  {
-    id: 'voice',
-    en: 'VOICE MODEL',
-    zh: '台词模型',
-    desc: '即兴台词生成接口与频率控制',
-  },
-  {
-    id: 'pond',
-    en: 'POND PROJECT',
-    zh: '鱼塘（项目）',
-    desc: '工作目录选择与开启新会话',
-  },
-  {
-    id: 'performance',
-    en: 'PERFORMANCE',
-    zh: '演出',
-    desc: '打字机速度与舞台演出参数',
-  },
+const DEFAULT_MODEL_LIST: ModelListState = {
+  models: [],
+  loading: false,
+};
+
+const DEFAULT_CONN_TEST: ConnectionTestState = {
+  testing: false,
+};
+
+const TABS: Array<{ id: SystemMenuTab; zh: string }> = [
+  { id: 'characters', zh: '切换角色' },
+  { id: 'worker', zh: 'AI 模型' },
+  { id: 'voice', zh: '角色台词' },
+  { id: 'pond', zh: '工作文件夹' },
+  { id: 'performance', zh: '显示速度' },
 ];
 
 export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   open,
   activeTab,
   settings,
-  settingsSyncedAt,
+  settingsSyncedAt = null,
   characters,
   workerAdapters,
-  workerModels,
-  voiceModels,
-  workerConnTest,
-  voiceConnTest,
+  workerModels = DEFAULT_MODEL_LIST,
+  voiceModels = DEFAULT_MODEL_LIST,
+  workerConnTest = DEFAULT_CONN_TEST,
+  voiceConnTest = DEFAULT_CONN_TEST,
   onSelectTab,
   onClose,
   onSwitchCharacter,
@@ -88,7 +70,11 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   onTestConnection,
   onStartNewSessionWithDir,
 }) => {
-  // Local input states synced from server `settings`
+  const safeWorkerModels = workerModels ?? DEFAULT_MODEL_LIST;
+  const safeVoiceModels = voiceModels ?? DEFAULT_MODEL_LIST;
+  const safeWorkerConn = workerConnTest ?? DEFAULT_CONN_TEST;
+  const safeVoiceConn = voiceConnTest ?? DEFAULT_CONN_TEST;
+
   const [workerModelDraft, setWorkerModelDraft] = useState(
     settings.worker.model
   );
@@ -103,51 +89,45 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     settings.voice.endpoint.model
   );
   const [voiceApiKeyDraft, setVoiceApiKeyDraft] = useState('');
-  const [voiceRateDraft, setVoiceRateDraft] = useState(
-    String(settings.voice.maxLinesPerMinute)
-  );
   const [projectDirDraft, setProjectDirDraft] = useState(
     settings.projectDir ?? ''
   );
   const [typingSpeedDraft, setTypingSpeedDraft] = useState(
     settings.performance.typingCharsPerSec
   );
+  const [showWorkerAdvanced, setShowWorkerAdvanced] = useState(false);
+  const [showVoiceAdvanced, setShowVoiceAdvanced] = useState(false);
 
-  // Sync local drafts whenever server returns updated `settings`
   useEffect(() => {
     setWorkerModelDraft(settings.worker.model);
     setWorkerBaseUrlDraft(settings.worker.endpoint.baseUrl);
     setVoiceBaseUrlDraft(settings.voice.endpoint.baseUrl);
     setVoiceModelDraft(settings.voice.endpoint.model);
-    setVoiceRateDraft(String(settings.voice.maxLinesPerMinute));
     setProjectDirDraft(settings.projectDir ?? '');
     setTypingSpeedDraft(settings.performance.typingCharsPerSec);
   }, [settings, settingsSyncedAt]);
 
-  // Auto-fetch model lists when switching to worker or voice tab
   useEffect(() => {
     if (!open) return;
     if (activeTab === 'worker') {
       onListModels('worker');
     } else if (
       activeTab === 'voice' &&
-      voiceModels.models.length === 0 &&
-      !voiceModels.loading
+      safeVoiceModels.models.length === 0 &&
+      !safeVoiceModels.loading
     ) {
       onListModels('voice');
     }
-  }, [open, activeTab, settings.worker.connection, settings.worker.endpoint.baseUrl, settings.worker.endpoint.apiKeySet, settings.worker.adapter]);
+  }, [
+    open,
+    activeTab,
+    settings.worker.connection,
+    settings.worker.endpoint.baseUrl,
+    settings.worker.endpoint.apiKeySet,
+    settings.worker.adapter,
+  ]);
 
   if (!open) return null;
-
-  const syncedTimeText = settingsSyncedAt
-    ? new Date(settingsSyncedAt).toLocaleTimeString('zh-CN', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    : null;
 
   return (
     <div
@@ -155,27 +135,23 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
       data-testid="system-menu-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="SYSTEM 系统设置菜单"
+      aria-label="设置"
       onClick={onClose}
     >
-      <div
-        className="p5-system-shell"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="p5-system-shell" onClick={(e) => e.stopPropagation()}>
         {/* Top Header */}
         <header className="p5-system-header">
           <div className="p5-system-title-group">
-            <span className="p5-system-badge">SYSTEM CONFIG // 深海控制台</span>
-            <h2 className="p5-system-title">鱼塘工作台 · 全局设置</h2>
+            <h2 className="p5-system-title">设置</h2>
           </div>
 
           <div className="p5-system-header-right">
-            {syncedTimeText && (
+            {settingsSyncedAt && (
               <span
                 className="p5-system-sync-pill"
                 data-testid="settings-synced-indicator"
               >
-                ✓ 已同步服务端设置 ({syncedTimeText})
+                ✓ 已保存
               </span>
             )}
             <button
@@ -184,14 +160,14 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
               onClick={onClose}
               data-testid="system-close-btn"
             >
-              [ESC] 返回舞台
+              返回
             </button>
           </div>
         </header>
 
         <div className="p5-system-body">
-          {/* Left Tab Navigation */}
-          <nav className="p5-system-nav" aria-label="设置分页">
+          {/* Left Tab Navigation — Clean 1-line labels */}
+          <nav className="p5-system-nav" aria-label="设置分类">
             {TABS.map((t) => {
               const isActive = activeTab === t.id;
               return (
@@ -202,11 +178,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                   className={`p5-system-tab-btn ${isActive ? 'is-active' : ''}`}
                   onClick={() => onSelectTab(t.id)}
                 >
-                  <div className="p5-system-tab-top">
-                    <span className="p5-system-tab-en">{t.en}</span>
-                    <span className="p5-system-tab-zh">{t.zh}</span>
-                  </div>
-                  <div className="p5-system-tab-desc">{t.desc}</div>
+                  <span className="p5-system-tab-zh">{t.zh}</span>
                 </button>
               );
             })}
@@ -214,25 +186,20 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
 
           {/* Right Tab Content */}
           <div className="p5-system-content" data-testid="system-content-pane">
-            {/* ── TAB 1: 角色 (CHARACTERS) ── */}
+            {/* ── TAB 1: 切换角色 (CHARACTERS) ── */}
             {activeTab === 'characters' && (
               <div
                 className="p5-sys-panel"
                 data-testid="system-panel-characters"
               >
                 <div className="p5-sys-panel-head">
-                  <h3>角色选择 // CHARACTER ROSTER</h3>
-                  <p>
-                    角色包位于 <code>public/characters/&lt;id&gt;/character.json</code>
-                    ，角色与执行 Agent / 模型互不绑定，切换立即生效且不中断当前任务。
-                  </p>
+                  <h3>选择陪伴你的角色</h3>
                 </div>
 
                 <div className="p5-char-grid">
                   {characters.map((ch) => {
-                    const pack = getCachedCharacterPack(ch.id);
                     const isCurrent = settings.activeCharacterId === ch.id;
-                    const recModels = pack.recommendedModels ?? [];
+                    const shortName = ch.name.split('（')[0];
 
                     return (
                       <div
@@ -256,67 +223,26 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                             {ch.portraitUrl ? (
                               <img
                                 src={ch.portraitUrl}
-                                alt={ch.name}
+                                alt={shortName}
                                 className="p5-char-card-avatar"
                               />
                             ) : (
                               <div className="p5-char-card-avatar-fallback">
-                                {ch.name.slice(0, 2)}
+                                {shortName.slice(0, 2)}
                               </div>
                             )}
                           </div>
                           <div className="p5-char-card-titles">
-                            <span className="p5-char-card-codename">
-                              {ch.codename}
-                            </span>
-                            <h4 className="p5-char-card-name">{ch.name}</h4>
-                            <span className="p5-char-card-tagline">
-                              {pack.tagline}
-                            </span>
+                            <h4 className="p5-char-card-name">{shortName}</h4>
                           </div>
                           <span
                             className={`p5-char-card-status ${
                               isCurrent ? 'is-current' : ''
                             }`}
                           >
-                            {isCurrent ? '★ 当前登场' : '点选切换'}
+                            {isCurrent ? '★ 当前使用' : '点击切换'}
                           </span>
                         </div>
-
-                        <div className="p5-char-card-style">
-                          <span className="p5-field-tag">说话风格</span>
-                          <p>{pack.persona.speechStyle}</p>
-                        </div>
-
-                        {isCurrent && recModels.length > 0 && (
-                          <RecommendedModelChips
-                            characterId={ch.id}
-                            isCurrentCharacter
-                            recommendedModels={recModels}
-                            currentWorkerModel={settings.worker.model}
-                            currentVoiceModel={settings.voice.endpoint.model}
-                            onApplyWorkerModel={(model) =>
-                              onUpdateSettings({ worker: { model } })
-                            }
-                            onApplyVoiceModel={(model) =>
-                              onUpdateSettings({ voice: { endpoint: { model } } })
-                            }
-                          />
-                        )}
-                        {!isCurrent && recModels.length > 0 && (
-                          <div className="p5-char-card-models">
-                            <span className="p5-field-tag">
-                              推荐搭配模型（仅提示）
-                            </span>
-                            <div className="p5-model-pills">
-                              {recModels.map((m) => (
-                                <span key={m} className="p5-model-pill">
-                                  {m}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -324,216 +250,28 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
               </div>
             )}
 
-            {/* ── TAB 2: 执行 Agent (WORKER) ── */}
+            {/* ── TAB 2: AI 模型 (WORKER) ── */}
             {activeTab === 'worker' && (
               <div className="p5-sys-panel" data-testid="system-panel-worker">
                 <div className="p5-sys-panel-head">
-                  <h3>执行 Agent（手） // WORKER AGENT</h3>
-                  <p className="p5-sys-notice-banner" data-testid="worker-next-session-hint">
-                    ★ 提示：新设置在下次开新会话时生效（不会打断当前正在运行的会话）
-                  </p>
+                  <h3>AI 模型设置</h3>
                 </div>
 
                 <div className="p5-sys-form">
-                  {/* Adapter Select */}
-                  <div className="p5-form-group">
-                    <label className="p5-form-label" htmlFor="worker-adapter-select">
-                      执行 Agent 适配器 (ADAPTER)
-                    </label>
-                    <select
-                      id="worker-adapter-select"
-                      data-testid="worker-adapter-select"
-                      className="p5-form-select"
-                      value={settings.worker.adapter}
-                      onChange={(e) =>
-                        onUpdateSettings({
-                          worker: { adapter: e.target.value },
-                        })
-                      }
-                    >
-                      {workerAdapters.map((ad) => (
-                        <option
-                          key={ad.id}
-                          value={ad.id}
-                          disabled={!ad.available}
-                        >
-                          {ad.name} ({ad.id})
-                          {!ad.available
-                            ? ` — 不可用：${ad.unavailableReason ?? '未安装'}`
-                            : ' — 可用'}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* Adapter availability list */}
-                    <div className="p5-adapter-status-list">
-                      {workerAdapters.map((ad) => (
-                        <div
-                          key={ad.id}
-                          className={`p5-adapter-chip ${
-                            ad.available ? 'is-available' : 'is-disabled'
-                          }`}
-                        >
-                          <strong>{ad.name}</strong> ({ad.id})：
-                          {ad.available ? (
-                            <span className="ok-text">● 本机可用</span>
-                          ) : (
-                            <span className="err-text">
-                              ○ 不可用（{ad.unavailableReason ?? '未检测到命令'}）
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p5-form-group">
-                    <label className="p5-form-label" htmlFor="worker-connection-select">
-                      模型连接方式
-                    </label>
-                    <select
-                      id="worker-connection-select"
-                      data-testid="worker-connection-select"
-                      className="p5-form-select"
-                      value={settings.worker.connection}
-                      onChange={(e) => {
-                        setWorkerApiKeyDraft('');
-                        onUpdateSettings({ worker: { connection: e.target.value as 'endpoint' | 'agent-default' } });
-                      }}
-                    >
-                      <option value="endpoint">自定义接口</option>
-                      <option value="agent-default">使用 Agent 自带登录</option>
-                    </select>
-                  </div>
-
-                  {settings.worker.connection === 'endpoint' ? (
-                    <>
-                      <div className="p5-form-group">
-                        <label className="p5-form-label" htmlFor="worker-baseurl-input">
-                          OpenAI 兼容接口地址 (BASE URL)
-                        </label>
-                        <div className="p5-input-inline-row">
-                          <input
-                            id="worker-baseurl-input"
-                            data-testid="worker-baseurl-input"
-                            type="text"
-                            className="p5-form-input"
-                            value={workerBaseUrlDraft}
-                            onChange={(e) => setWorkerBaseUrlDraft(e.target.value)}
-                            placeholder="http://127.0.0.1:3425/v1"
-                          />
-                          <button
-                            type="button"
-                            className="p5-apply-btn"
-                            data-testid="worker-baseurl-save-btn"
-                            onClick={() => {
-                              const baseUrl = workerBaseUrlDraft.trim();
-                              if (baseUrl) onUpdateSettings({ worker: { endpoint: { baseUrl } } });
-                            }}
-                          >
-                            保存地址
-                          </button>
-                        </div>
-                      </div>
-                      <div className="p5-form-group">
-                        <div className="p5-form-label-row">
-                          <label className="p5-form-label" htmlFor="worker-apikey-input">
-                            API Key（只写不读）
-                          </label>
-                          <span
-                            className={`p5-apikey-status ${settings.worker.endpoint.apiKeySet ? 'is-set' : 'is-unset'}`}
-                            data-testid="worker-apikey-status"
-                          >
-                            状态：{settings.worker.endpoint.apiKeySet ? '已设置' : '未设置'}
-                          </span>
-                        </div>
-                        <div className="p5-input-inline-row">
-                          <input
-                            id="worker-apikey-input"
-                            data-testid="worker-apikey-input"
-                            type="password"
-                            className="p5-form-input"
-                            value={workerApiKeyDraft}
-                            onChange={(e) => setWorkerApiKeyDraft(e.target.value)}
-                            placeholder="接口免 Key 时可留空"
-                            autoComplete="off"
-                          />
-                          <button
-                            type="button"
-                            className="p5-apply-btn"
-                            data-testid="worker-apikey-save-btn"
-                            onClick={() => {
-                              const apiKey = workerApiKeyDraft.trim();
-                              if (!apiKey) return;
-                              onUpdateSettings({ worker: { endpoint: { apiKey } } });
-                              setWorkerApiKeyDraft('');
-                            }}
-                          >
-                            更新 Key
-                          </button>
-                          <button
-                            type="button"
-                            className="p5-apply-btn p5-apply-btn--danger"
-                            data-testid="worker-apikey-clear-btn"
-                            onClick={() => {
-                              setWorkerApiKeyDraft('');
-                              onUpdateSettings({ worker: { endpoint: { apiKey: '' } } });
-                            }}
-                          >
-                            清除 Key
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="p5-empty-hint" data-testid="worker-agent-default-hint">
-                      使用本机 Agent 已有的登录状态和模型配置，工作台仍强制启用所选沙箱及按需审批。
-                    </p>
-                  )}
-
-                  {/* Worker Model Input + List */}
+                  {/* Model Picker first — most important for users */}
                   <ModelPicker
                     target="worker"
-                    label="执行模型 (WORKER MODEL)"
+                    label="当前模型"
                     currentModel={settings.worker.model}
                     draft={workerModelDraft}
                     onDraftChange={setWorkerModelDraft}
-                    modelList={workerModels}
-                    placeholder="输入模型名（如 gpt-6.1-sol）或从下方列表点选"
+                    modelList={safeWorkerModels}
+                    placeholder="搜索或输入模型名称"
                     onRefresh={() => onListModels('worker')}
                     onApplyModel={(model) =>
                       onUpdateSettings({ worker: { model } })
                     }
                   />
-
-                  {/* Sandbox Policy */}
-                  <div className="p5-form-group">
-                    <label className="p5-form-label" htmlFor="worker-sandbox-select">
-                      沙箱权限策略 (SANDBOX)
-                    </label>
-                    <select
-                      id="worker-sandbox-select"
-                      data-testid="worker-sandbox-select"
-                      className="p5-form-select"
-                      value={settings.worker.sandbox}
-                      onChange={(e) =>
-                        onUpdateSettings({
-                          worker: {
-                            sandbox: e.target.value as
-                              | 'read-only'
-                              | 'workspace-write',
-                          },
-                        })
-                      }
-                    >
-                      <option value="workspace-write">
-                        workspace-write（允许修改项目目录内文件，终端命令需审批）
-                      </option>
-                      <option value="read-only">
-                        read-only（只读沙箱，禁止写入文件）
-                      </option>
-                    </select>
-                  </div>
 
                   {/* Test Connection */}
                   <div className="p5-form-group p5-conn-test-row">
@@ -542,35 +280,202 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       className="p5-apply-btn p5-apply-btn--test"
                       data-testid="worker-test-conn-btn"
                       onClick={() => onTestConnection('worker')}
-                      disabled={workerConnTest.testing}
+                      disabled={safeWorkerConn.testing}
                     >
-                      {workerConnTest.testing
-                        ? '正在测试连接…'
-                        : '⚡ 测试执行 Agent 连接'}
+                      {safeWorkerConn.testing ? '正在检测…' : '检测连接状态'}
                     </button>
 
-                    <ConnectionTestResult target="worker" state={workerConnTest} />
+                    <ConnectionTestResult
+                      target="worker"
+                      state={safeWorkerConn}
+                    />
                   </div>
+
+                  {/* Collapsible Advanced Settings */}
+                  <div>
+                    <button
+                      type="button"
+                      className="p5-mini-action-btn"
+                      onClick={() => setShowWorkerAdvanced((v) => !v)}
+                    >
+                      {showWorkerAdvanced
+                        ? '▾ 收起高级接口设置'
+                        : '▸ 高级接口设置（一般无需修改）'}
+                    </button>
+                  </div>
+
+                  {showWorkerAdvanced && (
+                    <>
+                      {workerAdapters.length > 0 && (
+                        <div className="p5-form-group">
+                          <label
+                            className="p5-form-label"
+                            htmlFor="worker-adapter-select"
+                          >
+                            执行方式
+                          </label>
+                          <select
+                            id="worker-adapter-select"
+                            data-testid="worker-adapter-select"
+                            className="p5-form-select"
+                            value={settings.worker.adapter}
+                            onChange={(e) =>
+                              onUpdateSettings({
+                                worker: { adapter: e.target.value },
+                              })
+                            }
+                          >
+                            {workerAdapters.map((ad) => (
+                              <option
+                                key={ad.id}
+                                value={ad.id}
+                                disabled={!ad.available}
+                              >
+                                {ad.name}
+                                {!ad.available ? '（未安装）' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="p5-form-group">
+                        <label
+                          className="p5-form-label"
+                          htmlFor="worker-connection-select"
+                        >
+                          账号与接口来源
+                        </label>
+                        <select
+                          id="worker-connection-select"
+                          data-testid="worker-connection-select"
+                          className="p5-form-select"
+                          value={settings.worker.connection}
+                          onChange={(e) => {
+                            setWorkerApiKeyDraft('');
+                            onUpdateSettings({
+                              worker: {
+                                connection: e.target.value as
+                                  | 'endpoint'
+                                  | 'agent-default',
+                              },
+                            });
+                          }}
+                        >
+                          <option value="agent-default">
+                            直接使用本机已登录账号（推荐）
+                          </option>
+                          <option value="endpoint">自定义接口地址</option>
+                        </select>
+                      </div>
+
+                      {settings.worker.connection === 'endpoint' && (
+                        <>
+                          <div className="p5-form-group">
+                            <label
+                              className="p5-form-label"
+                              htmlFor="worker-baseurl-input"
+                            >
+                              接口地址
+                            </label>
+                            <div className="p5-input-inline-row">
+                              <input
+                                id="worker-baseurl-input"
+                                data-testid="worker-baseurl-input"
+                                type="text"
+                                className="p5-form-input"
+                                value={workerBaseUrlDraft}
+                                onChange={(e) =>
+                                  setWorkerBaseUrlDraft(e.target.value)
+                                }
+                                placeholder="http://127.0.0.1:3425/v1"
+                              />
+                              <button
+                                type="button"
+                                className="p5-apply-btn"
+                                data-testid="worker-baseurl-save-btn"
+                                onClick={() => {
+                                  const baseUrl = workerBaseUrlDraft.trim();
+                                  if (baseUrl)
+                                    onUpdateSettings({
+                                      worker: { endpoint: { baseUrl } },
+                                    });
+                                }}
+                              >
+                                保存
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="p5-form-group">
+                            <div className="p5-form-label-row">
+                              <label
+                                className="p5-form-label"
+                                htmlFor="worker-apikey-input"
+                              >
+                                接口密钥 (API Key)
+                              </label>
+                              <span
+                                className={`p5-apikey-status ${
+                                  settings.worker.endpoint.apiKeySet
+                                    ? 'is-set'
+                                    : 'is-unset'
+                                }`}
+                                data-testid="worker-apikey-status"
+                              >
+                                {settings.worker.endpoint.apiKeySet
+                                  ? '已设置'
+                                  : '未设置'}
+                              </span>
+                            </div>
+                            <div className="p5-input-inline-row">
+                              <input
+                                id="worker-apikey-input"
+                                data-testid="worker-apikey-input"
+                                type="password"
+                                className="p5-form-input"
+                                value={workerApiKeyDraft}
+                                onChange={(e) =>
+                                  setWorkerApiKeyDraft(e.target.value)
+                                }
+                                placeholder="无需密钥时可留空"
+                                autoComplete="off"
+                              />
+                              <button
+                                type="button"
+                                className="p5-apply-btn"
+                                data-testid="worker-apikey-save-btn"
+                                onClick={() => {
+                                  const apiKey = workerApiKeyDraft.trim();
+                                  if (!apiKey) return;
+                                  onUpdateSettings({
+                                    worker: { endpoint: { apiKey } },
+                                  });
+                                  setWorkerApiKeyDraft('');
+                                }}
+                              >
+                                保存
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* ── TAB 3: 台词模型 (VOICE) ── */}
+            {/* ── TAB 3: 角色台词 (VOICE) ── */}
             {activeTab === 'voice' && (
               <div className="p5-sys-panel" data-testid="system-panel-voice">
                 <div className="p5-sys-panel-head">
-                  <h3>台词模型（嘴） // VOICE MODEL</h3>
-                  <p>
-                    事件到达后先即时显示角色包预置台词（preset），开启台词模型后会在后台生成角色口吻台词并原地替换（model）。
-                  </p>
+                  <h3>角色台词设置</h3>
                 </div>
 
                 <div className="p5-sys-form">
-                  {/* Enable Toggle */}
                   <div className="p5-form-group p5-form-group--inline">
-                    <label className="p5-form-label">
-                      启用台词模型即兴生成 (VOICE ENABLED)
-                    </label>
+                    <label className="p5-form-label">AI 自由互动台词</label>
                     <button
                       type="button"
                       data-testid="voice-enabled-toggle"
@@ -583,187 +488,163 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         })
                       }
                     >
-                      {settings.voice.enabled
-                        ? '● 已开启（预置台词 + 模型替换）'
-                        : '○ 已关闭（仅使用角色包预置台词）'}
+                      {settings.voice.enabled ? '● 已开启' : '○ 已关闭'}
                     </button>
                   </div>
 
-                  {/* Base URL */}
-                  <div className="p5-form-group">
-                    <label className="p5-form-label" htmlFor="voice-baseurl-input">
-                      OpenAI 兼容接口地址 (BASE URL)
-                    </label>
-                    <div className="p5-input-inline-row">
-                      <input
-                        id="voice-baseurl-input"
-                        data-testid="voice-baseurl-input"
-                        type="text"
-                        className="p5-form-input"
-                        value={voiceBaseUrlDraft}
-                        onChange={(e) => setVoiceBaseUrlDraft(e.target.value)}
-                        placeholder="http://127.0.0.1:3425/v1"
+                  {settings.voice.enabled && (
+                    <>
+                      <ModelPicker
+                        target="voice"
+                        label="台词模型"
+                        currentModel={settings.voice.endpoint.model}
+                        draft={voiceModelDraft}
+                        onDraftChange={setVoiceModelDraft}
+                        modelList={safeVoiceModels}
+                        placeholder="选择用于生成角色台词的模型"
+                        refreshLabel="↻ 刷新列表"
+                        onRefresh={() => onListModels('voice')}
+                        onApplyModel={(model) =>
+                          onUpdateSettings({ voice: { endpoint: { model } } })
+                        }
                       />
-                      <button
-                        type="button"
-                        className="p5-apply-btn"
-                        data-testid="voice-baseurl-save-btn"
-                        onClick={() => {
-                          const trimmed = voiceBaseUrlDraft.trim();
-                          if (trimmed) {
-                            onUpdateSettings({
-                              voice: { endpoint: { baseUrl: trimmed } },
-                            });
-                          }
-                        }}
-                      >
-                        保存地址
-                      </button>
-                    </div>
-                  </div>
 
-                  {/* Voice Model */}
-                  <ModelPicker
-                    target="voice"
-                    label="台词生成模型 (VOICE MODEL)"
-                    currentModel={settings.voice.endpoint.model}
-                    draft={voiceModelDraft}
-                    onDraftChange={setVoiceModelDraft}
-                    modelList={voiceModels}
-                    placeholder="remote-magpie/antigravity/gemini-3.8-flash"
-                    refreshLabel="↻ 刷新模型列表"
-                    onRefresh={() => onListModels('voice')}
-                    onApplyModel={(model) =>
-                      onUpdateSettings({ voice: { endpoint: { model } } })
-                    }
-                  />
+                      <div className="p5-form-group p5-conn-test-row">
+                        <button
+                          type="button"
+                          className="p5-apply-btn p5-apply-btn--test"
+                          data-testid="voice-test-conn-btn"
+                          onClick={() => onTestConnection('voice')}
+                          disabled={safeVoiceConn.testing}
+                        >
+                          {safeVoiceConn.testing ? '正在检测…' : '检测连接状态'}
+                        </button>
 
-                  {/* API Key (Write-only, never read back) */}
-                  <div className="p5-form-group">
-                    <div className="p5-form-label-row">
-                      <label className="p5-form-label" htmlFor="voice-apikey-input">
-                        API Key（只写不读，服务端脱敏保存）
-                      </label>
-                      <span
-                        className={`p5-apikey-status ${
-                          settings.voice.endpoint.apiKeySet ? 'is-set' : 'is-unset'
-                        }`}
-                        data-testid="voice-apikey-status"
-                      >
-                        状态：{settings.voice.endpoint.apiKeySet ? '已设置' : '未设置'}
-                      </span>
-                    </div>
+                        <ConnectionTestResult
+                          target="voice"
+                          state={safeVoiceConn}
+                        />
+                      </div>
 
-                    <div className="p5-input-inline-row">
-                      <input
-                        id="voice-apikey-input"
-                        data-testid="voice-apikey-input"
-                        type="password"
-                        className="p5-form-input"
-                        value={voiceApiKeyDraft}
-                        onChange={(e) => setVoiceApiKeyDraft(e.target.value)}
-                        placeholder="本机 magpie 网关免 Key；如需填写外部 Key 请在此输入"
-                        autoComplete="off"
-                      />
-                      <button
-                        type="button"
-                        className="p5-apply-btn"
-                        data-testid="voice-apikey-save-btn"
-                        onClick={() => {
-                          if (!voiceApiKeyDraft.trim()) return;
-                          onUpdateSettings({
-                            voice: {
-                              endpoint: { apiKey: voiceApiKeyDraft.trim() },
-                            },
-                          });
-                          setVoiceApiKeyDraft('');
-                        }}
-                      >
-                        更新 Key
-                      </button>
-                      <button
-                        type="button"
-                        className="p5-apply-btn p5-apply-btn--danger"
-                        data-testid="voice-apikey-clear-btn"
-                        onClick={() => {
-                          setVoiceApiKeyDraft('');
-                          onUpdateSettings({
-                            voice: { endpoint: { apiKey: '' } },
-                          });
-                        }}
-                      >
-                        清除 Key
-                      </button>
-                    </div>
-                  </div>
+                      <div>
+                        <button
+                          type="button"
+                          className="p5-mini-action-btn"
+                          onClick={() => setShowVoiceAdvanced((v) => !v)}
+                        >
+                          {showVoiceAdvanced
+                            ? '▾ 收起高级接口设置'
+                            : '▸ 高级接口设置（一般无需修改）'}
+                        </button>
+                      </div>
 
-                  {/* Max lines per minute */}
-                  <div className="p5-form-group">
-                    <label className="p5-form-label" htmlFor="voice-rate-input">
-                      每分钟最多生成句数 (MAX LINES / MIN)：
-                      <strong>{settings.voice.maxLinesPerMinute} 句/分钟</strong>
-                    </label>
-                    <div className="p5-input-inline-row">
-                      <input
-                        id="voice-rate-input"
-                        data-testid="voice-rate-input"
-                        type="number"
-                        min={1}
-                        max={60}
-                        className="p5-form-input p5-form-input--short"
-                        value={voiceRateDraft}
-                        onChange={(e) => setVoiceRateDraft(e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        className="p5-apply-btn"
-                        data-testid="voice-rate-save-btn"
-                        onClick={() => {
-                          const n = Math.max(
-                            1,
-                            Math.min(60, Number(voiceRateDraft) || 6)
-                          );
-                          onUpdateSettings({
-                            voice: { maxLinesPerMinute: n },
-                          });
-                        }}
-                      >
-                        保存限流
-                      </button>
-                    </div>
-                  </div>
+                      {showVoiceAdvanced && (
+                        <>
+                          <div className="p5-form-group">
+                            <label
+                              className="p5-form-label"
+                              htmlFor="voice-baseurl-input"
+                            >
+                              接口地址
+                            </label>
+                            <div className="p5-input-inline-row">
+                              <input
+                                id="voice-baseurl-input"
+                                data-testid="voice-baseurl-input"
+                                type="text"
+                                className="p5-form-input"
+                                value={voiceBaseUrlDraft}
+                                onChange={(e) =>
+                                  setVoiceBaseUrlDraft(e.target.value)
+                                }
+                                placeholder="http://127.0.0.1:3425/v1"
+                              />
+                              <button
+                                type="button"
+                                className="p5-apply-btn"
+                                data-testid="voice-baseurl-save-btn"
+                                onClick={() => {
+                                  const trimmed = voiceBaseUrlDraft.trim();
+                                  if (trimmed) {
+                                    onUpdateSettings({
+                                      voice: { endpoint: { baseUrl: trimmed } },
+                                    });
+                                  }
+                                }}
+                              >
+                                保存
+                              </button>
+                            </div>
+                          </div>
 
-                  {/* Test Voice Connection */}
-                  <div className="p5-form-group p5-conn-test-row">
-                    <button
-                      type="button"
-                      className="p5-apply-btn p5-apply-btn--test"
-                      data-testid="voice-test-conn-btn"
-                      onClick={() => onTestConnection('voice')}
-                      disabled={voiceConnTest.testing}
-                    >
-                      {voiceConnTest.testing
-                        ? '正在测试连接…'
-                        : '⚡ 测试台词模型连接'}
-                    </button>
+                          <div className="p5-form-group">
+                            <div className="p5-form-label-row">
+                              <label
+                                className="p5-form-label"
+                                htmlFor="voice-apikey-input"
+                              >
+                                接口密钥 (API Key)
+                              </label>
+                              <span
+                                className={`p5-apikey-status ${
+                                  settings.voice.endpoint.apiKeySet
+                                    ? 'is-set'
+                                    : 'is-unset'
+                                }`}
+                                data-testid="voice-apikey-status"
+                              >
+                                {settings.voice.endpoint.apiKeySet
+                                  ? '已设置'
+                                  : '未设置'}
+                              </span>
+                            </div>
 
-                    <ConnectionTestResult target="voice" state={voiceConnTest} />
-                  </div>
+                            <div className="p5-input-inline-row">
+                              <input
+                                id="voice-apikey-input"
+                                data-testid="voice-apikey-input"
+                                type="password"
+                                className="p5-form-input"
+                                value={voiceApiKeyDraft}
+                                onChange={(e) =>
+                                  setVoiceApiKeyDraft(e.target.value)
+                                }
+                                placeholder="无需密钥时可留空"
+                                autoComplete="off"
+                              />
+                              <button
+                                type="button"
+                                className="p5-apply-btn"
+                                data-testid="voice-apikey-save-btn"
+                                onClick={() => {
+                                  if (!voiceApiKeyDraft.trim()) return;
+                                  onUpdateSettings({
+                                    voice: {
+                                      endpoint: {
+                                        apiKey: voiceApiKeyDraft.trim(),
+                                      },
+                                    },
+                                  });
+                                  setVoiceApiKeyDraft('');
+                                }}
+                              >
+                                保存
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* ── TAB 4: 鱼塘（项目） (POND) ── */}
+            {/* ── TAB 4: 工作文件夹 (POND) ── */}
             {activeTab === 'pond' && (
               <div className="p5-sys-panel" data-testid="system-panel-pond">
                 <div className="p5-sys-panel-head">
-                  <h3>鱼塘（项目目录） // PROJECT WORKSPACE</h3>
-                  <p>
-                    指定执行 Agent 潜入干活的本地项目文件夹路径。当前生效目录：
-                    <code data-testid="pond-current-dir">
-                      {settings.projectDir ?? '尚未选择'}
-                    </code>
-                  </p>
+                  <h3>工作文件夹</h3>
                 </div>
 
                 <div className="p5-sys-form">
@@ -772,7 +653,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       className="p5-form-label"
                       htmlFor="pond-project-dir-input"
                     >
-                      项目文件夹路径 (PROJECT DIRECTORY)
+                      当前文件夹路径
                     </label>
                     <div className="p5-input-inline-row">
                       <input
@@ -782,8 +663,45 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         className="p5-form-input"
                         value={projectDirDraft}
                         onChange={(e) => setProjectDirDraft(e.target.value)}
-                        placeholder="/tmp/my-project 或本地仓库路径"
+                        placeholder="/Users/你的名字/项目文件夹"
                       />
+                      <button
+                        type="button"
+                        className="p5-apply-btn p5-apply-btn--test"
+                        onClick={async () => {
+                          try {
+                            const electronAPI = (
+                              window as unknown as {
+                                electronAPI?: {
+                                  pickDirectory: () => Promise<string | null>;
+                                };
+                              }
+                            ).electronAPI;
+                            if (electronAPI?.pickDirectory) {
+                              const picked = await electronAPI.pickDirectory();
+                              if (picked) {
+                                setProjectDirDraft(picked);
+                                onUpdateSettings({ projectDir: picked });
+                              }
+                              return;
+                            }
+                            const res = await fetch('/api/pick-directory', {
+                              method: 'POST',
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              if (data.ok && data.path) {
+                                setProjectDirDraft(data.path);
+                                onUpdateSettings({ projectDir: data.path });
+                              }
+                            }
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                      >
+                        📁 选择文件夹
+                      </button>
                       <button
                         type="button"
                         className="p5-apply-btn"
@@ -795,35 +713,33 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           }
                         }}
                       >
-                        仅保存路径
+                        保存
                       </button>
                     </div>
                   </div>
 
-                  <div className="p5-form-group">
-                    <button
-                      type="button"
-                      className="p5-new-session-cta"
-                      data-testid="pond-new-session-btn"
-                      onClick={() => {
-                        const targetDir =
-                          projectDirDraft.trim() || settings.projectDir || '';
-                        if (targetDir) {
-                          onStartNewSessionWithDir(targetDir);
-                        }
-                      }}
-                    >
-                      ★ 用这个文件夹开新会话（发送 update_settings + new_session）
-                    </button>
-                  </div>
+                  {onStartNewSessionWithDir && (
+                    <div className="p5-form-group">
+                      <button
+                        type="button"
+                        className="p5-new-session-cta"
+                        data-testid="pond-new-session-btn"
+                        onClick={() => {
+                          const targetDir =
+                            projectDirDraft.trim() || settings.projectDir || '';
+                          if (targetDir) {
+                            onStartNewSessionWithDir(targetDir);
+                          }
+                        }}
+                      >
+                        ★ 进入该文件夹并开始新对话
+                      </button>
+                    </div>
+                  )}
 
-                  <div className="p5-form-group">
-                    <span className="p5-form-label">
-                      最近潜入的鱼塘 (RECENT PROJECTS)
-                    </span>
-                    {settings.recentProjects.length === 0 ? (
-                      <div className="p5-empty-hint">暂无最近项目记录</div>
-                    ) : (
+                  {settings.recentProjects.length > 0 && (
+                    <div className="p5-form-group">
+                      <span className="p5-form-label">最近打开的文件夹</span>
                       <div
                         className="p5-recent-projects-list"
                         data-testid="pond-recent-list"
@@ -834,43 +750,36 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                             <div className="p5-recent-actions">
                               <button
                                 type="button"
-                                className="p5-mini-action-btn"
-                                onClick={() => {
-                                  setProjectDirDraft(dir);
-                                  onUpdateSettings({ projectDir: dir });
-                                }}
-                              >
-                                填入并设为当前
-                              </button>
-                              <button
-                                type="button"
                                 className="p5-mini-action-btn p5-mini-action-btn--accent"
                                 onClick={() => {
                                   setProjectDirDraft(dir);
-                                  onStartNewSessionWithDir(dir);
+                                  if (onStartNewSessionWithDir) {
+                                    onStartNewSessionWithDir(dir);
+                                  } else {
+                                    onUpdateSettings({ projectDir: dir });
+                                  }
                                 }}
                               >
-                                直接开新会话 ▶
+                                切换到此文件夹 ▶
                               </button>
                             </div>
                           </div>
                         ))}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* ── TAB 5: 演出 (PERFORMANCE) ── */}
+            {/* ── TAB 5: 显示速度 (PERFORMANCE) ── */}
             {activeTab === 'performance' && (
               <div
                 className="p5-sys-panel"
                 data-testid="system-panel-performance"
               >
                 <div className="p5-sys-panel-head">
-                  <h3>舞台演出参数 // STAGE PERFORMANCE</h3>
-                  <p>调节角色台词框的打字机逐字显示速度。</p>
+                  <h3>对话显示速度</h3>
                 </div>
 
                 <div className="p5-sys-form">
@@ -879,7 +788,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       className="p5-form-label"
                       htmlFor="perf-typing-speed-input"
                     >
-                      打字机速度 (TYPING SPEED)：
+                      台词逐字显示速度：
                       <strong data-testid="perf-current-speed-val">
                         {settings.performance.typingCharsPerSec} 字/秒
                       </strong>

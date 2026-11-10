@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -69,13 +69,22 @@ export class SettingsStore {
       this.value = validateSettings(deepMerge(DEFAULT_SETTINGS, JSON.parse(await readFile(this.path, 'utf8'))));
       await chmod(this.path, 0o600);
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('无法读取本地设置文件，请检查 JSON 与设置格式'); }
-    if (!this.value.projectDir) {
+    let dirValid = false;
+    if (this.value.projectDir) {
+      try {
+        dirValid = (await stat(this.value.projectDir)).isDirectory();
+      } catch {
+        dirValid = false;
+      }
+    }
+    if (!this.value.projectDir || !dirValid) {
       const cwd = process.cwd();
       const defaultDir = process.env.BIGFISH_PROJECT_DIR || (cwd.endsWith('/server') ? dirname(cwd) : cwd);
       this.value.projectDir = defaultDir;
-      if (!this.value.recentProjects.includes(defaultDir)) {
-        this.value.recentProjects = [defaultDir, ...this.value.recentProjects].slice(0, 20);
-      }
+      this.value.recentProjects = [
+        defaultDir,
+        ...this.value.recentProjects.filter(p => p !== defaultDir && !p.startsWith('/private/tmp/')),
+      ].slice(0, 20);
     }
   }
   async update(patch: SettingsPatch): Promise<AppSettings> {

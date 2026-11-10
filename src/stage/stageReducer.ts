@@ -355,6 +355,22 @@ function applySingleStageEvent(
     }
 
     case 'character_line': {
+      // If the real AI (worker_text) has already started answering in this turn,
+      // do not let canned preset catchphrases overwrite the real reply in the dialogue box!
+      const hasRealReplyInTurn = (() => {
+        for (let i = events.length - 1; i >= 0; i -= 1) {
+          const ev = events[i];
+          if (ev.type === 'user_message') break;
+          if (ev.type === 'worker_text' && ev.text.trim().length > 0) {
+            return true;
+          }
+        }
+        return false;
+      })();
+      if (hasRealReplyInTurn) {
+        return nextStateBase;
+      }
+
       const emotionChanged = state.currentEmotion !== event.emotion;
       const isReplacement = Boolean(
         event.replacesLineId &&
@@ -403,8 +419,41 @@ function applySingleStageEvent(
     }
 
     case 'worker_text': {
-      // worker_text only goes into Backlog and Engineering View, never into the dialogue box
-      return nextStateBase;
+      // Stream the real AI response directly into the main dialogue bubble!
+      let mergedText = event.text;
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const ev = events[i];
+        if (ev.type === 'user_message') break;
+        if (ev.type === 'worker_text' && ev.text.trim()) {
+          mergedText = ev.text;
+          break;
+        }
+      }
+      if (!mergedText.trim()) {
+        return nextStateBase;
+      }
+      const nextEmotion: Emotion = event.final ? 'happy' : 'working';
+      const lineKey = `worker_reply_${state.turnStartedAt ?? event.at}`;
+      const isSameReply = state.currentLine?.lineKey === lineKey;
+      return {
+        ...nextStateBase,
+        currentEmotion: nextEmotion,
+        emotionSwitchKey:
+          state.currentEmotion !== nextEmotion
+            ? state.emotionSwitchKey + 1
+            : state.emotionSwitchKey,
+        currentLine: {
+          lineKey,
+          characterId: state.characterId,
+          emotion: nextEmotion,
+          text: mergedText,
+          source: 'model',
+          replaceVersion: isSameReply
+            ? (state.currentLine?.replaceVersion ?? 0) + 1
+            : 1,
+          at: event.at,
+        },
+      };
     }
 
     case 'tool_start': {

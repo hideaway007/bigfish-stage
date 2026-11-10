@@ -33,6 +33,8 @@ export function buildCodexLaunch(settings: Pick<WorkerSettings, 'connection' | '
     if (settings.endpoint.apiKey) {
       env.BIGFISH_WORKER_API_KEY = settings.endpoint.apiKey;
       args.push('-c', 'model_providers.bigfish.env_key="BIGFISH_WORKER_API_KEY"');
+    } else {
+      args.push('-c', 'model_providers.bigfish.experimental_bearer_token="magpie"');
     }
   }
   return { args: [...args, 'app-server', '--stdio'], env };
@@ -236,7 +238,13 @@ class CodexSession implements WorkerSession {
   }
   async initialize() {
     await this.initializeTransport();
-    const params = { cwd: this.options.cwd, model: this.options.model, sandbox: this.options.sandbox, approvalPolicy: 'on-request', approvalsReviewer: 'user' };
+    const effectiveModel =
+      this.options.connection === 'endpoint' &&
+      this.options.endpoint.baseUrl.includes('3425') &&
+      /^gpt-/.test(this.options.model)
+        ? `codex/${this.options.model}`
+        : this.options.model;
+    const params = { cwd: this.options.cwd, model: effectiveModel, sandbox: this.options.sandbox, approvalPolicy: 'on-request', approvalsReviewer: 'user' };
     const result = await this.request(this.options.resumeId ? 'thread/resume' : 'thread/start', { ...params, ...(this.options.resumeId ? { threadId: this.options.resumeId } : {}) });
     verifyEffectivePolicy(result, this.options.sandbox, this.options.cwd);
     this.sessionId = result.thread.id;
