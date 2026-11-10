@@ -740,21 +740,28 @@ export const StageApp: React.FC = () => {
             />
           </div>
 
-          {/* P5X Overlapping Nameplate + Compact Workspace Attributes + Circular Party Medals */}
+          {/* P5X Overlapping Nameplate + Bottom Row (Party Medals + P5 Context Radar) */}
           <div className="p5-char-info-cluster" data-testid="hud-status-card">
             <div
               className="p5-char-codename-giant"
-              data-testid="character-codename"
+              data-testid="character-nickname"
             >
-              {character.codename}
+              {shortNickname}
             </div>
 
             <div className="p5-char-name-pill">
               <span
                 className="p5-char-name-main"
-                data-testid="character-nickname"
+                data-testid="character-codename"
               >
-                {shortNickname} · {character.tagline.split('，')[0]}
+                {character.codename}
+              </span>
+
+              <span
+                className="p5-speaker-codename-sr"
+                data-testid="hud-model-name"
+              >
+                {state.modelName}
               </span>
 
               <span
@@ -781,114 +788,107 @@ export const StageApp: React.FC = () => {
               </div>
             )}
 
-            <div className="p5-char-meta-pills">
-              <button
-                type="button"
-                className="p5-meta-pill"
-                onClick={() =>
-                  dispatch({
-                    type: 'TOGGLE_SYSTEM_MENU',
-                    open: true,
-                    tab: 'worker',
-                  })
-                }
-                title="点击切换或配置 AI 模型"
-              >
-                <span>模型</span>
-                <strong data-testid="hud-model-name">
-                  {state.modelName} ▾
-                </strong>
-              </button>
-
-              <button
-                type="button"
-                className="p5-meta-pill"
-                onClick={() =>
-                  dispatch({
-                    type: 'TOGGLE_SYSTEM_MENU',
-                    open: true,
-                    tab: 'pond',
-                  })
-                }
-                title={state.cwd}
-              >
-                <span>工作区</span>
-                <strong>📁 {state.cwd} ▾</strong>
-              </button>
-            </div>
-
-            {/* P5 Palace Security Level / DSH Context Meter */}
-            <div className="p5-context-meter" data-testid="context-meter">
-              <div className="p5-context-meter-top">
-                <span className="p5-context-label">
-                  SECURITY // 上下文警戒槽
-                </span>
-                <span
-                  className="p5-context-tokens"
-                  data-testid="context-meter-value"
-                >
-                  <strong>{usedK}k</strong> / {maxK}k Tokens ({contextPercent}%)
-                </span>
-                <button
-                  type="button"
-                  className="p5-compaction-trigger-btn"
-                  data-testid="trigger-compaction-btn"
-                  onClick={handleTriggerCompactionDemo}
-                  title="触发 DSH 历史上下文记忆蒸馏压缩演出"
-                >
-                  ✦ 记忆凝炼
-                </button>
+            {/* Bottom Row: 4 Character Avatars (Left) + Dynamic P5 Context Radar Dial (Right) */}
+            <div className="p5-bottom-left-dock">
+              <div className="p5-party-medals" data-testid="party-bar">
+                {state.characters.map((ch) => {
+                  const isActive = ch.id === character.id;
+                  const shortLabel = ch.name.split('（')[0];
+                  return (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      data-testid={`party-member-${ch.id}`}
+                      className={`p5-medal-item ${isActive ? 'is-active' : ''}`}
+                      style={
+                        {
+                          '--member-color': ch.themeColor,
+                        } as React.CSSProperties
+                      }
+                      onClick={() => handleSwitchCharacter(ch.id)}
+                      title={`${ch.name} (${ch.codename})`}
+                    >
+                      <div className="p5-medal-ring">
+                        {ch.portraitUrl ? (
+                          <img
+                            src={ch.portraitUrl}
+                            alt={shortLabel}
+                            className="p5-party-avatar"
+                          />
+                        ) : (
+                          <span className="p5-party-avatar-text">
+                            {shortLabel.slice(0, 2)}
+                          </span>
+                        )}
+                      </div>
+                      <span className="p5-medal-name">{shortLabel}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="p5-context-gauge-track">
-                <div
-                  className={`p5-context-gauge-fill ${
-                    contextPercent >= 75
-                      ? 'is-high'
-                      : contextPercent >= 40
-                      ? 'is-mid'
-                      : 'is-low'
-                  }`}
-                  style={{ width: `${Math.max(8, contextPercent)}%` }}
-                />
-              </div>
-            </div>
 
-            {/* Circular Party Medallions */}
-            <div className="p5-party-medals" data-testid="party-bar">
-              {state.characters.map((ch) => {
-                const isActive = ch.id === character.id;
-                const shortLabel = ch.name.split('（')[0];
-                return (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    data-testid={`party-member-${ch.id}`}
-                    className={`p5-medal-item ${isActive ? 'is-active' : ''}`}
-                    style={
-                      {
-                        '--member-color': ch.themeColor,
-                      } as React.CSSProperties
-                    }
-                    onClick={() => handleSwitchCharacter(ch.id)}
-                    title={`${ch.name} (${ch.codename})`}
+              {/* Dynamic P5 Tactical Radar Dial for Context Usage */}
+              <div
+                className={`p5-context-radar ${
+                  contextPercent >= 75
+                    ? 'is-high'
+                    : contextPercent >= 40
+                    ? 'is-mid'
+                    : 'is-low'
+                }`}
+                data-testid="context-meter"
+              >
+                <div className="p5-radar-dial-wrap">
+                  <svg
+                    className="p5-radar-svg"
+                    viewBox="0 0 64 64"
+                    aria-hidden="true"
                   >
-                    <div className="p5-medal-ring">
-                      {ch.portraitUrl ? (
-                        <img
-                          src={ch.portraitUrl}
-                          alt={shortLabel}
-                          className="p5-party-avatar"
-                        />
-                      ) : (
-                        <span className="p5-party-avatar-text">
-                          {shortLabel.slice(0, 2)}
-                        </span>
-                      )}
-                    </div>
-                    <span className="p5-medal-name">{shortLabel}</span>
+                    <polygon
+                      className="p5-radar-outer-star"
+                      points="32,2 39,21 60,18 44,33 54,53 32,43 10,53 20,33 4,18 25,21"
+                    />
+                    <circle
+                      className="p5-radar-track"
+                      cx="32"
+                      cy="32"
+                      r="22"
+                    />
+                    <circle
+                      className="p5-radar-fill"
+                      cx="32"
+                      cy="32"
+                      r="22"
+                      strokeDasharray={138.2}
+                      strokeDashoffset={
+                        138.2 -
+                        (138.2 * Math.max(8, Math.min(100, contextPercent))) /
+                          100
+                      }
+                    />
+                  </svg>
+                  <span className="p5-radar-pct">{contextPercent}%</span>
+                </div>
+
+                <div className="p5-radar-info">
+                  <span className="p5-radar-kicker">PALACE GAUGE</span>
+                  <span
+                    className="p5-radar-tokens"
+                    data-testid="context-meter-value"
+                  >
+                    <strong>{usedK}k</strong> / {maxK}k
+                  </span>
+                  <button
+                    type="button"
+                    className="p5-compaction-trigger-btn"
+                    data-testid="trigger-compaction-btn"
+                    onClick={handleTriggerCompactionDemo}
+                    title="触发 DSH 历史上下文记忆蒸馏压缩演出"
+                  >
+                    ✦ 记忆凝炼
                   </button>
-                );
-              })}
+                </div>
+              </div>
             </div>
           </div>
         </aside>
@@ -975,21 +975,39 @@ export const StageApp: React.FC = () => {
 
           {/* ── 2. P5 COMIC SPEECH BUBBLE WITH POINTER TAIL ── */}
           <section className="p5-dialogue-section" data-testid="dialogue-layer">
-            <div className="p5-user-mission-bar">
-              <strong>当前指令 //</strong>
-              <span className="p5-mission-text">
-                {latestUserMsg && latestUserMsg.type === 'user_message'
-                  ? latestUserMsg.text
-                  : `等待${uiCopy.userTitle}下达第一条任务指令……`}
-              </span>
-              {state.lastTurnOk !== null && !state.turnActive && (
-                <span
-                  className="p5-mission-done-stamp"
-                  data-testid="turn-done-badge"
-                >
-                  {state.lastTurnOk ? '✓ 已完成' : '■ 已中止'}
+            <div className="p5-dialogue-top-row">
+              <div className="p5-user-mission-bar">
+                <strong>当前指令 //</strong>
+                <span className="p5-mission-text">
+                  {latestUserMsg && latestUserMsg.type === 'user_message'
+                    ? latestUserMsg.text
+                    : `等待${uiCopy.userTitle}下达第一条任务指令……`}
                 </span>
-              )}
+                {state.lastTurnOk !== null && !state.turnActive && (
+                  <span
+                    className="p5-mission-done-stamp"
+                    data-testid="turn-done-badge"
+                  >
+                    {state.lastTurnOk ? '✓ 已完成' : '■ 已中止'}
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="p5-meta-pill p5-workspace-top-pill"
+                onClick={() =>
+                  dispatch({
+                    type: 'TOGGLE_SYSTEM_MENU',
+                    open: true,
+                    tab: 'pond',
+                  })
+                }
+                title={state.cwd}
+              >
+                <span>工作区</span>
+                <strong>📁 {state.cwd} ▾</strong>
+              </button>
             </div>
 
             <div className="p5-comic-bubble-wrap">
