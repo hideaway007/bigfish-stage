@@ -3,12 +3,41 @@ import { createReadStream } from 'node:fs';
 import { stat, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { WebSocket, WebSocketServer } from 'ws';
 import { DEFAULT_SERVER_PORT, WS_PATH, type ServerMessage } from '../../src/shared/wire';
 import { SettingsStore, defaultSettingsPath } from './settings-store';
 import { CharacterCatalog } from './characters';
 import { createRegistry, type AdapterRegistry } from './adapters/registry';
 import { SessionController, parseCommand } from './session';
+
+const runFile = promisify(execFile);
+
+export async function pickNativeDirectory(): Promise<string | null> {
+  if (process.platform === 'darwin') {
+    try {
+      const { stdout } = await runFile(
+        'osascript',
+        ['-e', 'tell application "System Events" to activate', '-e', 'POSIX path of (choose folder with prompt "请选择项目工作区文件夹")'],
+        { timeout: 60000 }
+      );
+      const path = stdout.trim().replace(/\/+$/, '');
+      return path || null;
+    } catch {
+      return null;
+    }
+  } else if (process.platform === 'win32') {
+    try {
+      const ps = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath }`;
+      const { stdout } = await runFile('powershell', ['-NoProfile', '-Command', ps], { timeout: 60000 });
+      return stdout.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 export function validOrigin(origin: string | undefined): boolean {
   if (!origin) return false;
@@ -55,10 +84,27 @@ export async function startServer(options: ServerOptions = {}) {
   const server = createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
-    if (!['GET', 'HEAD'].includes(request.method ?? '')) { response.writeHead(405); response.end(); return; }
+    if (!['GET', 'HEAD', 'POST'].includes(request.method ?? '')) { response.writeHead(405); response.end(); return; }
     try {
       const path = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
       if (path === '/health') { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end('{"ok":true}'); return; }
+      if (path === '/api/default-directory') {
+        const defaultDir = process.env.BIGFISH_PROJECT_DIR || repository;
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ ok: true, cwd: defaultDir }));
+        return;
+      }
+      if (path === '/api/pick-directory') {
+        try {
+          const selected = await pickNativeDirectory();
+          response.writeHead(200, { 'Content-Type': 'application/json' });
+          response.end(JSON.stringify(selected ? { ok: true, path: selected } : { ok: false, cancelled: true }));
+        } catch (err) {
+          response.writeHead(200, { 'Content-Type': 'application/json' });
+          response.end(JSON.stringify({ ok: false, error: (err as Error).message }));
+        }
+        return;
+      }
       const character = path.startsWith('/characters/');
       let file = await staticFile(character ? charactersRoot : distRoot, character ? path.slice('/characters'.length) : path === '/' ? '/index.html' : path);
       if (!file && !character && !extname(path)) file = await staticFile(distRoot, '/index.html');

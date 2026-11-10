@@ -7,5 +7,7 @@ dist/
 !.env.example
 .worktrees/
 outputs/
+output/
 bridge/protocol/
-
+.alma-snapshots
+electron/engine/
