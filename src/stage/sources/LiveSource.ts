@@ -27,6 +27,13 @@ export class LiveSource implements StageDataSource {
   private sessionList = new SessionListFeed();
   public subscribeSessions = this.sessionList.subscribe;
   private sessionListRequested = false;
+  /** 已发出 list_sessions、尚未收到回应 */
+  private sessionListInFlight = false;
+  /**
+   * 当前服务端不支持 list_sessions。旧服务端收到未知命令会直接断开连接（1008），
+   * 若重连后再请求就会断开→重连→再请求，无限循环。确认不支持后，本页面内不再发送。
+   */
+  private sessionListUnsupported = false;
   private wsUrl: string;
   private ws: WebSocket | null = null;
   private disposed = false;
@@ -104,7 +111,12 @@ export class LiveSource implements StageDataSource {
 
   public listSessions(): void {
     this.sessionListRequested = true;
+    if (this.sessionListUnsupported) {
+      this.sessionList.markUnsupported();
+      return;
+    }
     this.sessionList.request();
+    this.sessionListInFlight = this.ws?.readyState === WebSocket.OPEN;
     this.sendRawCommand({ type: 'list_sessions', limit: 100 });
   }
 
@@ -205,6 +217,9 @@ export class LiveSource implements StageDataSource {
         } else if (msg.type === 'settings' && msg.settings?.activeCharacterId) {
           void fetchCharacterPack(msg.settings.activeCharacterId);
         }
+        if (msg.type === 'sessions' || (msg.type === 'command_error' && msg.commandType === 'list_sessions')) {
+          this.sessionListInFlight = false;
+        }
         this.sessionList.receive(msg);
         if ((msg.type === 'session' || msg.type === 'welcome') && this.sessionListRequested) {
           this.listSessions();
@@ -220,9 +235,15 @@ export class LiveSource implements StageDataSource {
       // onclose will handle reconnect scheduling
     };
 
-    socket.onclose = () => {
+    socket.onclose = (ev) => {
       if (this.disposed || this.ws !== socket) return;
       this.ws = null;
+      // 1008 = 服务端拒绝了某条命令；刚发过 list_sessions 就被断开，说明它不认识这条命令
+      if (this.sessionListInFlight && ev.code === 1008) {
+        this.sessionListUnsupported = true;
+        this.sessionList.markUnsupported();
+      }
+      this.sessionListInFlight = false;
       this.scheduleReconnect();
     };
   }

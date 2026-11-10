@@ -26,9 +26,13 @@ export class SessionListFeed {
   request(): void {
     window.clearTimeout(this.timer);
     this.publish({ ...this.state, status: 'loading', error: undefined });
-    this.timer = window.setTimeout(() => {
-      this.publish({ ...this.state, status: 'unsupported', error: '服务端暂不支持会话列表（等待 B 侧实现）' });
-    }, 3000);
+    this.timer = window.setTimeout(() => this.markUnsupported(), 3000);
+  }
+
+  /** 服务端不认识 list_sessions（超时，或因「未知命令」断开连接）时调用 */
+  markUnsupported(): void {
+    window.clearTimeout(this.timer);
+    this.publish({ ...this.state, status: 'unsupported', error: '服务端暂不支持会话列表（等待 B 侧实现）' });
   }
 
   receive(message: ServerMessage): void {
