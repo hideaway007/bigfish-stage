@@ -34,6 +34,7 @@ export class Voice {
   private silenceTimer?: NodeJS.Timeout;
   private active = false;
   private completedSuccessfully = false;
+  private hasWorkerText = false;
   constructor(private emit: (event: StageEvent) => void, private silenceMs = 15_000) {}
   configure(pack: CharacterPack | undefined, settings: VoiceSettings) {
     const switched = !!this.pack && this.pack.id !== pack?.id;
@@ -56,7 +57,8 @@ export class Voice {
     if (event.type === 'character_line') return;
     clearTimeout(this.silenceTimer);
     if (event.type === 'user_message' || event.type === 'thinking') this.active = true;
-    if (event.type === 'user_message') { this.cancel(); this.ledger = []; this.completedSuccessfully = false; }
+    if (event.type === 'user_message') { this.cancel(); this.ledger = []; this.completedSuccessfully = false; this.hasWorkerText = false; }
+    if (event.type === 'worker_text' && event.text.trim()) { this.hasWorkerText = true; this.cancel(); return; }
     if (event.type === 'turn_done' || event.type === 'interrupted') this.active = false;
     if (event.type === 'turn_done') this.completedSuccessfully = event.ok;
     if (event.type === 'tool_start') this.tools.set(event.toolUseId, event.tool);
@@ -65,7 +67,7 @@ export class Voice {
     const fact = eventFact(event);
     if (fact) { this.ledger.push(fact); this.ledger = this.ledger.slice(-12); }
     const worthy = event.type === 'thinking' || event.type === 'permission_request' || event.type === 'turn_done' || (event.type === 'tool_end' && !event.ok);
-    if (event.type !== 'worker_text') this.speak(event, tool, worthy);
+    if (event.type !== 'worker_text' && !this.hasWorkerText) this.speak(event, tool, worthy);
     if (this.active) {
       this.silenceTimer = setTimeout(() => {
         this.ledger.push('超过 15 秒未收到新进度；仍在等待，不能推测成功或失败。');

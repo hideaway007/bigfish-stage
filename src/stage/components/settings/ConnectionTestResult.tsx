@@ -4,14 +4,14 @@ import { mapConnectionFailure } from './connectionErrorMap';
 
 interface ConnectionTestResultProps {
   target: 'worker' | 'voice';
-  state: ConnectionTestState;
+  state?: ConnectionTestState;
 }
 
 export const ConnectionTestResult: React.FC<ConnectionTestResultProps> = ({
   target,
   state,
 }) => {
-  if (!state.message) return null;
+  if (!state || !state.message) return null;
 
   const isOk = Boolean(state.ok);
 
@@ -27,7 +27,7 @@ export const ConnectionTestResult: React.FC<ConnectionTestResultProps> = ({
             className="p5-conn-badge p5-conn-badge--ok"
             data-testid={`${target}-conn-status`}
           >
-            ✓ 连接成功
+            ✓ 连接正常
           </span>
           <strong
             className="p5-conn-card-title"
@@ -61,7 +61,7 @@ export const ConnectionTestResult: React.FC<ConnectionTestResultProps> = ({
           className="p5-conn-badge p5-conn-badge--fail"
           data-testid={`${target}-conn-status`}
         >
-          ✗ 连接失败
+          ✗ 连接未通过
         </span>
         <strong
           className="p5-conn-card-title"
@@ -69,14 +69,6 @@ export const ConnectionTestResult: React.FC<ConnectionTestResultProps> = ({
         >
           {diagnosis.title}
         </strong>
-        {state.latencyMs !== undefined && (
-          <span
-            className="p5-conn-latency"
-            data-testid={`${target}-conn-latency`}
-          >
-            {state.latencyMs} ms
-          </span>
-        )}
       </div>
 
       <div className="p5-conn-card-body">
@@ -84,7 +76,7 @@ export const ConnectionTestResult: React.FC<ConnectionTestResultProps> = ({
           className="p5-conn-diag-row"
           data-testid={`${target}-conn-explanation`}
         >
-          <span className="p5-conn-diag-label">原因说明</span>
+          <span className="p5-conn-diag-label">原因</span>
           <span className="p5-conn-diag-text">{diagnosis.explanation}</span>
         </div>
 
@@ -93,23 +85,10 @@ export const ConnectionTestResult: React.FC<ConnectionTestResultProps> = ({
           data-testid={`${target}-conn-next-step`}
         >
           <span className="p5-conn-diag-label p5-conn-diag-label--step">
-            下一步建议
+            解决方法
           </span>
           <span className="p5-conn-diag-text">{diagnosis.nextStep}</span>
         </div>
-
-        <details
-          className="p5-conn-details"
-          data-testid={`${target}-conn-details`}
-        >
-          <summary className="p5-conn-details-summary">详细信息</summary>
-          <pre
-            className="p5-conn-details-raw"
-            data-testid={`${target}-conn-raw-msg`}
-          >
-            {diagnosis.rawMessage}
-          </pre>
-        </details>
       </div>
     </div>
   );

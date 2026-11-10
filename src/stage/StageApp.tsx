@@ -947,11 +947,12 @@ export const StageApp: React.FC = () => {
 
               <button
                 type="button"
-                className="p5-pill-btn"
+                className="p5-skip-sr-btn"
                 onClick={() => dispatch({ type: 'TOGGLE_ENGINEERING_VIEW' })}
                 data-testid="engineering-view-btn"
+                tabIndex={-1}
               >
-                <kbd>`</kbd> 工程视图
+                工程视图
               </button>
 
               <SfxMuteButton />
@@ -1055,51 +1056,43 @@ export const StageApp: React.FC = () => {
             </div>
           </section>
 
-          {/* ── 3. DSH TRAJECTORY ROUTE MAP (P5 怪盗行动路线图 + 代码改动 + 回答正文) ── */}
+          {/* ── 3. DSH TRAJECTORY ROUTE MAP (仅在有工具调用、报错或引导时显示，待机时不显示冗余占位框) ── */}
           <section className="p5-action-section" data-testid="action-layer">
-            <div className="p5-deck-header">
-              <div className="p5-deck-title-group">
-                <span
-                  className="p5-deck-slash-badge"
-                  data-testid="summary-splash-count"
-                >
-                  TRAJECTORY // 怪盗行动路线 ({state.skillCards.length})
-                </span>
-                {touchedFiles.length > 0 ? (
+            {state.skillCards.length > 0 && (
+              <div className="p5-deck-header">
+                <div className="p5-deck-title-group">
                   <span
-                    className="p5-deck-summary-text"
-                    data-testid="summary-files-touched"
+                    className="p5-deck-slash-badge"
+                    data-testid="summary-splash-count"
                   >
-                    目标{' '}
-                    <strong>
-                      {touchedFiles.map((f) => f.split('/').pop()).join(', ')}
-                    </strong>
-                    {(totalDiffStats.added > 0 ||
-                      totalDiffStats.removed > 0) && (
-                      <>
-                        {' · '}
-                        <span className="diff-add">
-                          +{totalDiffStats.added}
-                        </span>{' '}
-                        /{' '}
-                        <span className="diff-del">
-                          −{totalDiffStats.removed}
-                        </span>
-                      </>
-                    )}
+                    ACTION LOG // 本轮行动 ({state.skillCards.length})
                   </span>
-                ) : state.turnActive ? (
-                  <span className="p5-deck-summary-text">
-                    ● 正在实时推进 DSH 行动轨迹…
-                  </span>
-                ) : (
-                  <span className="p5-deck-summary-text">
-                    实时展开工具执行参数、耗时、代码 Diff 与回答正文
-                  </span>
-                )}
-              </div>
+                  {touchedFiles.length > 0 && (
+                    <span
+                      className="p5-deck-summary-text"
+                      data-testid="summary-files-touched"
+                    >
+                      涉及{' '}
+                      <strong>
+                        {touchedFiles.map((f) => f.split('/').pop()).join(', ')}
+                      </strong>
+                      {(totalDiffStats.added > 0 ||
+                        totalDiffStats.removed > 0) && (
+                        <>
+                          {' · '}
+                          <span className="diff-add">
+                            +{totalDiffStats.added}
+                          </span>{' '}
+                          /{' '}
+                          <span className="diff-del">
+                            −{totalDiffStats.removed}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  )}
+                </div>
 
-              {state.skillCards.length > 0 && (
                 <button
                   type="button"
                   className="p5-mini-chip p5-mini-chip--btn"
@@ -1116,8 +1109,8 @@ export const StageApp: React.FC = () => {
                 >
                   展开完整档案 ▶
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             <div
               className="p5-active-skills-zone"
@@ -1320,31 +1313,7 @@ export const StageApp: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="p5-trajectory-standby">
-                  <div className="p5-standby-route-nodes">
-                    <div className="p5-standby-node is-ready">
-                      <span className="node-step">STEP 01</span>
-                      <strong>侦察目标文件与上下文</strong>
-                      <span>展开 READ / SEARCH 参数与耗时</span>
-                    </div>
-                    <div className="p5-standby-node">
-                      <span className="node-step">STEP 02</span>
-                      <strong>斜切轨迹卡片 + 内联 Diff</strong>
-                      <span>实时展示代码增删与红绿对比</span>
-                    </div>
-                    <div className="p5-standby-node">
-                      <span className="node-step">STEP 03</span>
-                      <strong>终端验证 + 回答正文归档</strong>
-                      <span>汇总测试结果与完整结论正文</span>
-                    </div>
-                  </div>
-                  <div className="p5-skill-placeholder">
-                    <span className="p5-placeholder-star">★</span>
-                    <span>{uiCopy.idleHint}</span>
-                  </div>
-                </div>
-              )}
+              ) : null}
 
               {/* Steer (插话) Live Status Pills */}
               {state.steers.length > 0 && (
