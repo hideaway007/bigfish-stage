@@ -126,7 +126,6 @@ body,
    ══════════════════════════════════════════════════════════════════════════ */
 .p5-main-grid {
   position: relative;
-  z-index: 5;
   flex: 1;
   width: 100%;
   min-width: 0;
@@ -144,7 +143,6 @@ body,
    ══════════════════════════════════════════════════════════════════════════ */
 .p5-left-column {
   position: relative;
-  z-index: 5;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -155,10 +153,11 @@ body,
 }
 
 .p5-brand-strip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  z-index: 10;
+  z-index: 38;
   flex-shrink: 0;
 }
 
@@ -217,6 +216,7 @@ body,
 }
 
 .p5-char-tilted-card {
+  display: block;
   position: absolute;
   width: 82%;
   height: 76%;
@@ -227,7 +227,7 @@ body,
   transform: rotate(-3.5deg) skewX(-4deg);
   box-shadow: 12px 14px 0 rgba(0, 0, 0, 0.72);
   overflow: hidden;
-  z-index: 1;
+  z-index: 4;
   pointer-events: none;
 }
 
@@ -245,27 +245,13 @@ body,
 }
 
 .p5-portrait-emotion-tag {
-  position: absolute;
-  top: 6%;
-  right: 4%;
-  z-index: 6;
-  background: var(--p5-black);
-  border: 2.5px solid var(--p5-white);
-  padding: 2px 10px;
-  transform: skewX(-10deg) rotate(2deg);
-  box-shadow: 3px 3px 0 var(--char-theme-color, var(--p5-red));
-}
-
-.emotion-zh {
-  font-size: 12px;
-  font-weight: 900;
-  color: var(--p5-yellow);
+  display: none;
 }
 
 .p5-portrait-art-wrap {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 35;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -273,16 +259,17 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
 }
 
 .p5-portrait-img {
   width: auto;
   height: 100%;
-  max-height: 500px;
-  max-width: 96%;
+  max-height: 580px;
+  max-width: 98%;
   object-fit: contain;
-  transform: translate(12px, -6px) scale(1.06);
-  filter: drop-shadow(-8px 10px 0 rgba(0, 0, 0, 0.68));
+  transform: translate(8px, 6px) scale(1.06);
+  filter: drop-shadow(-10px 12px 0 rgba(0, 0, 0, 0.72));
 }
 
 .p5-portrait-art-wrap canvas {
@@ -308,7 +295,7 @@ body,
 /* P5X Overlapping Nameplate Cluster */
 .p5-char-info-cluster {
   position: relative;
-  z-index: 8;
+  z-index: 40;
   margin-top: -64px;
   display: flex;
   flex-direction: column;
@@ -318,7 +305,7 @@ body,
 
 .p5-char-codename-giant {
   font-family: var(--font-display);
-  font-size: 34px;
+  font-size: 38px;
   font-weight: 900;
   letter-spacing: 2px;
   color: var(--p5-black);
@@ -327,8 +314,11 @@ body,
      2px -2px 0 var(--p5-white),
     -2px  2px 0 var(--p5-white),
      3px  3px 0 var(--p5-white);
-  line-height: 0.95;
+  line-height: 1.05;
   margin-left: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .p5-char-name-pill {
@@ -346,9 +336,10 @@ body,
 }
 
 .p5-char-name-main {
+  font-family: var(--font-display);
   font-size: 20px;
   font-weight: 900;
-  letter-spacing: 0.5px;
+  letter-spacing: 1.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -516,13 +507,126 @@ body,
   );
 }
 
-/* Circular Party Medallions */
+/* Bottom Left Dock: 4 Character Avatars + P5 Tactical Context Radar Dial */
+.p5-bottom-left-dock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  padding-right: 12px;
+}
+
 .p5-party-medals {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-top: 4px;
-  padding-left: 4px;
+  gap: 10px;
+  padding-left: 2px;
+}
+
+.p5-context-radar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(10, 10, 16, 0.92);
+  border: 2.5px solid var(--p5-white);
+  padding: 5px 10px 5px 7px;
+  transform: skewX(-10deg) rotate(-1.5deg);
+  box-shadow: 4px 5px 0 var(--p5-black), 7px 8px 0 var(--p5-red);
+  flex-shrink: 0;
+}
+
+.p5-radar-dial-wrap {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.p5-radar-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.p5-radar-outer-star {
+  fill: rgba(230, 0, 18, 0.22);
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1.5;
+}
+
+.p5-radar-track {
+  fill: #0b0d14;
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 5;
+}
+
+.p5-radar-fill {
+  fill: none;
+  stroke: var(--p5-cyan);
+  stroke-width: 5.5;
+  stroke-linecap: butt;
+  transition: stroke-dashoffset 320ms ease, stroke 240ms ease;
+}
+
+.p5-context-radar.is-mid .p5-radar-fill {
+  stroke: var(--p5-yellow);
+}
+
+.p5-context-radar.is-high .p5-radar-fill {
+  stroke: var(--p5-red);
+}
+
+.p5-radar-pct {
+  position: absolute;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--p5-yellow);
+  text-shadow: 1px 1px 0 var(--p5-black);
+}
+
+.p5-radar-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.p5-radar-kicker {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: var(--p5-cyan);
+  line-height: 1;
+}
+
+.p5-radar-tokens {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: #cbd5e1;
+  line-height: 1.1;
+}
+
+.p5-radar-tokens strong {
+  color: var(--p5-white);
+}
+
+.p5-dialogue-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.p5-workspace-top-pill {
+  flex-shrink: 0;
+  transform: skewX(-8deg);
 }
 
 .p5-medal-item {
@@ -2854,8 +2958,8 @@ body,
 }
 
 .p5-char-card-avatar-wrap {
-  width: 62px;
-  height: 62px;
+  width: 68px;
+  height: 68px;
   border: 3px solid var(--p5-white);
   background: #09090f;
   flex-shrink: 0;
@@ -2873,6 +2977,7 @@ body,
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
 .p5-char-card-codename {
@@ -2883,13 +2988,25 @@ body,
 }
 
 .p5-char-card-name {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 900;
+  color: var(--p5-white);
 }
 
 .p5-char-card-tagline {
-  font-size: 11px;
+  font-size: 12.5px;
+  line-height: 1.4;
   color: #94a3b8;
+}
+
+.p5-char-card-model-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1.5px solid #26293d;
+  padding-top: 10px;
+  margin-top: 2px;
 }
 
 .p5-char-card-status {

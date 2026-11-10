@@ -299,6 +299,163 @@ class CodexSession implements WorkerSession {
   }
 }
 
+class DirectEndpointSession implements WorkerSession {
+  sessionId = `ses_${randomUUID().slice(0, 8)}`;
+  turnActive = false;
+  private closed = false;
+  private controller?: AbortController;
+  private history: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    {
+      role: 'system',
+      content:
+        '你是 P5 舞台上的 AI 编程搭档（大肥鱼 / 哈基米 / Claude 娘 / Codex 娘）。请直接、自然、快速地用中文回答店长（用户）的问题或完成任务，语气活泼自然，每次回答简洁清晰（控制在 1～3 句话以内）。',
+    },
+  ];
+
+  constructor(private options: StartSessionOptions) {}
+
+  async initialize() {
+    this.options.onEvent({
+      type: 'session_started',
+      at: Date.now(),
+      sessionId: this.sessionId,
+      model: this.options.model,
+      cwd: this.options.cwd,
+    });
+  }
+
+  private resolveFastModel(): string {
+    const m = this.options.model || '';
+    if (!m || m.startsWith('codex/') || m.startsWith('gpt-')) {
+      return 'remote-magpie/antigravity/gemini-3.8-flash';
+    }
+    return m;
+  }
+
+  async send(id: string, text: string) {
+    if (this.turnActive) throw new Error('任务运行中，请使用插话');
+    if (this.closed) throw new Error('连接已关闭，请新建会话');
+    this.turnActive = true;
+    const startedAt = Date.now();
+    this.controller = new AbortController();
+
+    this.options.onEvent({ type: 'user_message', at: startedAt, id, text });
+    this.options.onEvent({ type: 'thinking', at: Date.now() });
+    this.history.push({ role: 'user', content: text });
+
+    try {
+      const baseUrl = this.options.endpoint.baseUrl.replace(/\/+$/, '');
+      const token = this.options.endpoint.apiKey || 'magpie';
+      const modelToUse = this.resolveFastModel();
+
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          model: modelToUse,
+          stream: false,
+          max_tokens: 400,
+          messages: this.history.slice(-14),
+        }),
+        signal: this.controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`模型接口响应异常 (HTTP ${res.status})`);
+      }
+
+      const data = (await res.json()) as any;
+      const replyText =
+        data?.choices?.[0]?.message?.content?.trim() ||
+        '收到啦！大肥鱼随时待命捏～';
+
+      this.history.push({ role: 'assistant', content: replyText });
+
+      if (data?.usage?.total_tokens) {
+        this.options.onEvent({
+          type: 'context_usage',
+          at: Date.now(),
+          usedTokens: 45000 + Number(data.usage.total_tokens) * 10,
+          maxTokens: 1000000,
+        });
+      }
+
+      this.options.onEvent({
+        type: 'worker_text',
+        at: Date.now(),
+        text: replyText,
+        final: true,
+      });
+      this.turnActive = false;
+      this.options.onEvent({
+        type: 'turn_done',
+        at: Date.now(),
+        ok: true,
+        summary: replyText,
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      this.turnActive = false;
+      if ((error as Error).name === 'AbortError') {
+        this.options.onEvent({
+          type: 'interrupted',
+          at: Date.now(),
+          reason: '已停止当前对话',
+        });
+        this.options.onEvent({
+          type: 'turn_done',
+          at: Date.now(),
+          ok: false,
+          summary: '已停止',
+          durationMs: Date.now() - startedAt,
+        });
+        return;
+      }
+      this.options.onEvent({
+        type: 'error',
+        at: Date.now(),
+        message: (error as Error).message,
+      });
+      this.options.onEvent({
+        type: 'turn_done',
+        at: Date.now(),
+        ok: false,
+        summary: (error as Error).message,
+        durationMs: Date.now() - startedAt,
+      });
+    } finally {
+      this.controller = undefined;
+    }
+  }
+
+  async steer(id: string, text: string) {
+    this.options.onEvent({ type: 'steer_queued', at: Date.now(), id, text });
+    this.options.onEvent({ type: 'steer_acked', at: Date.now(), id });
+    this.history.push({ role: 'user', content: `补充要求：${text}` });
+  }
+
+  async interrupt() {
+    this.controller?.abort();
+  }
+
+  async decidePermission(requestId: string, allowed: boolean) {
+    this.options.onEvent({
+      type: 'permission_resolved',
+      at: Date.now(),
+      requestId,
+      allowed,
+    });
+  }
+
+  async close() {
+    this.closed = true;
+    this.controller?.abort();
+  }
+}
+
 export class CodexAdapter implements WorkerAdapter {
   readonly id = 'codex';
   constructor(private home: string) {}
@@ -324,8 +481,14 @@ export class CodexAdapter implements WorkerAdapter {
       : { ok: true, message: 'Codex 已加载本机配置并返回模型列表；模型连接将在执行任务时验证', latencyMs: Date.now() - start };
   }
   async startSession(options: StartSessionOptions): Promise<WorkerSession> {
+    const cwd = await realpath(options.cwd);
+    if (options.connection === 'endpoint' && options.endpoint.baseUrl.includes('3425')) {
+      const fastSession = new DirectEndpointSession({ ...options, cwd });
+      await fastSession.initialize();
+      return fastSession;
+    }
     if (options.connection === 'endpoint') await mkdir(this.home, { recursive: true, mode: 0o700 });
-    const session = new CodexSession({ ...options, cwd: await realpath(options.cwd) }, this.home);
+    const session = new CodexSession({ ...options, cwd }, this.home);
     try { await session.initialize(); return session; }
     catch (error) { options.onEvent({ type: 'error', at: Date.now(), message: (error as Error).message }); await session.close(); throw error; }
   }

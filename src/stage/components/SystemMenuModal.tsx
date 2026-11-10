@@ -5,6 +5,7 @@ import type {
   SettingsPatch,
   WorkerAdapterInfo,
 } from '../../shared/settings';
+import { getCachedCharacterPack } from '../characterLoader';
 import { ModelPicker } from './settings/ModelPicker';
 import { ConnectionTestResult } from './settings/ConnectionTestResult';
 import './settings/settings.css';
@@ -198,8 +199,17 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
 
                 <div className="p5-char-grid">
                   {characters.map((ch) => {
+                    const pack = getCachedCharacterPack(ch.id);
                     const isCurrent = settings.activeCharacterId === ch.id;
                     const shortName = ch.name.split('（')[0];
+                    const recModels =
+                      pack.recommendedModels && pack.recommendedModels.length > 0
+                        ? pack.recommendedModels
+                        : [
+                            'remote-magpie/antigravity/gemini-3.8-flash',
+                            'codex/gpt-6.1-sol',
+                            'deepseek-v4-pro',
+                          ];
 
                     return (
                       <div
@@ -218,6 +228,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           onUpdateSettings({ activeCharacterId: ch.id });
                         }}
                       >
+                        {/* 第 1 层：大头像 + 大名字 & 小字简介 + 切换角色按钮 */}
                         <div className="p5-char-card-top">
                           <div className="p5-char-card-avatar-wrap">
                             {ch.portraitUrl ? (
@@ -234,14 +245,49 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           </div>
                           <div className="p5-char-card-titles">
                             <h4 className="p5-char-card-name">{shortName}</h4>
+                            <span className="p5-char-card-tagline">
+                              {pack.tagline}
+                            </span>
                           </div>
                           <span
                             className={`p5-char-card-status ${
                               isCurrent ? 'is-current' : ''
                             }`}
                           >
-                            {isCurrent ? '★ 当前使用' : '点击切换'}
+                            {isCurrent ? '★ 当前使用' : '切换角色'}
                           </span>
+                        </div>
+
+                        {/* 第 2 层：直接内嵌模型选择选项 */}
+                        <div
+                          className="p5-char-card-model-bar"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span className="p5-field-tag">选择模型：</span>
+                          <div className="p5-model-pills">
+                            {recModels.map((m) => {
+                              const isSelectedModel =
+                                settings.worker.model === m;
+                              return (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  className={`p5-model-chip-btn ${
+                                    isSelectedModel ? 'is-selected' : ''
+                                  }`}
+                                  onClick={() => {
+                                    onSwitchCharacter(ch.id);
+                                    onUpdateSettings({
+                                      activeCharacterId: ch.id,
+                                      worker: { model: m },
+                                    });
+                                  }}
+                                >
+                                  {isSelectedModel ? `✓ ${m}` : m}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     );

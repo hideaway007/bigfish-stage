@@ -278,8 +278,16 @@
     "remote-magpie/antigravity/gemini-3.8-flash"
   ],
   "art": {
-    "renderer": "live2d",
+    "renderer": "sprites",
     "portrait": "art/portrait.png",
+    "emotions": {
+      "idle": "art/idle.png",
+      "thinking": "art/thinking.png",
+      "working": "art/working.png",
+      "happy": "art/happy.png",
+      "worried": "art/worried.png",
+      "shocked": "art/shocked.png"
+    },
     "model3": "art/live2d/Preview.model3.json",
     "expressions": {
       "idle": "idle",
