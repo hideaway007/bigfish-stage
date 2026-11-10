@@ -174,10 +174,37 @@ export class DshEventMapper {
         const isError = kind === 'error';
         const isCancelled = kind === 'cancelled';
         const errorMsg = typeof reasonObj === 'object' && reasonObj?.error?.message ? reasonObj.error.message : (typeof reasonObj === 'string' ? reasonObj : '本轮完成');
+        if (data.usage?.totalTokens || data.contextTokens) {
+          this.emit({
+            type: 'context_usage',
+            usedTokens: Number(data.usage?.totalTokens ?? data.contextTokens ?? 45000),
+            maxTokens: Number(data.maxContextTokens ?? 1000000),
+          });
+        }
         if (isError) {
           this.emit({ type: 'error', message: errorMsg });
         }
         this.end(!isError && !isCancelled, errorMsg, isCancelled);
+      }
+
+      if (type === 'context/usage' || type === 'token/usage') {
+        this.emit({
+          type: 'context_usage',
+          usedTokens: Number(data.usedTokens ?? data.totalTokens ?? 45000),
+          maxTokens: Number(data.maxTokens ?? 1000000),
+        });
+      }
+
+      if (type === 'context/compacted' || type === 'compaction' || type === 'memory/compacted') {
+        const turnsCompacted = Number(data.turnsCompacted ?? data.turns ?? 10);
+        const freedTokens = Number(data.freedTokens ?? data.savedTokens ?? 80000);
+        this.emit({
+          type: 'context_compacted',
+          turnsCompacted,
+          freedTokens,
+          afterTokens: typeof data.afterTokens === 'number' ? data.afterTokens : undefined,
+          summary: typeof data.summary === 'string' ? data.summary : `已成功将前 ${turnsCompacted} 轮历史压缩为摘要卡，释放 ${freedTokens.toLocaleString()} Tokens！`,
+        });
       }
     }
 
