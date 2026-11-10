@@ -278,15 +278,42 @@
     "remote-magpie/antigravity/gemini-3.8-flash"
   ],
   "art": {
-    "renderer": "sprites",
-    "portrait": "art/portrait.svg",
-    "emotions": {
-      "idle": "art/idle.png",
-      "thinking": "art/thinking.png",
-      "working": "art/working.png",
-      "happy": "art/happy.png",
-      "worried": "art/worried.png",
-      "shocked": "art/shocked.png"
+    "renderer": "live2d",
+    "portrait": "art/portrait.png",
+    "model3": "art/live2d/Preview.model3.json",
+    "expressions": {
+      "idle": "idle",
+      "thinking": "thinking",
+      "working": "working",
+      "happy": "happy",
+      "worried": "worried",
+      "shocked": "shocked"
+    },
+    "motions": {
+      "idle": {
+        "group": "Idle",
+        "index": 0
+      },
+      "thinking": {
+        "group": "Thinking",
+        "index": 0
+      },
+      "working": {
+        "group": "Working",
+        "index": 0
+      },
+      "happy": {
+        "group": "Happy",
+        "index": 0
+      },
+      "worried": {
+        "group": "Thinking",
+        "index": 0
+      },
+      "shocked": {
+        "group": "Working",
+        "index": 0
+      }
     }
   },
   "emotionLabels": {

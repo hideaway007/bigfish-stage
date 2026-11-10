@@ -1,0 +1,77 @@
+{
+  "Version": 3,
+  "Parameters": [
+    {
+      "Id": "ParamAngleZ",
+      "GroupId": "",
+      "Name": "ParamAngleZ"
+    },
+    {
+      "Id": "ParamEyeLOpen",
+      "GroupId": "",
+      "Name": "ParamEyeLOpen"
+    },
+    {
+      "Id": "ParamEyeROpen",
+      "GroupId": "",
+      "Name": "ParamEyeROpen"
+    },
+    {
+      "Id": "ParamMouthOpenY",
+      "GroupId": "",
+      "Name": "ParamMouthOpenY"
+    },
+    {
+      "Id": "ParamBreath",
+      "GroupId": "",
+      "Name": "ParamBreath"
+    },
+    {
+      "Id": "ParamHairSwing",
+      "GroupId": "",
+      "Name": "ParamHairSwing"
+    },
+    {
+      "Id": "ParamBrowLY",
+      "GroupId": "",
+      "Name": "ParamBrowLY"
+    },
+    {
+      "Id": "ParamBrowRY",
+      "GroupId": "",
+      "Name": "ParamBrowRY"
+    },
+    {
+      "Id": "ParamAngleX",
+      "GroupId": "",
+      "Name": "ParamAngleX"
+    },
+    {
+      "Id": "ParamEyeBallX",
+      "GroupId": "",
+      "Name": "ParamEyeBallX"
+    },
+    {
+      "Id": "ParamBodySway",
+      "GroupId": "",
+      "Name": "ParamBodySway"
+    },
+    {
+      "Id": "ParamShoulderLift",
+      "GroupId": "",
+      "Name": "ParamShoulderLift"
+    },
+    {
+      "Id": "ParamHairRight",
+      "GroupId": "",
+      "Name": "ParamHairRight"
+    },
+    {
+      "Id": "ParamHairFront",
+      "GroupId": "",
+      "Name": "ParamHairFront"
+    }
+  ],
+  "ParameterGroups": [],
+  "Parts": []
+}

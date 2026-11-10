@@ -676,6 +676,7 @@ export const StageApp: React.FC = () => {
               emotion={state.currentEmotion}
               emotionSwitchKey={state.emotionSwitchKey}
               characterSwitchKey={state.characterSwitchKey}
+              talking={isTypingLine && dialogueCharacter.id === character.id}
               breathing={
                 state.turnActive &&
                 (state.currentEmotion === 'thinking' ||
