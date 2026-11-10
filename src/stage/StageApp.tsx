@@ -24,6 +24,7 @@ import { CharacterRenderer } from './components/CharacterRenderer';
 import { ArchiveModal } from './components/ArchiveModal';
 import { PermissionModal } from './components/PermissionModal';
 import { BacklogModal } from './components/BacklogModal';
+import { SessionListControl } from './components/SessionListModal';
 import { EngineeringView } from './components/EngineeringView';
 import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
@@ -712,6 +713,7 @@ export const StageApp: React.FC = () => {
           <div className="p5-hud-card" data-testid="hud-status-card">
             <div className="p5-hud-header">
               <span className="p5-hud-label">POND STATUS // 鱼塘状态</span>
+              <SessionListControl sourceRef={sourceRef} turnActive={state.turnActive} />
               <span
                 className={`p5-hud-live-dot status-${state.hudStatus}`}
               />

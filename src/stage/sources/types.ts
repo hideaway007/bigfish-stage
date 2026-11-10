@@ -3,6 +3,7 @@ import type {
   ServerMessage,
 } from '../../shared/wire';
 import type { SettingsPatch } from '../../shared/settings';
+import type { SessionListState } from './SessionListFeed';
 
 export type DataSourceMode = 'live' | 'demo';
 
@@ -27,6 +28,8 @@ export interface StageDataSource {
   steer(text: string): void;
   stop(): void;
   decidePermission(requestId: string, allowed: boolean): void;
+  listSessions(): void;
+  subscribeSessions(listener: (state: SessionListState) => void): () => void;
   newSession(): void;
   resumeSession(sessionId: string): void;
   switchCharacter(characterId: string): void;
