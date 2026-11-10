@@ -4,7 +4,11 @@
   "private": true,
   "description": "Big Fish Stage: a game-styled chat client for coding agents (pluggable worker agents, character packs, local web app)",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
+    "build:engine": "esbuild server/src/session.ts server/src/settings-store.ts server/src/characters.ts server/src/adapters/registry.ts --bundle --platform=node --format=esm --outdir=electron/engine --external:electron --external:ws",
+    "app": "npm run build:engine && electron electron/main.cjs",
+    "app:build": "npm run build && npm run build:engine && electron electron/main.cjs",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
@@ -22,6 +26,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^45.2.3",
     "typescript": "^5.6.3",
     "vite": "^6.0.3"
   }

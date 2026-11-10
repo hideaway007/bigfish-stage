@@ -5,7 +5,7 @@ import type {
 import type { SettingsPatch } from '../../shared/settings';
 import type { SessionListState } from './SessionListFeed';
 
-export type DataSourceMode = 'live' | 'demo';
+export type DataSourceMode = 'live' | 'demo' | 'native';
 
 export interface ConnectionStatus {
   state: 'connecting' | 'connected' | 'reconnecting';

@@ -1,6 +1,7 @@
 import type { WorkerSettings } from '../../../src/shared/settings';
 import type { WorkerAdapter } from './types';
 import { CodexAdapter } from './codex';
+import { DshAdapter } from './dsh';
 
 export class AdapterRegistry {
   private adapters = new Map<string, WorkerAdapter>();
@@ -12,4 +13,7 @@ export class AdapterRegistry {
   }
   infos(settings: WorkerSettings) { return Promise.all([...this.adapters.values()].map(a => a.info(settings))); }
 }
-export const createRegistry = (home: string) => new AdapterRegistry([new CodexAdapter(home)]);
+export const createRegistry = (home: string) => new AdapterRegistry([
+  new DshAdapter(home),
+  new CodexAdapter(home),
+]);

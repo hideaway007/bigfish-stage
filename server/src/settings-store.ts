@@ -69,6 +69,14 @@ export class SettingsStore {
       this.value = validateSettings(deepMerge(DEFAULT_SETTINGS, JSON.parse(await readFile(this.path, 'utf8'))));
       await chmod(this.path, 0o600);
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('无法读取本地设置文件，请检查 JSON 与设置格式'); }
+    if (!this.value.projectDir) {
+      const cwd = process.cwd();
+      const defaultDir = process.env.BIGFISH_PROJECT_DIR || (cwd.endsWith('/server') ? dirname(cwd) : cwd);
+      this.value.projectDir = defaultDir;
+      if (!this.value.recentProjects.includes(defaultDir)) {
+        this.value.recentProjects = [defaultDir, ...this.value.recentProjects].slice(0, 20);
+      }
+    }
   }
   async update(patch: SettingsPatch): Promise<AppSettings> {
     const next = validateSettings(deepMerge(this.value, patch));

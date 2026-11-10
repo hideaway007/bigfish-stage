@@ -14,6 +14,7 @@ import {
 import { DEFAULT_FIRST_USER_PROMPT } from '../demo/script';
 import { LiveSource } from './sources/LiveSource';
 import { ScriptSource } from './sources/ScriptSource';
+import { NativeAppSource } from './sources/NativeAppSource';
 import type {
   ConnectionStatus,
   DataSourceMode,
@@ -58,6 +59,9 @@ function detectSourceMode(): DataSourceMode {
   const demoVal = params.get('demo');
   if (demoVal === '1' || demoVal === 'true') {
     return 'demo';
+  }
+  if (typeof window !== 'undefined' && window.electronAPI?.isNativeApp) {
+    return 'native';
   }
   return 'live';
 }
@@ -140,6 +144,8 @@ export const StageApp: React.FC = () => {
     const source: StageDataSource =
       sourceMode === 'demo'
         ? new ScriptSource(callbacks)
+        : sourceMode === 'native'
+        ? new NativeAppSource(callbacks)
         : new LiveSource(callbacks);
 
     sourceRef.current = source;
@@ -482,7 +488,7 @@ export const StageApp: React.FC = () => {
   const isDisconnected =
     sourceMode === 'live' && connStatus.state !== 'connected';
   const needsOnboarding =
-    sourceMode === 'live' && !state.serverSettings.projectDir;
+    (sourceMode === 'live' || sourceMode === 'native') && !state.serverSettings.projectDir;
 
   const viewportStyle = {
     '--char-theme-color': character.themeColor,
