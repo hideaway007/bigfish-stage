@@ -1,0 +1,98 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "Dafeiyu.moc3",
+    "Textures": [
+      "texture_00.png"
+    ],
+    "DisplayInfo": "Dafeiyu.cdi3.json",
+    "Physics": "Dafeiyu.physics3.json",
+    "Expressions": [
+      {
+        "Name": "idle",
+        "File": "idle.exp3.json"
+      },
+      {
+        "Name": "thinking",
+        "File": "thinking.exp3.json"
+      },
+      {
+        "Name": "working",
+        "File": "working.exp3.json"
+      },
+      {
+        "Name": "happy",
+        "File": "happy.exp3.json"
+      },
+      {
+        "Name": "worried",
+        "File": "worried.exp3.json"
+      },
+      {
+        "Name": "shocked",
+        "File": "shocked.exp3.json"
+      },
+      {
+        "Name": "wink",
+        "File": "wink.exp3.json"
+      }
+    ],
+    "Motions": {
+      "Idle": [
+        {
+          "File": "idle.motion3.json",
+          "FadeInTime": 0.5,
+          "FadeOutTime": 0.5
+        }
+      ],
+      "Thinking": [
+        {
+          "File": "thinking.motion3.json",
+          "FadeInTime": 0.4,
+          "FadeOutTime": 0.4
+        }
+      ],
+      "Working": [
+        {
+          "File": "working.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.3
+        }
+      ],
+      "Happy": [
+        {
+          "File": "happy.motion3.json",
+          "FadeInTime": 0.3,
+          "FadeOutTime": 0.3
+        }
+      ]
+    }
+  },
+  "Groups": [
+    {
+      "Target": "Parameter",
+      "Name": "EyeBlink",
+      "Ids": [
+        "ParamEyeLOpen",
+        "ParamEyeROpen"
+      ]
+    },
+    {
+      "Target": "Parameter",
+      "Name": "LipSync",
+      "Ids": [
+        "ParamMouthOpenY"
+      ]
+    }
+  ],
+  "HitAreas": [
+    {
+      "Id": "HitAreaHead",
+      "Name": "Head"
+    },
+    {
+      "Id": "HitAreaBody",
+      "Name": "Body"
+    }
+  ]
+}
