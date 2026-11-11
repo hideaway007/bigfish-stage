@@ -1,7 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ArtManifest } from '../../shared/character-pack';
-import type { Emotion } from '../../shared/stage-events';
-import { resolveCharacterAssetUrl } from '../characterLoader';
+import type { CharacterTouchZone, Emotion } from '../../shared/stage-events';
+import {
+  getCachedCharacterPack,
+  resolveCharacterAssetUrl,
+} from '../characterLoader';
+import { notifyUserGesture, playSfx } from '../sfx';
+import { getTouchZoneHint, pickTouchStamp } from '../touchReactions';
+import {
+  getTtsAmplitudeState,
+  subscribeTtsAmplitude,
+  type TtsAmplitudeState,
+} from '../ttsPlayer';
 
 interface EmotionPosePreset {
   turn: number;
@@ -130,10 +140,28 @@ function ensureLive2DVendorLoaded(vendorBaseUrl: string): Promise<void> {
     return Promise.resolve();
   }
   if (!live2dVendorPromise) {
+    const candidates = Array.from(
+      new Set([vendorBaseUrl, '/vendor/live2d'])
+    );
     live2dVendorPromise = (async () => {
-      await loadScriptOnce(`${vendorBaseUrl}/live2dcubismcore.min.js`);
-      await loadScriptOnce(`${vendorBaseUrl}/pixi.min.js`);
-      await loadScriptOnce(`${vendorBaseUrl}/cubism4.min.js`);
+      let lastErr: unknown = null;
+      for (const base of candidates) {
+        try {
+          if (!win.Live2DCubismCore) {
+            await loadScriptOnce(`${base}/live2dcubismcore.min.js`);
+          }
+          if (!win.PIXI) {
+            await loadScriptOnce(`${base}/pixi.min.js`);
+          }
+          if (!win.PIXI?.live2d?.Live2DModel) {
+            await loadScriptOnce(`${base}/cubism4.min.js`);
+          }
+          return;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr ?? new Error('Failed to load Live2D vendor scripts');
     })().catch((err) => {
       live2dVendorPromise = null;
       throw err;
@@ -141,6 +169,36 @@ function ensureLive2DVendorLoaded(vendorBaseUrl: string): Promise<void> {
   }
   return live2dVendorPromise;
 }
+
+function resolveTouchZoneFromRatio(
+  rx: number,
+  ry: number
+): CharacterTouchZone {
+  if (ry < 0.24) return 'head';
+  if (ry < 0.42) return 'face';
+  if (ry <= 0.78) {
+    if (rx < 0.34 || rx > 0.66) return 'prop';
+    return 'body';
+  }
+  return rx < 0.3 || rx > 0.7 ? 'prop' : 'body';
+}
+
+interface TouchStampItem {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  zone: CharacterTouchZone;
+}
+
+const AMBIENT_SPARK_SEEDS = [
+  { left: '16%', bottom: '18%', delay: '0s', dur: '4.2s', size: '8px' },
+  { left: '78%', bottom: '24%', delay: '0.8s', dur: '3.7s', size: '10px' },
+  { left: '24%', bottom: '52%', delay: '1.5s', dur: '4.6s', size: '7px' },
+  { left: '84%', bottom: '58%', delay: '2.1s', dur: '3.9s', size: '9px' },
+  { left: '12%', bottom: '36%', delay: '2.7s', dur: '4.4s', size: '6px' },
+  { left: '72%', bottom: '72%', delay: '1.2s', dur: '4.1s', size: '8px' },
+];
 
 export interface CharacterRendererProps {
   characterId: string;
@@ -152,6 +210,7 @@ export interface CharacterRendererProps {
   characterSwitchKey: number;
   breathing?: boolean;
   talking?: boolean;
+  onTouchZone?: (zone: CharacterTouchZone) => void;
 }
 
 export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
@@ -164,15 +223,24 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   characterSwitchKey,
   breathing = false,
   talking = false,
+  onTouchZone,
 }) => {
   const [fallbackToIdle, setFallbackToIdle] = useState(false);
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dError, setLive2dError] = useState<string | null>(null);
+  const [ttsSpeaking, setTtsSpeaking] = useState<boolean>(false);
+  const [hoverZone, setHoverZone] = useState<CharacterTouchZone | null>(null);
+  const [joltActive, setJoltActive] = useState<boolean>(false);
+  const [stamps, setStamps] = useState<TouchStampItem[]>([]);
+
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const emotionRef = useRef<Emotion>(emotion);
   const breathingRef = useRef<boolean>(breathing);
   const talkingRef = useRef<boolean>(talking);
+  const ttsStateRef = useRef<TtsAmplitudeState>(getTtsAmplitudeState());
+  const joltTimerRef = useRef<number | null>(null);
+  const stampTimersRef = useRef<Set<number>>(new Set());
 
   emotionRef.current = emotion;
   breathingRef.current = breathing;
@@ -181,6 +249,144 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   useEffect(() => {
     setFallbackToIdle(false);
   }, [characterId, emotion, art]);
+
+  // Subscribe to Web Audio real-time TTS amplitude & drive --voice-amp CSS custom property
+  useEffect(() => {
+    const unsub = subscribeTtsAmplitude((st) => {
+      ttsStateRef.current = st;
+      const activeForChar =
+        st.speaking && (!st.characterId || st.characterId === characterId);
+      setTtsSpeaking((prev) => (prev === activeForChar ? prev : activeForChar));
+      if (activeForChar && stageWrapRef.current) {
+        stageWrapRef.current.style.setProperty(
+          '--voice-amp',
+          st.amplitude.toFixed(3)
+        );
+      } else if (!talkingRef.current && stageWrapRef.current) {
+        stageWrapRef.current.style.setProperty('--voice-amp', '0');
+      }
+    });
+    return unsub;
+  }, [characterId]);
+
+  // Fallback procedural syllable --voice-amp when typewriter talking is active without live TTS audio
+  useEffect(() => {
+    if (!talking || ttsSpeaking) {
+      if (!ttsSpeaking && stageWrapRef.current) {
+        stageWrapRef.current.style.setProperty('--voice-amp', '0');
+      }
+      return;
+    }
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = now / 1000;
+      const amp =
+        0.22 +
+        0.5 * Math.abs(Math.sin(t * 9.8) * Math.cos(t * 3.9)) +
+        0.12 * Math.abs(Math.sin(t * 16.5));
+      stageWrapRef.current?.style.setProperty(
+        '--voice-amp',
+        Math.min(0.92, amp).toFixed(3)
+      );
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      if (!ttsStateRef.current.speaking && stageWrapRef.current) {
+        stageWrapRef.current.style.setProperty('--voice-amp', '0');
+      }
+    };
+  }, [talking, ttsSpeaking]);
+
+  useEffect(() => {
+    return () => {
+      if (joltTimerRef.current !== null) {
+        window.clearTimeout(joltTimerRef.current);
+      }
+      for (const t of stampTimersRef.current) {
+        window.clearTimeout(t);
+      }
+      stampTimersRef.current.clear();
+    };
+  }, []);
+
+  const handleFramePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = stageWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const rx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const ry = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const nx = rx * 2 - 1;
+    const ny = ry * 2 - 1;
+
+    el.style.setProperty('--tilt-rx', `${(-ny * 3.5).toFixed(2)}deg`);
+    el.style.setProperty('--tilt-ry', `${(nx * 3.5).toFixed(2)}deg`);
+    el.style.setProperty('--shift-x', `${(nx * 6.5).toFixed(1)}px`);
+    el.style.setProperty('--shift-y', `${(ny * 3.5).toFixed(1)}px`);
+    el.style.setProperty('--rim-x', `${(-nx * 8.5).toFixed(1)}px`);
+    el.style.setProperty('--rim-y', `${(6 - ny * 4.5).toFixed(1)}px`);
+
+    const nextZone = resolveTouchZoneFromRatio(rx, ry);
+    setHoverZone((prev) => (prev === nextZone ? prev : nextZone));
+  };
+
+  const handleFramePointerLeave = () => {
+    const el = stageWrapRef.current;
+    if (el) {
+      el.style.setProperty('--tilt-rx', '0deg');
+      el.style.setProperty('--tilt-ry', '0deg');
+      el.style.setProperty('--shift-x', '0px');
+      el.style.setProperty('--shift-y', '0px');
+      el.style.setProperty('--rim-x', '-4px');
+      el.style.setProperty('--rim-y', '6px');
+    }
+    setHoverZone(null);
+  };
+
+  const handleFrameClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = stageWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const rx = Math.max(0, Math.min(1, clickX / rect.width));
+    const ry = Math.max(0, Math.min(1, clickY / rect.height));
+    const zone = resolveTouchZoneFromRatio(rx, ry);
+
+    notifyUserGesture();
+    playSfx('select');
+
+    // Trigger snappy spring squish/jolt
+    setJoltActive(false);
+    if (joltTimerRef.current !== null) {
+      window.clearTimeout(joltTimerRef.current);
+    }
+    window.requestAnimationFrame(() => {
+      setJoltActive(true);
+      joltTimerRef.current = window.setTimeout(() => {
+        joltTimerRef.current = null;
+        setJoltActive(false);
+      }, 380);
+    });
+
+    // Spawn 900ms P5 comic onomatopoeia stamp right at click coordinates
+    const stampId = Date.now() + Math.floor(Math.random() * 1000);
+    const stampText = pickTouchStamp(characterId, zone);
+    setStamps((prev) => [
+      ...prev.slice(-4),
+      { id: stampId, x: clickX, y: clickY, text: stampText, zone },
+    ]);
+    const removeTimer = window.setTimeout(() => {
+      stampTimersRef.current.delete(removeTimer);
+      setStamps((prev) => prev.filter((s) => s.id !== stampId));
+    }, 900);
+    stampTimersRef.current.add(removeTimer);
+
+    onTouchZone?.(zone);
+  };
 
   useEffect(() => {
     if (art.renderer !== 'live2d') return;
@@ -345,7 +551,13 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
           }
 
           let mouthVal = preset.mouth;
-          if (talkingRef.current) {
+          const ttsNow = ttsStateRef.current;
+          const realTtsSpeaking =
+            ttsNow.speaking &&
+            (!ttsNow.characterId || ttsNow.characterId === characterId);
+          if (realTtsSpeaking) {
+            mouthVal = Math.max(0.04, Math.min(1.0, ttsNow.amplitude * 1.2));
+          } else if (talkingRef.current) {
             const maxOpen =
               emotionRef.current === 'worried' || emotionRef.current === 'thinking'
                 ? 0.55
@@ -461,6 +673,78 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
     };
   }, [art, characterId]);
 
+  const pack = getCachedCharacterPack(characterId);
+  const isSpeakingNow = ttsSpeaking || talking;
+  const zoneHintText = hoverZone ? getTouchZoneHint(pack, hoverZone) : null;
+
+  const renderStageOverlays = () => (
+    <>
+      {/* Ambient character-themed floating particles/sparks */}
+      <div className="p5-portrait-sparks" aria-hidden="true">
+        {AMBIENT_SPARK_SEEDS.map((seed, idx) => (
+          <span
+            key={idx}
+            className="p5-portrait-spark"
+            style={
+              {
+                left: seed.left,
+                bottom: seed.bottom,
+                width: seed.size,
+                height: seed.size,
+                animationDelay: seed.delay,
+                animationDuration: seed.dur,
+              } as React.CSSProperties
+            }
+          />
+        ))}
+      </div>
+
+      {/* Reactive speaking glow ring driven by --voice-amp */}
+      <div
+        className={`p5-portrait-voice-aura ${
+          isSpeakingNow ? 'is-speaking' : ''
+        } ${breathing ? 'is-active-turn' : ''}`}
+        aria-hidden="true"
+      />
+
+      {/* Floating soundwave / star equalizer bars near collar/cheek when speaking */}
+      {isSpeakingNow && (
+        <div
+          className="p5-voice-eq-badge"
+          data-testid="character-voice-equalizer"
+          aria-hidden="true"
+        >
+          <span className="p5-voice-eq-star">★</span>
+          <span className="p5-voice-eq-bar bar-1" />
+          <span className="p5-voice-eq-bar bar-2" />
+          <span className="p5-voice-eq-bar bar-3" />
+          <span className="p5-voice-eq-bar bar-4" />
+          <span className="p5-voice-eq-bar bar-5" />
+        </div>
+      )}
+
+      {/* Subtle hit-zone prompt tag on hover */}
+      {zoneHintText && (
+        <div className="p5-touch-zone-hint" aria-hidden="true">
+          ✦ {zoneHintText}
+        </div>
+      )}
+
+      {/* Floating P5 comic onomatopoeia stamps at click coordinates */}
+      {stamps.map((s) => (
+        <div
+          key={s.id}
+          className={`p5-touch-stamp zone-${s.zone}`}
+          data-testid="character-touch-stamp"
+          style={{ left: `${s.x}px`, top: `${s.y}px` }}
+          aria-hidden="true"
+        >
+          <span>{s.text}</span>
+        </div>
+      ))}
+    </>
+  );
+
   if (art.renderer === 'live2d') {
     const model3Url =
       resolveCharacterAssetUrl(characterId, art.model3) ?? art.model3;
@@ -476,6 +760,8 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
         key={`live2d_${characterId}_${characterSwitchKey}`}
         className={`p5-portrait-art-wrap p5-portrait-bounce p5-live2d-placeholder ${
           breathing ? 'p5-portrait-breathing' : ''
+        } ${isSpeakingNow ? 'is-speaking' : ''} ${
+          joltActive ? 'is-touch-jolt' : ''
         }`}
         data-testid="live2d-placeholder-card"
         data-live2d-status={live2dError ? 'error' : live2dReady ? 'ready' : 'loading'}
@@ -486,7 +772,11 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
         data-motion-group={activeMotion.group}
         data-motion-index={activeMotion.index ?? 0}
         style={{ position: 'relative', width: '100%', height: '100%' }}
+        onPointerMove={handleFramePointerMove}
+        onPointerLeave={handleFramePointerLeave}
+        onClick={handleFrameClick}
       >
+        {renderStageOverlays()}
         <canvas
           ref={canvasRef}
           data-testid="character-portrait"
@@ -544,24 +834,40 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
 
   return (
     <div
+      ref={stageWrapRef}
       key={`${characterSwitchKey}_${emotionSwitchKey}`}
       className={`p5-portrait-art-wrap p5-portrait-bounce p5-char-switch-anim emotion-${emotion} ${
         breathing ? 'p5-portrait-breathing' : ''
-      }`}
+      } ${isSpeakingNow ? 'is-speaking' : ''}`}
       data-character-id={characterId}
       data-emotion={emotion}
+      onPointerMove={handleFramePointerMove}
+      onPointerLeave={handleFramePointerLeave}
+      onClick={handleFrameClick}
     >
-      <img
-        src={spriteUrl}
-        alt={`${characterName} - ${emotion}`}
-        className="p5-portrait-img"
-        data-testid="character-portrait"
-        onError={() => {
-          if (!fallbackToIdle && spriteUrl !== idleUrl) {
-            setFallbackToIdle(true);
-          }
-        }}
-      />
+      {renderStageOverlays()}
+      <div className="p5-portrait-parallax-rig">
+        <div className="p5-portrait-breath-rig">
+          <div
+            className={`p5-portrait-voice-rig ${
+              joltActive ? 'is-touch-jolt' : ''
+            }`}
+          >
+            <img
+              src={spriteUrl}
+              alt={`${characterName} - ${emotion}`}
+              className="p5-portrait-img"
+              data-testid="character-portrait"
+              draggable={false}
+              onError={() => {
+                if (!fallbackToIdle && spriteUrl !== idleUrl) {
+                  setFallbackToIdle(true);
+                }
+              }}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

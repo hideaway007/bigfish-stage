@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { playSfx } from '../sfx';
 import type { PendingPermission } from '../stageReducer';
+import '../cutins.css';
 
 interface PermissionModalProps {
   permission: PendingPermission | null;
   selectedChoice: 'allow' | 'reject';
+  characterId?: string;
   characterName: string;
+  portraitUrl?: string | null;
   onSelectChoice: (choice: 'allow' | 'reject') => void;
   onConfirm: (allowed: boolean) => void;
 }
@@ -13,7 +16,9 @@ interface PermissionModalProps {
 export const PermissionModal: React.FC<PermissionModalProps> = ({
   permission,
   selectedChoice,
+  characterId = 'deepseek-v4-pro',
   characterName,
+  portraitUrl,
   onSelectChoice,
   onConfirm,
 }) => {
@@ -31,6 +36,9 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
 
   if (!permission) return null;
 
+  const eyePortraitSrc =
+    portraitUrl || `/characters/${characterId}/art/portrait.png`;
+
   return (
     <div
       className="p5-permission-backdrop"
@@ -40,12 +48,25 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
       aria-label="权限审批选择肢"
     >
       <div className="p5-permission-cutin">
-        {/* Top warning slash */}
-        <div className="p5-permission-ribbon">
-          <span>MAX or LOW? // 举牌决定</span>
-          <span className="p5-permission-kbd-hint">
-            键盘 [← / →] 切换 · [ENTER] 决断
-          </span>
+        {/* Dramatic P5 HOLD UP! diagonal crimson-and-black eye-strip cut-in */}
+        <div className="p5-holdup-banner" data-testid="permission-holdup-banner">
+          <div className="p5-holdup-speedlines" aria-hidden="true" />
+          <div className="p5-holdup-eye-strip" aria-hidden="true">
+            <img
+              src={eyePortraitSrc}
+              alt=""
+              className="p5-holdup-eye-img"
+            />
+            <div className="p5-holdup-eye-gradient" />
+          </div>
+          <div className="p5-holdup-badge-cluster">
+            <div className="p5-holdup-kicker">
+              <em>HOLD UP!</em> // 权限决断
+            </div>
+            <span className="p5-permission-kbd-hint">
+              键盘 [← / →] 切换 · [ENTER] 决断
+            </span>
+          </div>
         </div>
 
         <div className="p5-permission-main">
@@ -89,10 +110,10 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
                 {selectedChoice === 'allow' ? '▶' : ' '}
               </span>
               <div className="p5-choice-text-wrap">
-                <span className="p5-choice-en">MAX // 冲！</span>
+                <span className="p5-choice-en">ALL-IN // 批准突入！</span>
                 <span className="p5-choice-zh">允许执行</span>
               </div>
-              <span className="p5-choice-sub">挥舞 Harness 跑单元测试</span>
+              <span className="p5-choice-sub">放行本次操作并继续推进</span>
             </button>
 
             <button
@@ -111,10 +132,10 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
                 {selectedChoice === 'reject' ? '▶' : ' '}
               </span>
               <div className="p5-choice-text-wrap">
-                <span className="p5-choice-en">LOW // 先别</span>
+                <span className="p5-choice-en">STAND DOWN // 暂缓行动</span>
                 <span className="p5-choice-zh">拒绝执行</span>
               </div>
-              <span className="p5-choice-sub">跳过测试直接收工</span>
+              <span className="p5-choice-sub">拦截该命令并交回你处理</span>
             </button>
           </div>
         </div>

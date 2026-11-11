@@ -278,7 +278,105 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+  perspective: 960px;
+  --voice-amp: 0;
+  --tilt-rx: 0deg;
+  --tilt-ry: 0deg;
+  --shift-x: 0px;
+  --shift-y: 0px;
+  --rim-x: -4px;
+  --rim-y: 6px;
+}
+
+.p5-portrait-parallax-rig {
+  position: relative;
+  z-index: 6;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt-rx, 0deg)) rotateY(var(--tilt-ry, 0deg))
+    translate3d(var(--shift-x, 0px), var(--shift-y, 0px), 0);
+  transition: transform 130ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
   pointer-events: none;
+}
+
+@keyframes p5OrganicIdleBreath {
+  0%,
+  100% {
+    transform: translateY(0px) scale(1, 1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.006, 1.012);
+  }
+}
+
+@keyframes p5ActiveTurnBreath {
+  0%,
+  100% {
+    transform: translateY(0px) scale(1, 1);
+  }
+  50% {
+    transform: translateY(-7px) scale(1.014, 1.022);
+  }
+}
+
+.p5-portrait-breath-rig {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: p5OrganicIdleBreath 3.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.p5-portrait-breathing .p5-portrait-breath-rig {
+  animation: p5ActiveTurnBreath 2.1s ease-in-out infinite;
+}
+
+.p5-portrait-voice-rig {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center 78%;
+  transform: translateY(calc(var(--voice-amp, 0) * -6px))
+    scale(
+      calc(1 + var(--voice-amp, 0) * 0.015),
+      calc(1 + var(--voice-amp, 0) * 0.025)
+    );
+  transition: transform 55ms linear;
+  will-change: transform;
+}
+
+@keyframes p5TouchSquishJolt {
+  0% {
+    transform: scale(1, 1) translateY(0);
+  }
+  26% {
+    transform: scale(1.06, 0.93) translateY(6px) rotate(-1.6deg);
+  }
+  58% {
+    transform: scale(0.97, 1.045) translateY(-7px) rotate(1.2deg);
+  }
+  82% {
+    transform: scale(1.015, 0.99) translateY(1px) rotate(-0.4deg);
+  }
+  100% {
+    transform: scale(1, 1) translateY(0) rotate(0deg);
+  }
+}
+
+.p5-portrait-voice-rig.is-touch-jolt,
+.p5-live2d-placeholder.is-touch-jolt canvas {
+  animation: p5TouchSquishJolt 360ms cubic-bezier(0.22, 1.4, 0.36, 1);
 }
 
 .p5-portrait-img {
@@ -288,7 +386,12 @@ body,
   max-width: 98%;
   object-fit: contain;
   transform: translate(8px, 6px) scale(1.06);
-  filter: drop-shadow(-10px 12px 0 rgba(0, 0, 0, 0.72));
+  filter: drop-shadow(-10px 12px 0 rgba(0, 0, 0, 0.74))
+    drop-shadow(
+      var(--rim-x, -4px) var(--rim-y, 6px) 0
+        color-mix(in srgb, var(--char-theme-color) 72%, transparent)
+    );
+  transition: filter 150ms ease;
   -webkit-mask-image: linear-gradient(
     to bottom,
     #000 0%,
@@ -301,6 +404,192 @@ body,
     #000 83%,
     rgba(0, 0, 0, 0) 99%
   );
+}
+
+.p5-portrait-art-wrap.is-speaking .p5-portrait-img {
+  filter: drop-shadow(-10px 12px 0 rgba(0, 0, 0, 0.78))
+    drop-shadow(var(--rim-x, -4px) var(--rim-y, 6px) 0 var(--char-theme-color))
+    drop-shadow(
+      0 0 calc(6px + var(--voice-amp, 0) * 18px)
+        color-mix(in srgb, var(--char-accent-color) 68%, transparent)
+    );
+}
+
+/* Speaking Energy Halo & Active Aura */
+.p5-portrait-voice-aura {
+  position: absolute;
+  width: 68%;
+  aspect-ratio: 1 / 1;
+  top: 14%;
+  left: 18%;
+  z-index: 3;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--char-theme-color) 42%, transparent) 0%,
+    color-mix(in srgb, var(--char-accent-color) 18%, transparent) 48%,
+    transparent 72%
+  );
+  opacity: calc(0.18 + var(--voice-amp, 0) * 0.75);
+  transform: scale(calc(0.92 + var(--voice-amp, 0) * 0.24));
+  transition: opacity 75ms linear, transform 75ms linear;
+  pointer-events: none;
+}
+
+.p5-portrait-voice-aura.is-active-turn {
+  opacity: calc(0.34 + var(--voice-amp, 0) * 0.66);
+}
+
+/* Ambient Character Sparks */
+@keyframes p5SparkFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) rotate(45deg) scale(0.5);
+  }
+  25% {
+    opacity: 0.85;
+  }
+  75% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-56px) rotate(135deg) scale(1.1);
+  }
+}
+
+.p5-portrait-sparks {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.p5-portrait-spark {
+  position: absolute;
+  background: var(--char-accent-color);
+  border: 1.5px solid var(--p5-white);
+  box-shadow: 2px 2px 0 var(--p5-black);
+  transform: rotate(45deg);
+  animation: p5SparkFloat 4.2s ease-in-out infinite;
+}
+
+/* Floating Collar/Cheek Soundwave & Star Equalizer Badge */
+.p5-voice-eq-badge {
+  position: absolute;
+  right: 8%;
+  top: 26%;
+  z-index: 12;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 30px;
+  padding: 5px 9px;
+  background: var(--p5-black);
+  border: 2.5px solid var(--p5-white);
+  transform: skewX(-12deg) rotate(-4deg);
+  box-shadow: 4px 4px 0 var(--char-theme-color);
+  pointer-events: none;
+}
+
+.p5-voice-eq-star {
+  color: var(--p5-yellow);
+  font-size: 13px;
+  line-height: 1;
+  margin-right: 2px;
+  align-self: center;
+  transform: scale(calc(0.95 + var(--voice-amp, 0) * 0.35));
+}
+
+.p5-voice-eq-bar {
+  width: 4px;
+  background: linear-gradient(to top, var(--char-theme-color), var(--p5-yellow));
+  border-radius: 1px;
+  transition: height 55ms linear;
+}
+
+.p5-voice-eq-bar.bar-1 {
+  height: calc(5px + var(--voice-amp, 0.25) * 12px);
+}
+.p5-voice-eq-bar.bar-2 {
+  height: calc(7px + var(--voice-amp, 0.25) * 18px);
+}
+.p5-voice-eq-bar.bar-3 {
+  height: calc(6px + var(--voice-amp, 0.25) * 15px);
+}
+.p5-voice-eq-bar.bar-4 {
+  height: calc(8px + var(--voice-amp, 0.25) * 19px);
+}
+.p5-voice-eq-bar.bar-5 {
+  height: calc(5px + var(--voice-amp, 0.25) * 11px);
+}
+
+/* Hover Hit-Zone Hint Pill */
+.p5-touch-zone-hint {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 14;
+  background: rgba(8, 8, 12, 0.92);
+  color: var(--p5-yellow);
+  border: 2px solid var(--p5-white);
+  padding: 2px 10px;
+  font-size: 11.5px;
+  font-weight: 900;
+  transform: skewX(-10deg);
+  box-shadow: 3px 3px 0 var(--char-theme-color);
+  pointer-events: none;
+}
+
+/* Floating P5 Comic Onomatopoeia Stamp on Click (900ms pop & fade) */
+@keyframes p5ComicStampPop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -40%) scale(0.35) rotate(-18deg);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, -65%) scale(1.16) rotate(-8deg);
+  }
+  42% {
+    opacity: 1;
+    transform: translate(-50%, -72%) scale(1) rotate(-10deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -118%) scale(0.92) rotate(-6deg);
+  }
+}
+
+.p5-touch-stamp {
+  position: absolute;
+  z-index: 28;
+  pointer-events: none;
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  border: 3px solid var(--p5-black);
+  outline: 2px solid var(--p5-white);
+  padding: 3px 12px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  box-shadow: 5px 5px 0 var(--p5-red);
+  animation: p5ComicStampPop 900ms cubic-bezier(0.2, 1.25, 0.32, 1) forwards;
+}
+
+.p5-touch-stamp.zone-face {
+  background: var(--p5-red);
+  color: var(--p5-white);
+  box-shadow: 5px 5px 0 var(--p5-black);
+}
+
+.p5-touch-stamp.zone-prop {
+  background: var(--p5-cyan);
+  color: var(--p5-black);
+  box-shadow: 5px 5px 0 var(--p5-black);
 }
 
 .p5-portrait-art-wrap canvas {
@@ -2478,7 +2767,7 @@ body,
 }
 
 .p5-portrait-breathing .p5-portrait-img {
-  animation: p5BreathingFloat 2.4s ease-in-out infinite;
+  animation: none;
 }
 
 /* ── DISCONNECT / RECONNECT TOP BANNER ── */

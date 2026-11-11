@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import type { CharacterSummary } from '../../shared/character-pack';
-import type {
-  PublicSettings,
-  SettingsPatch,
-  WorkerAdapterInfo,
+import {
+  DEFAULT_CHARACTER_VOICES,
+  type PublicSettings,
+  type SettingsPatch,
+  type WorkerAdapterInfo,
 } from '../../shared/settings';
 import { getCachedCharacterPack } from '../characterLoader';
+import { CHARACTER_ROLE_META } from '../touchReactions';
+import { setTtsMuted } from '../ttsPlayer';
 import { ModelPicker } from './settings/ModelPicker';
 import { ConnectionTestResult } from './settings/ConnectionTestResult';
 import './settings/settings.css';
@@ -20,18 +23,21 @@ interface SystemMenuModalProps {
   activeTab: SystemMenuTab;
   settings: PublicSettings;
   settingsSyncedAt?: number | null;
+  currentSessionId?: string;
   characters: CharacterSummary[];
   workerAdapters: WorkerAdapterInfo[];
   workerModels?: ModelListState;
   voiceModels?: ModelListState;
   workerConnTest?: ConnectionTestState;
   voiceConnTest?: ConnectionTestState;
+  ttsConnTest?: ConnectionTestState;
   onSelectTab: (tab: SystemMenuTab) => void;
   onClose: () => void;
   onSwitchCharacter: (characterId: string) => void;
   onUpdateSettings: (patch: SettingsPatch) => void;
   onListModels: (target: 'worker' | 'voice') => void;
-  onTestConnection: (target: 'worker' | 'voice') => void;
+  onTestConnection: (target: 'worker' | 'voice' | 'tts') => void;
+  onSynthesizeTts?: (characterId: string, text: string) => void;
   onStartNewSessionWithDir?: (projectDir: string) => void;
 }
 
@@ -45,36 +51,58 @@ const DEFAULT_CONN_TEST: ConnectionTestState = {
 };
 
 const TABS: Array<{ id: SystemMenuTab; zh: string }> = [
-  { id: 'characters', zh: '切换角色' },
-  { id: 'worker', zh: 'AI 模型' },
-  { id: 'voice', zh: '角色台词' },
+  { id: 'characters', zh: '角色与模型' },
+  { id: 'worker', zh: 'AI 引擎' },
+  { id: 'voice', zh: '台词与语音' },
   { id: 'pond', zh: '工作文件夹' },
   { id: 'performance', zh: '显示速度' },
 ];
+
+const CHIRP3_HD_FEMALE_VOICES: Array<{ value: string; label: string }> = [
+  { value: 'cmn-CN-Chirp3-HD-Leda', label: 'Leda · 元气清亮' },
+  { value: 'cmn-CN-Chirp3-HD-Aoede', label: 'Aoede · 甜酷灵动' },
+  { value: 'cmn-CN-Chirp3-HD-Achernar', label: 'Achernar · 温柔知性' },
+  { value: 'cmn-CN-Chirp3-HD-Zephyr', label: 'Zephyr · 轻柔困倦' },
+  { value: 'cmn-CN-Chirp3-HD-Kore', label: 'Kore · 明快干练' },
+];
+
+function formatAdapterDisplayName(ad: WorkerAdapterInfo): string {
+  if (ad.id === 'dsh') {
+    return 'DeepSeek Harness · 全自动代码读写与终端执行（核心推荐）';
+  }
+  if (ad.id === 'direct-chat') {
+    return 'DeepSeek 直连模式 · 轻量极速问答';
+  }
+  return ad.name;
+}
 
 export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   open,
   activeTab,
   settings,
   settingsSyncedAt = null,
+  currentSessionId,
   characters,
   workerAdapters,
   workerModels = DEFAULT_MODEL_LIST,
   voiceModels = DEFAULT_MODEL_LIST,
   workerConnTest = DEFAULT_CONN_TEST,
   voiceConnTest = DEFAULT_CONN_TEST,
+  ttsConnTest = DEFAULT_CONN_TEST,
   onSelectTab,
   onClose,
   onSwitchCharacter,
   onUpdateSettings,
   onListModels,
   onTestConnection,
+  onSynthesizeTts,
   onStartNewSessionWithDir,
 }) => {
   const safeWorkerModels = workerModels ?? DEFAULT_MODEL_LIST;
   const safeVoiceModels = voiceModels ?? DEFAULT_MODEL_LIST;
   const safeWorkerConn = workerConnTest ?? DEFAULT_CONN_TEST;
   const safeVoiceConn = voiceConnTest ?? DEFAULT_CONN_TEST;
+  const safeTtsConn = ttsConnTest ?? DEFAULT_CONN_TEST;
 
   const [workerModelDraft, setWorkerModelDraft] = useState(
     settings.worker.model
@@ -90,6 +118,16 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     settings.voice.endpoint.model
   );
   const [voiceApiKeyDraft, setVoiceApiKeyDraft] = useState('');
+  const [ttsRateDraft, setTtsRateDraft] = useState(
+    settings.tts?.speakingRate ?? 1.04
+  );
+  const [ttsBaseUrlDraft, setTtsBaseUrlDraft] = useState(
+    settings.tts?.endpoint?.baseUrl ?? 'https://texttospeech.googleapis.com'
+  );
+  const [ttsApiKeyDraft, setTtsApiKeyDraft] = useState('');
+  const [ttsGcpProjectDraft, setTtsGcpProjectDraft] = useState(
+    settings.tts?.gcpProject ?? ''
+  );
   const [projectDirDraft, setProjectDirDraft] = useState(
     settings.projectDir ?? ''
   );
@@ -98,6 +136,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   );
   const [showWorkerAdvanced, setShowWorkerAdvanced] = useState(false);
   const [showVoiceAdvanced, setShowVoiceAdvanced] = useState(false);
+  const [showTtsAdvanced, setShowTtsAdvanced] = useState(false);
   const [dirPickError, setDirPickError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -105,6 +144,11 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     setWorkerBaseUrlDraft(settings.worker.endpoint.baseUrl);
     setVoiceBaseUrlDraft(settings.voice.endpoint.baseUrl);
     setVoiceModelDraft(settings.voice.endpoint.model);
+    setTtsRateDraft(settings.tts?.speakingRate ?? 1.04);
+    setTtsBaseUrlDraft(
+      settings.tts?.endpoint?.baseUrl ?? 'https://texttospeech.googleapis.com'
+    );
+    setTtsGcpProjectDraft(settings.tts?.gcpProject ?? '');
     setProjectDirDraft(settings.projectDir ?? '');
     setTypingSpeedDraft(settings.performance.typingCharsPerSec);
   }, [settings, settingsSyncedAt]);
@@ -191,14 +235,17 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
 
           {/* Right Tab Content */}
           <div className="p5-system-content" data-testid="system-content-pane">
-            {/* ── TAB 1: 切换角色 (CHARACTERS) ── */}
+            {/* ── TAB 1: 角色与模型 (CHARACTERS & INDEPENDENT BRAINS) ── */}
             {activeTab === 'characters' && (
               <div
                 className="p5-sys-panel"
                 data-testid="system-panel-characters"
               >
                 <div className="p5-sys-panel-head">
-                  <h3>选择陪伴你的角色</h3>
+                  <h3>角色与独立大脑</h3>
+                  <p>
+                    每位角色拥有「独立大脑与专属房间」：单独记住各自的模型与对话历史，切换角色不串记忆。
+                  </p>
                 </div>
 
                 <div className="p5-char-grid">
@@ -206,14 +253,23 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                     const pack = getCachedCharacterPack(ch.id);
                     const isCurrent = settings.activeCharacterId === ch.id;
                     const shortName = ch.name.split('（')[0];
-                    const recModels =
-                      pack.recommendedModels && pack.recommendedModels.length > 0
-                        ? pack.recommendedModels
-                        : [
-                            'claude-opus-5-5',
-                            'gpt-6.1-sol',
-                            'deepseek-v4-pro',
-                          ];
+                    const charBrain = settings.characterBrains?.[ch.id];
+                    const brainModel = charBrain?.model || settings.worker.model;
+                    const hasActiveRoom =
+                      Boolean(charBrain?.activeSessionId) ||
+                      (isCurrent && Boolean(currentSessionId));
+                    const roleMeta = CHARACTER_ROLE_META[ch.id];
+
+                    const pillCandidates = Array.from(
+                      new Set([
+                        'deepseek-chat',
+                        'deepseek-reasoner',
+                        ...(pack.recommendedModels ?? []),
+                      ])
+                    ).slice(0, 4);
+                    if (brainModel && !pillCandidates.includes(brainModel)) {
+                      pillCandidates.unshift(brainModel);
+                    }
 
                     return (
                       <div
@@ -247,7 +303,22 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                             )}
                           </div>
                           <div className="p5-char-card-titles">
-                            <h4 className="p5-char-card-name">{shortName}</h4>
+                            <div className="p5-char-card-name-row">
+                              <h4 className="p5-char-card-name">{shortName}</h4>
+                              {roleMeta && (
+                                <span className="p5-char-specialty-pill">
+                                  {roleMeta.specialtyTag}
+                                </span>
+                              )}
+                              {hasActiveRoom && (
+                                <span
+                                  className="p5-char-room-active-badge"
+                                  data-testid={`char-room-active-${ch.id}`}
+                                >
+                                  ● 房间记忆中
+                                </span>
+                              )}
+                            </div>
                             <span className="p5-char-card-tagline">
                               {pack.tagline}
                             </span>
@@ -261,29 +332,33 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           </span>
                         </div>
 
-                        {/* 第 2 层：直接内嵌模型选择选项 */}
+                        {/* 第 2 层：独立大脑与专属房间模型选择 */}
                         <div
                           className="p5-char-card-model-bar"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="p5-field-tag">选择模型：</span>
+                          <span
+                            className="p5-field-tag p5-brain-room-label"
+                            data-testid={`char-brain-label-${ch.id}`}
+                          >
+                            独立大脑与专属房间：
+                          </span>
                           <div className="p5-model-pills">
-                            {recModels.map((m) => {
-                              const isSelectedModel =
-                                isCurrent && settings.worker.model === m;
+                            {pillCandidates.map((m) => {
+                              const isSelectedModel = brainModel === m;
                               return (
                                 <button
                                   key={m}
                                   type="button"
+                                  data-testid={`char-brain-pill-${ch.id}-${m}`}
                                   className={`p5-model-chip-btn ${
                                     isSelectedModel ? 'is-selected' : ''
                                   }`}
                                   onClick={() => {
-                                    if (!isCurrent) {
-                                      onSwitchCharacter(ch.id);
-                                    }
                                     onUpdateSettings({
-                                      worker: { model: m },
+                                      characterBrains: {
+                                        [ch.id]: { model: m },
+                                      },
                                     });
                                   }}
                                 >
@@ -300,23 +375,59 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
               </div>
             )}
 
-            {/* ── TAB 2: AI 模型 (WORKER) ── */}
+            {/* ── TAB 2: AI 引擎底座 (WORKER) ── */}
             {activeTab === 'worker' && (
               <div className="p5-sys-panel" data-testid="system-panel-worker">
                 <div className="p5-sys-panel-head">
-                  <h3>AI 模型设置</h3>
+                  <h3>AI 引擎底座设置</h3>
+                  <p>
+                    统一配置执行引擎（DeepSeek Harness / 直连模式）与全局默认模型。
+                  </p>
                 </div>
 
                 <div className="p5-sys-form">
+                  {workerAdapters.length > 0 && (
+                    <div className="p5-form-group">
+                      <label
+                        className="p5-form-label"
+                        htmlFor="worker-adapter-select"
+                      >
+                        核心执行引擎
+                      </label>
+                      <select
+                        id="worker-adapter-select"
+                        data-testid="worker-adapter-select"
+                        className="p5-form-select"
+                        value={settings.worker.adapter}
+                        onChange={(e) =>
+                          onUpdateSettings({
+                            worker: { adapter: e.target.value },
+                          })
+                        }
+                      >
+                        {workerAdapters.map((ad) => (
+                          <option
+                            key={ad.id}
+                            value={ad.id}
+                            disabled={!ad.available}
+                          >
+                            {formatAdapterDisplayName(ad)}
+                            {!ad.available ? '（未就绪）' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   {/* Model Picker first — most important for users */}
                   <ModelPicker
                     target="worker"
-                    label="当前模型"
+                    label="默认兜底模型"
                     currentModel={settings.worker.model}
                     draft={workerModelDraft}
                     onDraftChange={setWorkerModelDraft}
                     modelList={safeWorkerModels}
-                    placeholder="搜索或输入模型名称"
+                    placeholder="搜索或输入模型名称（如 deepseek-chat / deepseek-reasoner）"
                     onRefresh={() => onListModels('worker')}
                     onApplyModel={(model) =>
                       onUpdateSettings({ worker: { model } })
@@ -356,39 +467,6 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
 
                   {showWorkerAdvanced && (
                     <>
-                      {workerAdapters.length > 0 && (
-                        <div className="p5-form-group">
-                          <label
-                            className="p5-form-label"
-                            htmlFor="worker-adapter-select"
-                          >
-                            执行方式
-                          </label>
-                          <select
-                            id="worker-adapter-select"
-                            data-testid="worker-adapter-select"
-                            className="p5-form-select"
-                            value={settings.worker.adapter}
-                            onChange={(e) =>
-                              onUpdateSettings({
-                                worker: { adapter: e.target.value },
-                              })
-                            }
-                          >
-                            {workerAdapters.map((ad) => (
-                              <option
-                                key={ad.id}
-                                value={ad.id}
-                                disabled={!ad.available}
-                              >
-                                {ad.name}
-                                {!ad.available ? '（未安装）' : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
                       <div className="p5-form-group">
                         <label
                           className="p5-form-label"
@@ -438,7 +516,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                                 onChange={(e) =>
                                   setWorkerBaseUrlDraft(e.target.value)
                                 }
-                                placeholder="http://127.0.0.1:8000/v1"
+                                placeholder="https://api.deepseek.com/v1"
                               />
                               <button
                                 type="button"
@@ -531,14 +609,363 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
               </div>
             )}
 
-            {/* ── TAB 3: 角色台词 (VOICE) ── */}
+            {/* ── TAB 3: 台词与语音 (VOICE & GOOGLE CLOUD TTS) ── */}
             {activeTab === 'voice' && (
               <div className="p5-sys-panel" data-testid="system-panel-voice">
                 <div className="p5-sys-panel-head">
-                  <h3>角色台词设置</h3>
+                  <h3>台词与语音设置</h3>
+                  <p>配置角色实时开口说话（Google TTS）与自由互动台词生成。</p>
                 </div>
 
                 <div className="p5-sys-form">
+                  {/* ── 角色语音 (Google TTS) ── */}
+                  <div
+                    className="p5-tts-settings-card"
+                    data-testid="tts-settings-section"
+                  >
+                    <div className="p5-tts-card-head">
+                      <div>
+                        <h4 className="p5-tts-card-title">
+                          角色语音 (Google TTS)
+                        </h4>
+                        <p className="p5-tts-card-sub">
+                          角色说出台词时实时播报中文女声，并驱动舞台口型与声波跳动。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="tts-enabled-toggle"
+                        className={`p5-toggle-btn ${
+                          settings.tts?.enabled ? 'is-on' : 'is-off'
+                        }`}
+                        onClick={() => {
+                          const nextEnabled = !settings.tts?.enabled;
+                          setTtsMuted(!nextEnabled, true);
+                          onUpdateSettings({
+                            tts: { enabled: nextEnabled },
+                          });
+                        }}
+                      >
+                        {settings.tts?.enabled ? '● 已开启' : '○ 已关闭'}
+                      </button>
+                    </div>
+
+                    {settings.tts?.enabled && (
+                      <div className="p5-tts-card-body">
+                        <div className="p5-sys-grid-2">
+                          <div className="p5-form-group">
+                            <label
+                              className="p5-form-label"
+                              htmlFor="tts-provider-select"
+                            >
+                              语音引擎
+                            </label>
+                            <select
+                              id="tts-provider-select"
+                              data-testid="tts-provider-select"
+                              className="p5-form-select"
+                              value={settings.tts.provider}
+                              onChange={(e) =>
+                                onUpdateSettings({
+                                  tts: {
+                                    provider: e.target.value as
+                                      | 'google-cloud'
+                                      | 'openai-tts',
+                                  },
+                                })
+                              }
+                            >
+                              <option value="google-cloud">
+                                Google Cloud Chirp3-HD（本机中文女声 · 推荐）
+                              </option>
+                              <option value="openai-tts">
+                                OpenAI 兼容语音合成 (TTS)
+                              </option>
+                            </select>
+                          </div>
+
+                          <div className="p5-form-group">
+                            <label
+                              className="p5-form-label"
+                              htmlFor="tts-rate-slider"
+                            >
+                              播报语速：
+                              <strong>{ttsRateDraft.toFixed(2)}x</strong>
+                            </label>
+                            <input
+                              id="tts-rate-slider"
+                              data-testid="tts-rate-slider"
+                              type="range"
+                              min={0.7}
+                              max={1.4}
+                              step={0.02}
+                              className="p5-form-range"
+                              value={ttsRateDraft}
+                              onChange={(e) => {
+                                const nextRate = Number(e.target.value);
+                                setTtsRateDraft(nextRate);
+                                onUpdateSettings({
+                                  tts: { speakingRate: nextRate },
+                                });
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* 4 Character Chirp3-HD Voice Dropdowns */}
+                        <div className="p5-form-group">
+                          <span className="p5-form-label">
+                            各角色专属声线（Chirp3-HD 中文女声）
+                          </span>
+                          <div className="p5-tts-voice-grid">
+                            {characters.map((ch) => {
+                              const shortName = ch.name.split('（')[0];
+                              const currentVoice =
+                                settings.tts.characterVoices?.[ch.id] ??
+                                DEFAULT_CHARACTER_VOICES[ch.id] ??
+                                'cmn-CN-Chirp3-HD-Leda';
+                              const hasPreset = CHIRP3_HD_FEMALE_VOICES.some(
+                                (v) => v.value === currentVoice
+                              );
+                              return (
+                                <div
+                                  key={ch.id}
+                                  className="p5-tts-voice-item"
+                                >
+                                  <label
+                                    htmlFor={`tts-voice-${ch.id}`}
+                                    className="p5-tts-voice-char"
+                                  >
+                                    {shortName}
+                                  </label>
+                                  <select
+                                    id={`tts-voice-${ch.id}`}
+                                    data-testid={`tts-voice-select-${ch.id}`}
+                                    className="p5-form-select"
+                                    value={currentVoice}
+                                    onChange={(e) =>
+                                      onUpdateSettings({
+                                        tts: {
+                                          characterVoices: {
+                                            ...settings.tts.characterVoices,
+                                            [ch.id]: e.target.value,
+                                          },
+                                        },
+                                      })
+                                    }
+                                  >
+                                    {!hasPreset && (
+                                      <option value={currentVoice}>
+                                        {currentVoice}
+                                      </option>
+                                    )}
+                                    {CHIRP3_HD_FEMALE_VOICES.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Test TTS Connection + Audition Button */}
+                        <div className="p5-form-group p5-conn-test-row">
+                          <div className="p5-conn-test-bar">
+                            <button
+                              type="button"
+                              className="p5-apply-btn p5-apply-btn--test"
+                              data-testid="tts-test-conn-btn"
+                              onClick={() => onTestConnection('tts')}
+                              disabled={safeTtsConn.testing}
+                            >
+                              {safeTtsConn.testing
+                                ? '正在检测…'
+                                : '测试语音连通'}
+                            </button>
+
+                            <button
+                              type="button"
+                              className="p5-apply-btn p5-tts-audition-btn"
+                              data-testid="tts-audition-btn"
+                              onClick={() => {
+                                setTtsMuted(false, true);
+                                const activeId = settings.activeCharacterId;
+                                const sample =
+                                  CHARACTER_ROLE_META[activeId]?.auditionLine ??
+                                  getCachedCharacterPack(activeId).persona
+                                    .catchphrases[0] ??
+                                  '你好呀，今天想一起完成什么任务？';
+                                onSynthesizeTts?.(activeId, sample);
+                              }}
+                            >
+                              ▶ 试听当前角色语音
+                            </button>
+                          </div>
+
+                          <ConnectionTestResult
+                            target="tts"
+                            state={safeTtsConn}
+                          />
+                        </div>
+
+                        <div>
+                          <button
+                            type="button"
+                            className="p5-mini-action-btn"
+                            onClick={() => setShowTtsAdvanced((v) => !v)}
+                          >
+                            {showTtsAdvanced
+                              ? '▾ 收起高级语音凭据设置'
+                              : '▸ 高级语音凭据设置（本机已配置 gcloud 时无需填写）'}
+                          </button>
+                        </div>
+
+                        {showTtsAdvanced && (
+                          <div className="p5-tts-adv-box">
+                            <div className="p5-form-group">
+                              <label
+                                className="p5-form-label"
+                                htmlFor="tts-baseurl-input"
+                              >
+                                语音服务地址
+                              </label>
+                              <div className="p5-input-inline-row">
+                                <input
+                                  id="tts-baseurl-input"
+                                  type="text"
+                                  className="p5-form-input"
+                                  value={ttsBaseUrlDraft}
+                                  onChange={(e) =>
+                                    setTtsBaseUrlDraft(e.target.value)
+                                  }
+                                  placeholder="https://texttospeech.googleapis.com"
+                                />
+                                <button
+                                  type="button"
+                                  className="p5-apply-btn"
+                                  onClick={() => {
+                                    const trimmed = ttsBaseUrlDraft.trim();
+                                    if (trimmed) {
+                                      onUpdateSettings({
+                                        tts: { endpoint: { baseUrl: trimmed } },
+                                      });
+                                    }
+                                  }}
+                                >
+                                  保存
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="p5-form-group">
+                              <label
+                                className="p5-form-label"
+                                htmlFor="tts-gcp-project-input"
+                              >
+                                配额项目 ID（可选，仅保存在本机）
+                              </label>
+                              <div className="p5-input-inline-row">
+                                <input
+                                  id="tts-gcp-project-input"
+                                  type="text"
+                                  className="p5-form-input"
+                                  value={ttsGcpProjectDraft}
+                                  onChange={(e) =>
+                                    setTtsGcpProjectDraft(e.target.value)
+                                  }
+                                  placeholder="留空则自动使用本机 gcloud 默认项目"
+                                />
+                                <button
+                                  type="button"
+                                  className="p5-apply-btn"
+                                  onClick={() =>
+                                    onUpdateSettings({
+                                      tts: {
+                                        gcpProject: ttsGcpProjectDraft.trim(),
+                                      },
+                                    })
+                                  }
+                                >
+                                  保存
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="p5-form-group">
+                              <div className="p5-form-label-row">
+                                <label
+                                  className="p5-form-label"
+                                  htmlFor="tts-apikey-input"
+                                >
+                                  语音接口密钥（可选 API Key）
+                                </label>
+                                <span
+                                  className={`p5-apikey-status ${
+                                    settings.tts.endpoint.apiKeySet
+                                      ? 'is-set'
+                                      : 'is-unset'
+                                  }`}
+                                >
+                                  {settings.tts.endpoint.apiKeySet
+                                    ? '已设置'
+                                    : '自动使用本机登录态'}
+                                </span>
+                              </div>
+                              <div className="p5-input-inline-row">
+                                <input
+                                  id="tts-apikey-input"
+                                  type="password"
+                                  className="p5-form-input"
+                                  value={ttsApiKeyDraft}
+                                  onChange={(e) =>
+                                    setTtsApiKeyDraft(e.target.value)
+                                  }
+                                  placeholder="无需密钥时留空即可"
+                                  autoComplete="off"
+                                />
+                                <button
+                                  type="button"
+                                  className="p5-apply-btn"
+                                  onClick={() => {
+                                    if (!ttsApiKeyDraft.trim()) return;
+                                    onUpdateSettings({
+                                      tts: {
+                                        endpoint: {
+                                          apiKey: ttsApiKeyDraft.trim(),
+                                        },
+                                      },
+                                    });
+                                    setTtsApiKeyDraft('');
+                                  }}
+                                >
+                                  保存
+                                </button>
+                                {settings.tts.endpoint.apiKeySet && (
+                                  <button
+                                    type="button"
+                                    className="p5-apply-btn p5-apply-btn--danger"
+                                    onClick={() => {
+                                      setTtsApiKeyDraft('');
+                                      onUpdateSettings({
+                                        tts: { endpoint: { apiKey: '' } },
+                                      });
+                                    }}
+                                  >
+                                    清除密钥
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── AI 自由互动台词 ── */}
                   <div className="p5-form-group p5-form-group--inline">
                     <label className="p5-form-label">AI 自由互动台词</label>
                     <button
@@ -622,7 +1049,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                                 onChange={(e) =>
                                   setVoiceBaseUrlDraft(e.target.value)
                                 }
-                                placeholder="http://127.0.0.1:8000/v1"
+                                placeholder="https://api.deepseek.com/v1"
                               />
                               <button
                                 type="button"

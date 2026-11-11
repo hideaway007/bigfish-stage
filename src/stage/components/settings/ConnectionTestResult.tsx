@@ -3,7 +3,7 @@ import type { ConnectionTestState } from '../../stageReducer';
 import { mapConnectionFailure } from './connectionErrorMap';
 
 interface ConnectionTestResultProps {
-  target: 'worker' | 'voice';
+  target: 'worker' | 'voice' | 'tts';
   state?: ConnectionTestState;
 }
 

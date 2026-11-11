@@ -5,6 +5,7 @@ import {
   getCachedCharacterPack,
   pickReactionForEvent,
 } from '../stage/characterLoader';
+import type { GitChangedFile } from '../shared/wire';
 
 export type DistributiveOmit<T, K extends keyof T> = T extends unknown
   ? Omit<T, K>
@@ -30,7 +31,7 @@ export function buildInitialBootEvents(
     at: 0,
   });
 
-  const modelLabel = pack.recommendedModels?.[0] ?? 'gpt-6.1-sol';
+  const modelLabel = pack.recommendedModels?.[0] ?? 'deepseek-chat';
 
   return [
     {
@@ -38,6 +39,7 @@ export function buildInitialBootEvents(
       sessionId: 'ses_dafeiyu_v4_01',
       model: modelLabel,
       cwd: '/workspace/bigfish-login-app',
+      characterId,
     },
     {
       type: 'character_line',
@@ -208,6 +210,12 @@ export function buildPrePermissionSteps(
     detail: 'npm test -- Login',
     at: 0,
   });
+  const firstNaviId =
+    characterId === 'gemini-4-argon' ? 'claude-opus-5-5' : 'gemini-4-argon';
+  const firstNaviText =
+    firstNaviId === 'gemini-4-argon'
+      ? '场外支援：这道主题色阴影焊缝很漂亮！别忘了跑一遍回归测试验验火候～'
+      : '场外批注：按钮主题色令牌已就位，建议执行单元测试核验属性契约。';
 
   return [
     {
@@ -292,6 +300,24 @@ export function buildPrePermissionSteps(
       },
     },
     {
+      delayMs: 260,
+      event: {
+        type: 'context_usage',
+        usedTokens: 46000,
+        maxTokens: 1000000,
+      },
+    },
+    {
+      delayMs: 320,
+      event: {
+        type: 'sub_navigator_line',
+        characterId: firstNaviId,
+        emotion: 'happy',
+        lineId: 'demo_navi_after_edit',
+        text: firstNaviText,
+      },
+    },
+    {
       delayMs: 550,
       event: {
         type: 'worker_text',
@@ -345,6 +371,12 @@ export function buildAllowBranchSteps(
     summary: '登录页按钮已改为主题色，3 项单元测试全部通过',
     at: 0,
   });
+  const secondNaviId =
+    characterId === 'codex-dragon' ? 'claude-opus-5-5' : 'codex-dragon';
+  const secondNaviText =
+    secondNaviId === 'codex-dragon'
+      ? '>_ 便签提醒：断言缺了 data-variant="theme-primary"。补两行就能过。'
+      : '页边批注：测试在检查 data-variant="theme-primary" 属性，补上即可收工。';
 
   return [
     {
@@ -373,6 +405,16 @@ export function buildAllowBranchSteps(
         ok: false,
         summary: '1 failed, 2 passed (Login.test.tsx)',
         output: BASH_TEST_FAIL_OUTPUT,
+      },
+    },
+    {
+      delayMs: 280,
+      event: {
+        type: 'sub_navigator_line',
+        characterId: secondNaviId,
+        emotion: 'thinking',
+        lineId: 'demo_navi_test_hint',
+        text: secondNaviText,
       },
     },
     {
@@ -437,6 +479,14 @@ export function buildAllowBranchSteps(
       },
     },
     {
+      delayMs: 180,
+      event: {
+        type: 'context_usage',
+        usedTokens: 82000,
+        maxTokens: 1000000,
+      },
+    },
+    {
       delayMs: 400,
       event: {
         type: 'worker_text',
@@ -469,6 +519,93 @@ export function buildAllowBranchSteps(
     },
   ];
 }
+
+export interface DemoGitEntry {
+  file: GitChangedFile;
+  diff: string;
+}
+
+export const DEMO_INITIAL_GIT_ENTRIES: DemoGitEntry[] = [
+  {
+    file: {
+      path: 'src/pages/Login.tsx',
+      status: 'M',
+      added: 14,
+      removed: 3,
+    },
+    diff: `--- a/src/pages/Login.tsx
++++ b/src/pages/Login.tsx
+@@ -22,11 +22,22 @@ export const Login: React.FC = () => {
+         <button
+           type="submit"
+-          className="login-submit-btn"
++          className="login-submit-btn login-submit-btn--theme"
++          data-variant="theme-primary"
++          data-theme-color={themeColor || '#2563EB'}
+           style={{
+-            backgroundColor: '#64748B',
+-            borderColor: '#334155',
++            backgroundColor: themeColor || 'var(--color-theme-primary, #2563EB)',
++            borderColor: '#0A0A0C',
++            borderWidth: '3px',
++            borderStyle: 'solid',
++            borderRadius: '0px',
+             color: '#FFFFFF',
++            boxShadow: '4px 4px 0px #0A0A0C',
++            fontWeight: 900,
++            letterSpacing: '0.08em',
++            textTransform: 'uppercase',
++            cursor: 'pointer',
++            transition: 'transform 120ms ease, box-shadow 120ms ease',
+           }}
+         >
+           SIGN IN // 登录潜入
+         </button>`,
+  },
+  {
+    file: {
+      path: 'src/theme/ThemeContext.tsx',
+      status: 'M',
+      added: 5,
+      removed: 1,
+    },
+    diff: `--- a/src/theme/ThemeContext.tsx
++++ b/src/theme/ThemeContext.tsx
+@@ -8,7 +8,11 @@ export interface ThemeState {
+   themeColor: string;
+ }
+
+-export const DEFAULT_THEME_COLOR = '#64748B';
++export const DEFAULT_THEME_COLOR = '#2563EB';
++export const P5_ACCENT_SHADOW = '4px 4px 0px #0A0A0C';
++export function resolvePrimaryToken(custom?: string): string {
++  return custom || DEFAULT_THEME_COLOR;
++}`,
+  },
+  {
+    file: {
+      path: 'src/pages/__tests__/Login.theme.test.tsx',
+      status: 'A',
+      added: 18,
+      removed: 0,
+    },
+    diff: `--- /dev/null
++++ b/src/pages/__tests__/Login.theme.test.tsx
+@@ -0,0 +1,18 @@
++import { render, screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { Login } from '../Login';
++
++describe('Login P5 theme button', () => {
++  it('applies primary theme token and data-variant contract', () => {
++    render(<Login />);
++    const btn = screen.getByRole('button', { name: /SIGN IN/i });
++    expect(btn).toHaveAttribute('data-variant', 'theme-primary');
++    expect(btn).toHaveClass('login-submit-btn--theme');
++  });
++});`,
+  },
+];
 
 /**
  * 分支二：用户选择「拒绝」执行测试
