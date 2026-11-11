@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import type { CharacterSummary } from '../../shared/character-pack';
 import {
+  BUILTIN_AGENT_PRESETS,
   DEFAULT_CHARACTER_VOICES,
+  type AgentPresetInfo,
   type PublicSettings,
   type SettingsPatch,
   type WorkerAdapterInfo,
@@ -50,8 +52,25 @@ const DEFAULT_CONN_TEST: ConnectionTestState = {
   testing: false,
 };
 
+interface BigfishPresetsBridge {
+  listPresets?: () => Promise<
+    Array<{ id: string; name?: string; description?: string }>
+  >;
+  readPresetSource?: (
+    id: string
+  ) => Promise<{ title: string; content: string } | null>;
+  startCreatorMode?: () => void;
+}
+
+declare global {
+  interface Window {
+    __BIGFISH_PRESETS__?: BigfishPresetsBridge;
+  }
+}
+
 const TABS: Array<{ id: SystemMenuTab; zh: string }> = [
   { id: 'characters', zh: '角色与模型' },
+  { id: 'presets', zh: 'Agent 预设' },
   { id: 'worker', zh: 'AI 引擎' },
   { id: 'voice', zh: '台词与语音' },
   { id: 'pond', zh: '工作文件夹' },
@@ -138,9 +157,30 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     settings.performance.typingCharsPerSec
   );
   const [showWorkerAdvanced, setShowWorkerAdvanced] = useState(false);
+  const [, setReasoningTick] = useState(0);
+  useEffect(() => {
+    const bridge = (window as any).__BIGFISH_REASONING__;
+    return bridge?.subscribe ? bridge.subscribe(() => setReasoningTick((v: number) => v + 1)) : undefined;
+  }, []);
+  const reasoningBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_REASONING__ : undefined;
+  const effortOptions: Array<{ id: string; name: string; description?: string }> =
+    reasoningBridge?.efforts?.(settings.worker.model || '') ?? [];
+  const currentEffort: string = reasoningBridge?.current?.() ?? settings.worker.reasoningEffort ?? '';
+  const modalityBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_MODALITY__ : undefined;
+  const imageEditable: boolean = !!modalityBridge?.editable?.(settings.worker.model || '');
+  const imageSupported: boolean = modalityBridge?.supportsImages?.(settings.worker.model || '') === true;
+  const [imageSaving, setImageSaving] = useState(false);
+  const [imageSaveError, setImageSaveError] = useState<string | null>(null);
   const [showVoiceAdvanced, setShowVoiceAdvanced] = useState(false);
   const [showTtsAdvanced, setShowTtsAdvanced] = useState(false);
   const [dirPickError, setDirPickError] = useState<string | null>(null);
+  const [customPresets, setCustomPresets] = useState<AgentPresetInfo[]>([]);
+  const [presetGuideOpen, setPresetGuideOpen] = useState<
+    Record<string, 'details' | 'usage' | 'source' | null>
+  >({});
+  const [presetSourceCache, setPresetSourceCache] = useState<
+    Record<string, string>
+  >({});
 
   useEffect(() => {
     setWorkerModelDraft(settings.worker.model);
@@ -161,7 +201,31 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
       setDirPickError(null);
       return;
     }
-    if (activeTab === 'worker') {
+    if (activeTab === 'presets') {
+      const bridge = window.__BIGFISH_PRESETS__;
+      if (bridge?.listPresets) {
+        void bridge
+          .listPresets()
+          .then((rows) => {
+            const builtinIds = new Set(BUILTIN_AGENT_PRESETS.map((b) => b.id));
+            const extras: AgentPresetInfo[] = rows
+              .filter((r) => r.id && !builtinIds.has(r.id))
+              .map((r) => ({
+                id: r.id,
+                name: r.name || r.id,
+                badge: '自定义',
+                builtIn: false,
+                description:
+                  r.description || '自定义组合的工具集与角色指令预设模式。',
+                modeDetails:
+                  '由用户或创造模式定义的专属预设组合，新建潜入任务时自动挂载对应工具与提示词。',
+                howToUse: '点选设为默认后，新建潜入行动即按该自定义模式运行。',
+              }));
+            setCustomPresets(extras);
+          })
+          .catch(() => {});
+      }
+    } else if (activeTab === 'worker') {
       onListModels('worker');
     } else if (
       activeTab === 'voice' &&
@@ -378,7 +442,236 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
               </div>
             )}
 
-            {/* ── TAB 2: AI 引擎底座 (WORKER) ── */}
+            {/* ── TAB 2: AGENT 预设模式 (PRESETS) ── */}
+            {activeTab === 'presets' && (
+              <div
+                className="p5-sys-panel"
+                data-testid="system-panel-presets"
+              >
+                <div className="p5-sys-panel-head">
+                  <h3>Agent 潜入预设模式</h3>
+                  <p className="p5-preset-lead">
+                    选择角色调用工具与推进任务的方式。日常开发推荐「标准模式」，批量数据处理选「PTC 模式」，扩展新工具与自定义模式选「创造模式」。
+                  </p>
+                </div>
+
+                <div className="p5-preset-section-label">内置预设模式</div>
+                <div className="p5-preset-grid">
+                  {BUILTIN_AGENT_PRESETS.map((preset, idx) => {
+                    const currentPreset =
+                      settings.worker.agentPreset || 'standard';
+                    const isActive = currentPreset === preset.id;
+                    const openDrawer = presetGuideOpen[preset.id] ?? null;
+
+                    return (
+                      <div
+                        key={preset.id}
+                        data-testid={`preset-card-${preset.id}`}
+                        className={`p5-preset-card ${
+                          idx % 2 === 1 ? 'is-alt-tilt' : ''
+                        } ${isActive ? 'is-active' : ''}`}
+                        onClick={() =>
+                          onUpdateSettings({
+                            worker: { agentPreset: preset.id },
+                          })
+                        }
+                      >
+                        <div className="p5-preset-card-head">
+                          <div className="p5-preset-title-group">
+                            <span className="p5-preset-name">{preset.name}</span>
+                            {isActive ? (
+                              <span className="p5-preset-badge is-default">
+                                ★ 新任务默认
+                              </span>
+                            ) : (
+                              <span className="p5-preset-badge">
+                                {preset.badge}
+                              </span>
+                            )}
+                          </div>
+                          <code className="p5-preset-code">{preset.id}</code>
+                        </div>
+
+                        <p className="p5-preset-desc">{preset.description}</p>
+
+                        {openDrawer && (
+                          <div
+                            className="p5-preset-drawer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {openDrawer === 'details' && (
+                              <p>{preset.modeDetails}</p>
+                            )}
+                            {openDrawer === 'usage' && <p>{preset.howToUse}</p>}
+                            {openDrawer === 'source' && (
+                              <pre className="p5-preset-source-pre">
+                                {presetSourceCache[preset.id] ||
+                                  `# preset: ${preset.id}\n${preset.modeDetails}`}
+                              </pre>
+                            )}
+                          </div>
+                        )}
+
+                        <div
+                          className="p5-preset-footer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="p5-preset-links">
+                            <button
+                              type="button"
+                              className={`p5-preset-link-btn ${
+                                openDrawer === 'details' ? 'is-open' : ''
+                              }`}
+                              onClick={() =>
+                                setPresetGuideOpen((prev) => ({
+                                  ...prev,
+                                  [preset.id]:
+                                    prev[preset.id] === 'details'
+                                      ? null
+                                      : 'details',
+                                }))
+                              }
+                            >
+                              模式说明
+                            </button>
+                            <button
+                              type="button"
+                              className={`p5-preset-link-btn ${
+                                openDrawer === 'usage' ? 'is-open' : ''
+                              }`}
+                              onClick={() =>
+                                setPresetGuideOpen((prev) => ({
+                                  ...prev,
+                                  [preset.id]:
+                                    prev[preset.id] === 'usage' ? null : 'usage',
+                                }))
+                              }
+                            >
+                              如何使用
+                            </button>
+                          </div>
+
+                          <div className="p5-preset-actions">
+                            <button
+                              type="button"
+                              className={`p5-preset-icon-btn ${
+                                openDrawer === 'source' ? 'is-open' : ''
+                              }`}
+                              title="查看预设声明配置"
+                              onClick={() => {
+                                const nextOpen =
+                                  openDrawer === 'source' ? null : 'source';
+                                setPresetGuideOpen((prev) => ({
+                                  ...prev,
+                                  [preset.id]: nextOpen,
+                                }));
+                                if (
+                                  nextOpen === 'source' &&
+                                  !presetSourceCache[preset.id] &&
+                                  window.__BIGFISH_PRESETS__?.readPresetSource
+                                ) {
+                                  void window.__BIGFISH_PRESETS__
+                                    .readPresetSource(preset.id)
+                                    .then((res) => {
+                                      if (res?.content) {
+                                        setPresetSourceCache((c) => ({
+                                          ...c,
+                                          [preset.id]: res.content,
+                                        }));
+                                      }
+                                    })
+                                    .catch(() => {});
+                                }
+                              }}
+                            >
+                              ≡
+                            </button>
+                            <button
+                              type="button"
+                              className={`p5-preset-select-btn ${
+                                isActive ? 'is-selected' : ''
+                              }`}
+                              onClick={() =>
+                                onUpdateSettings({
+                                  worker: { agentPreset: preset.id },
+                                })
+                              }
+                            >
+                              {isActive ? '✓ 已启用' : '设为默认'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="p5-preset-section-label">自定义预设</div>
+                {customPresets.length > 0 && (
+                  <div className="p5-preset-grid p5-preset-grid--custom">
+                    {customPresets.map((preset) => {
+                      const currentPreset =
+                        settings.worker.agentPreset || 'standard';
+                      const isActive = currentPreset === preset.id;
+                      return (
+                        <div
+                          key={preset.id}
+                          className={`p5-preset-card ${
+                            isActive ? 'is-active' : ''
+                          }`}
+                          onClick={() =>
+                            onUpdateSettings({
+                              worker: { agentPreset: preset.id },
+                            })
+                          }
+                        >
+                          <div className="p5-preset-card-head">
+                            <div className="p5-preset-title-group">
+                              <span className="p5-preset-name">
+                                {preset.name}
+                              </span>
+                              <span
+                                className={`p5-preset-badge ${
+                                  isActive ? 'is-default' : ''
+                                }`}
+                              >
+                                {isActive ? '★ 新任务默认' : '自定义'}
+                              </span>
+                            </div>
+                            <code className="p5-preset-code">{preset.id}</code>
+                          </div>
+                          <p className="p5-preset-desc">{preset.description}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="p5-preset-creator-cta"
+                  data-testid="preset-creator-cta"
+                  onClick={() => {
+                    onUpdateSettings({ worker: { agentPreset: 'cordis' } });
+                    window.__BIGFISH_PRESETS__?.startCreatorMode?.();
+                    window.dispatchEvent(
+                      new CustomEvent('bigfish:prefill-prompt', {
+                        detail: {
+                          prompt:
+                            '基于标准模式帮我创建一个自定义预设模式：',
+                        },
+                      })
+                    );
+                    onClose();
+                  }}
+                >
+                  <span className="p5-preset-creator-tag">CREATOR</span>
+                  <span>＋ 让当前角色帮我创建专属预设模式</span>
+                </button>
+              </div>
+            )}
+
+            {/* ── TAB 3: AI 引擎底座 (WORKER) ── */}
             {activeTab === 'worker' && (
               <div className="p5-sys-panel" data-testid="system-panel-worker">
                 <div className="p5-sys-panel-head">
@@ -436,6 +729,69 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       onUpdateSettings({ worker: { model } })
                     }
                   />
+
+                  <div className="p5-form-group" data-testid="worker-effort-group">
+                    <label className="p5-form-label" htmlFor="worker-effort-select">
+                      思考强度
+                    </label>
+                    {effortOptions.length > 0 ? (
+                      <select
+                        id="worker-effort-select"
+                        className="p5-form-select"
+                        value={currentEffort}
+                        onChange={(e) =>
+                          onUpdateSettings({ worker: { reasoningEffort: e.target.value } })
+                        }
+                      >
+                        {!currentEffort && <option value="">模型默认</option>}
+                        {effortOptions.map((eff) => (
+                          <option key={eff.id} value={eff.id}>
+                            {eff.name}
+                            {eff.description ? ` — ${eff.description}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="p5-model-error-hint">当前模型不支持调节思考强度。</p>
+                    )}
+                  </div>
+
+                  <div className="p5-form-group" data-testid="worker-image-group">
+                    <span className="p5-form-label">输入类型</span>
+                    {imageEditable ? (
+                      <div className="p5-modality-row">
+                        <label className="p5-modality-chip is-locked" title="文本输入始终开启">
+                          <input type="checkbox" checked disabled /> 文本
+                        </label>
+                        <label className={`p5-modality-chip${imageSupported ? ' is-on' : ''}`}>
+                          <input
+                            type="checkbox"
+                            data-testid="worker-image-toggle"
+                            checked={imageSupported}
+                            disabled={imageSaving}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setImageSaving(true);
+                              setImageSaveError(null);
+                              modalityBridge
+                                .setSupportsImages(settings.worker.model, on)
+                                .catch((err: unknown) =>
+                                  setImageSaveError(err instanceof Error ? err.message : '保存失败')
+                                )
+                                .finally(() => setImageSaving(false));
+                            }}
+                          />{' '}
+                          图片（看图）
+                        </label>
+                        {imageSaving && <span className="p5-model-error-hint">保存中…</span>}
+                      </div>
+                    ) : (
+                      <p className="p5-model-error-hint">
+                        该模型不在可编辑的模型配置中，按仅文本处理，舞台不允许上传图片。
+                      </p>
+                    )}
+                    {imageSaveError && <p className="p5-pond-dir-error">{imageSaveError}</p>}
+                  </div>
 
                   {/* Test Connection */}
                   <div className="p5-form-group p5-conn-test-row">

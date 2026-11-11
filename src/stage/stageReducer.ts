@@ -24,6 +24,7 @@ export type HudStatus = 'idle' | 'thinking' | 'acting';
 
 export type SystemMenuTab =
   | 'characters'
+  | 'presets'
   | 'worker'
   | 'voice'
   | 'pond'
@@ -459,7 +460,7 @@ function applySingleStageEvent(
         event.source ?? (event.replacesLineId ? 'model' : 'preset');
       const hasRealReplyInTurn = (() => {
         if (
-          !state.turnActive ||
+          state.currentLine?.source !== 'model' ||
           lineSource !== 'preset' ||
           resolvedCharId !== state.characterId ||
           (state.currentLine &&

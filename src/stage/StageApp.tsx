@@ -21,6 +21,7 @@ import type {
   DataSourceMode,
   StageDataSource,
   StageDataSourceCallbacks,
+  StageImageAttachment,
 } from './sources/types';
 import { CharacterRenderer } from './components/CharacterRenderer';
 import { ArchiveModal } from './components/ArchiveModal';
@@ -263,8 +264,30 @@ export function renderFormattedText(text: string): React.ReactNode {
   return blocks.length === 1 ? blocks[0] : blocks;
 }
 
-export const StageApp: React.FC = () => {
-  const [sourceMode] = useState<DataSourceMode>(detectSourceMode);
+function formatStageModelBanner(modelName: string | undefined, fallbackCodename: string): string {
+  const raw = (modelName || '').trim();
+  if (!raw || raw === 'dsh/default' || raw === 'dsh/magpie') {
+    return fallbackCodename;
+  }
+  const parts = raw.split('/').filter(Boolean);
+  const short = parts[parts.length - 1] || raw;
+  return short.replace(/_/g, '-').toUpperCase();
+}
+
+export interface StageAppProps {
+  externalSource?: StageDataSource;
+  embeddedInDsh?: boolean;
+  sessionKey?: string;
+}
+
+export const StageApp: React.FC<StageAppProps> = ({
+  externalSource,
+  embeddedInDsh = false,
+  sessionKey,
+}) => {
+  const [sourceMode] = useState<DataSourceMode>(() =>
+    externalSource ? externalSource.mode : detectSourceMode()
+  );
 
   const [state, dispatch] = useReducer(
     stageReducer,
@@ -282,17 +305,71 @@ export const StageApp: React.FC = () => {
   }, []);
 
   const [connStatus, setConnStatus] = useState<ConnectionStatus>({
-    state: sourceMode === 'demo' ? 'connected' : 'connecting',
+    state: externalSource || sourceMode === 'demo' ? 'connected' : 'connecting',
     attempt: 0,
-    hasEverConnected: sourceMode === 'demo',
+    hasEverConnected: Boolean(externalSource) || sourceMode === 'demo',
   });
 
   const [inputValue, setInputValue] = useState<string>(
     sourceMode === 'demo' ? DEFAULT_FIRST_USER_PROMPT : ''
   );
+  const [pendingImages, setPendingImages] = useState<StageImageAttachment[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const imagePickerRef = useRef<HTMLInputElement | null>(null);
+  const addImageFiles = (files: Iterable<File>) => {
+    const accepted = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+    for (const file of Array.from(files)) {
+      if (!accepted.includes(file.type)) {
+        setImageError(`不支持的图片格式：${file.type || file.name}（支持 PNG / JPEG / WebP / GIF）`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setImageError(`图片太大：${file.name}（上限 10MB）`);
+        continue;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const url = String(reader.result ?? '');
+        const comma = url.indexOf(',');
+        if (comma < 0) return;
+        setImageError(null);
+        setPendingImages((prev) =>
+          prev.length >= 8
+            ? prev
+            : [
+                ...prev,
+                {
+                  mediaType: file.type as StageImageAttachment['mediaType'],
+                  data: url.slice(comma + 1),
+                  name: file.name || undefined,
+                  previewUrl: url,
+                },
+              ]
+        );
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   const [typedLength, setTypedLength] = useState<number>(0);
   const [fadeReplaceKey, setFadeReplaceKey] = useState<number>(0);
   const [inlinePreviewId, setInlinePreviewId] = useState<string | null>(null);
+  const [stageModelPickerOpen, setStageModelPickerOpen] = useState(false);
+  const [stageModelQuery, setStageModelQuery] = useState('');
+  const stageModelPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [, setReasoningTick] = useState(0);
+  useEffect(() => {
+    const bridge = (window as any).__BIGFISH_REASONING__;
+    return bridge?.subscribe ? bridge.subscribe(() => setReasoningTick((v: number) => v + 1)) : undefined;
+  }, []);
+  const reasoningBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_REASONING__ : undefined;
+  const activeModelForEffort = state.serverSettings.worker.model || state.modelName || '';
+  const effortOptions: Array<{ id: string; name: string }> = reasoningBridge?.efforts?.(activeModelForEffort) ?? [];
+  const currentEffort: string | null = reasoningBridge?.current?.() ?? null;
+  const modalityBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_MODALITY__ : undefined;
+  const imagesAllowed: boolean =
+    sourceMode === 'demo' || modalityBridge?.supportsImages?.(activeModelForEffort) === true;
+  const IMAGE_BLOCKED_MSG = '当前模型不支持图片：请到 设置 → AI 引擎 勾选「图片（看图）」，或切换支持图片的模型';
+  const EFFORT_LABELS: Record<string, string> = { off: '关', none: '关', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '超高', max: 'MAX' };
   const [contextTokens, setContextTokens] = useState<{
     used: number;
     max: number;
@@ -502,11 +579,21 @@ export const StageApp: React.FC = () => {
     };
 
     const source: StageDataSource =
-      sourceMode === 'demo'
+      externalSource
+        ? externalSource
+        : sourceMode === 'demo'
         ? new ScriptSource(callbacks)
         : sourceMode === 'native'
         ? new NativeAppSource(callbacks)
         : new LiveSource(callbacks);
+
+    if (externalSource && 'bindCallbacks' in externalSource) {
+      (
+        externalSource as StageDataSource & {
+          bindCallbacks?: (cb: StageDataSourceCallbacks) => void;
+        }
+      ).bindCallbacks?.(callbacks);
+    }
 
     sourceRef.current = source;
     source.connect();
@@ -519,7 +606,66 @@ export const StageApp: React.FC = () => {
       }
       collapseTimersRef.current.clear();
     };
-  }, [sourceMode]);
+  }, [sourceMode, externalSource, sessionKey]);
+
+  // Listen for sidebar settings button, Creator preset prefill, and Cmd+, / Ctrl+,
+  useEffect(() => {
+    const onOpenMenu = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ tab?: SystemMenuTab }>).detail;
+      dispatch({
+        type: 'TOGGLE_SYSTEM_MENU',
+        open: true,
+        ...(detail?.tab ? { tab: detail.tab } : {}),
+      });
+    };
+    const onPrefill = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ prompt?: string }>).detail;
+      if (detail?.prompt) {
+        setInputValue(detail.prompt);
+        window.setTimeout(() => inputRef.current?.focus(), 60);
+      }
+    };
+    const onCommaShortcut = (ev: KeyboardEvent) => {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === ',') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        dispatch({ type: 'TOGGLE_SYSTEM_MENU' });
+      }
+    };
+    window.addEventListener('bigfish:open-system-menu', onOpenMenu);
+    window.addEventListener('bigfish:prefill-prompt', onPrefill);
+    window.addEventListener('keydown', onCommaShortcut, true);
+    return () => {
+      window.removeEventListener('bigfish:open-system-menu', onOpenMenu);
+      window.removeEventListener('bigfish:prefill-prompt', onPrefill);
+      window.removeEventListener('keydown', onCommaShortcut, true);
+    };
+  }, []);
+
+  // Close stage inline model picker on outside click or Escape
+  useEffect(() => {
+    if (!stageModelPickerOpen) return;
+    const onPointerDown = (ev: MouseEvent) => {
+      if (
+        stageModelPopoverRef.current &&
+        !stageModelPopoverRef.current.contains(ev.target as Node)
+      ) {
+        setStageModelPickerOpen(false);
+      }
+    };
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.stopPropagation();
+        setStageModelPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [stageModelPickerOpen]);
 
   // Sync fastForward with data source
   useEffect(() => {
@@ -1059,7 +1205,12 @@ export const StageApp: React.FC = () => {
     if (needsOnboarding) return;
     const trimmed = inputValue.trim();
 
-    if (sourceMode !== 'demo' && !trimmed) {
+    const images = pendingImages;
+    if (images.length > 0 && !imagesAllowed) {
+      setImageError(IMAGE_BLOCKED_MSG);
+      return;
+    }
+    if (sourceMode !== 'demo' && !trimmed && images.length === 0) {
       inputRef.current?.focus();
       return;
     }
@@ -1067,8 +1218,9 @@ export const StageApp: React.FC = () => {
     if (state.turnActive) {
       const steerText =
         trimmed || '顺便确认按钮带上 data-variant="theme-primary" 属性！';
-      sourceRef.current?.steer(steerText);
+      sourceRef.current?.steer(steerText, images);
       setInputValue('');
+      setPendingImages([]);
       return;
     }
 
@@ -1078,8 +1230,9 @@ export const StageApp: React.FC = () => {
     collapseTimersRef.current.clear();
 
     const promptToSend = trimmed || DEFAULT_FIRST_USER_PROMPT;
-    sourceRef.current?.send(promptToSend);
+    sourceRef.current?.send(images.length && !trimmed ? '' : promptToSend, images);
     setInputValue('');
+    setPendingImages([]);
     inputRef.current?.blur();
   };
 
@@ -1210,8 +1363,9 @@ export const StageApp: React.FC = () => {
     Boolean(conclusionCandidate?.trim()) && !isConclusionDuplicateOfDialogue;
 
   const isDisconnected =
-    sourceMode === 'live' && connStatus.state !== 'connected';
+    !embeddedInDsh && sourceMode === 'live' && connStatus.state !== 'connected';
   const needsOnboarding =
+    !embeddedInDsh &&
     (sourceMode === 'live' || sourceMode === 'native') && !state.serverSettings.projectDir;
   const isNativeApp =
     sourceMode === 'native' ||
@@ -1244,7 +1398,7 @@ export const StageApp: React.FC = () => {
 
   return (
     <div
-      className={`p5-stage-viewport ${isNativeApp ? 'is-native-app' : ''}`}
+      className={`p5-stage-viewport${isNativeApp ? ' is-native-app' : ''}${embeddedInDsh ? ' is-dsh-embedded' : ''}`}
       data-testid="p5-stage-viewport"
       data-active-character={character.id}
       style={viewportStyle}
@@ -1366,13 +1520,59 @@ export const StageApp: React.FC = () => {
               {shortNickname}
             </div>
 
-            <div className="p5-char-name-pill">
-              <span
-                className="p5-char-name-main"
+            <div
+              className="p5-char-name-pill p5-char-name-pill--interactive"
+              ref={stageModelPopoverRef}
+            >
+              <button
+                type="button"
+                className={`p5-stage-model-trigger ${
+                  stageModelPickerOpen ? 'is-open' : ''
+                }`}
                 data-testid="character-codename"
+                aria-haspopup="listbox"
+                aria-expanded={stageModelPickerOpen}
+                title={`当前驱动模型：${
+                  state.serverSettings.worker.model || state.modelName || character.codename
+                }（点击切换模型）`}
+                onClick={() => {
+                  playSfx('select');
+                  const next = !stageModelPickerOpen;
+                  setStageModelPickerOpen(next);
+                  if (next) {
+                    setStageModelQuery('');
+                    handleListModels('worker');
+                  }
+                }}
               >
-                {character.codename}
-              </span>
+                <span className="p5-char-name-main">
+                  {formatStageModelBanner(
+                    state.serverSettings.worker.model || state.modelName,
+                    character.codename
+                  )}
+                </span>
+                <span className="p5-stage-model-caret" aria-hidden="true">
+                  {stageModelPickerOpen ? '▴' : '▾'}
+                </span>
+              </button>
+
+              {effortOptions.length > 0 && (
+                <button
+                  type="button"
+                  className="p5-effort-chip"
+                  data-testid="reasoning-effort-chip"
+                  title="思考强度（点击切换下一档）"
+                  onClick={() => {
+                    playSfx('select');
+                    const ids = effortOptions.map((e) => e.id);
+                    const idx = currentEffort ? ids.indexOf(currentEffort) : -1;
+                    const next = ids[(idx + 1) % ids.length];
+                    handleUpdateSettings({ worker: { reasoningEffort: next } });
+                  }}
+                >
+                  ⚡ {EFFORT_LABELS[currentEffort ?? ''] ?? currentEffort ?? '默认'}
+                </button>
+              )}
 
               <span
                 className="p5-speaker-codename-sr"
@@ -1391,6 +1591,181 @@ export const StageApp: React.FC = () => {
                   {turnDurationSec}s
                 </strong>
               </span>
+
+              {stageModelPickerOpen && (() => {
+                const activeModel =
+                  state.serverSettings.worker.model || state.modelName || '';
+                const recList =
+                  character.recommendedModels && character.recommendedModels.length > 0
+                    ? character.recommendedModels
+                    : [];
+                const catalogList = state.workerModels.models || [];
+                const mergedModels = Array.from(
+                  new Set([
+                    ...(activeModel && activeModel !== 'dsh/default' ? [activeModel] : []),
+                    ...catalogList,
+                    ...recList,
+                  ])
+                );
+                const q = stageModelQuery.trim().toLowerCase();
+                const filtered = q
+                  ? mergedModels.filter((m) => m.toLowerCase().includes(q))
+                  : mergedModels;
+
+                const applyModelChoice = (targetModel: string) => {
+                  const clean = targetModel.trim();
+                  if (!clean) return;
+                  playSfx('select');
+                  handleUpdateSettings({ worker: { model: clean } });
+                  setStageModelPickerOpen(false);
+                };
+
+                return (
+                  <div
+                    className="p5-stage-model-popover"
+                    data-testid="stage-model-popover"
+                    role="dialog"
+                    aria-label="切换驱动模型"
+                  >
+                    <div className="p5-stage-model-pop-head">
+                      <div className="p5-stage-model-pop-title">
+                        <span className="p5-stage-model-pop-tag">MODEL</span>
+                        <span>选择当前驱动模型</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="p5-stage-model-pop-close"
+                        onClick={() => setStageModelPickerOpen(false)}
+                        aria-label="关闭模型选择"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <form
+                      className="p5-stage-model-search-row"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (filtered.length > 0 && stageModelQuery.trim()) {
+                          applyModelChoice(filtered[0]);
+                        } else if (stageModelQuery.trim()) {
+                          applyModelChoice(stageModelQuery);
+                        }
+                      }}
+                    >
+                      <span className="p5-stage-model-search-icon">⌕</span>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={stageModelQuery}
+                        onChange={(e) => setStageModelQuery(e.target.value)}
+                        placeholder="搜索或输入模型 ID 回车切换…"
+                        className="p5-stage-model-search-input"
+                        data-testid="stage-model-search-input"
+                      />
+                    </form>
+
+                    {effortOptions.length > 0 && (
+                      <div className="p5-effort-row" data-testid="reasoning-effort-row">
+                        <span className="p5-effort-row-label">思考强度</span>
+                        {effortOptions.map((e) => (
+                          <button
+                            key={e.id}
+                            type="button"
+                            className={`p5-effort-opt ${currentEffort === e.id ? 'is-active' : ''}`}
+                            title={e.name}
+                            onClick={() => {
+                              playSfx('select');
+                              handleUpdateSettings({ worker: { reasoningEffort: e.id } });
+                            }}
+                          >
+                            {EFFORT_LABELS[e.id] ?? e.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="p5-stage-model-list" role="listbox">
+                      {state.workerModels.loading && mergedModels.length === 0 && (
+                        <div className="p5-stage-model-empty">正在读取可用模型列表…</div>
+                      )}
+                      {!state.workerModels.loading && filtered.length === 0 && (
+                        <div className="p5-stage-model-empty">
+                          {stageModelQuery.trim() ? (
+                            <button
+                              type="button"
+                              className="p5-stage-model-item is-custom-apply"
+                              onClick={() => applyModelChoice(stageModelQuery)}
+                            >
+                              <span>直接使用自定义模型：</span>
+                              <strong>{stageModelQuery.trim()}</strong>
+                            </button>
+                          ) : (
+                            '暂无模型列表，点击下方进入模型设置配置接口'
+                          )}
+                        </div>
+                      )}
+                      {filtered.map((m) => {
+                        const isCurrent = m === activeModel;
+                        const slashIdx = m.lastIndexOf('/');
+                        const shortId = slashIdx >= 0 ? m.slice(slashIdx + 1) : m;
+                        const prefix = slashIdx > 0 ? m.slice(0, slashIdx) : '';
+                        const isRec = recList.includes(m);
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            role="option"
+                            aria-selected={isCurrent}
+                            className={`p5-stage-model-item ${
+                              isCurrent ? 'is-active' : ''
+                            }`}
+                            onClick={() => applyModelChoice(m)}
+                          >
+                            <div className="p5-stage-model-item-main">
+                              <span className="p5-stage-model-item-name">
+                                {isCurrent ? `✓ ${shortId}` : shortId}
+                              </span>
+                              {isRec && (
+                                <span className="p5-stage-model-rec-pill">推荐</span>
+                              )}
+                            </div>
+                            {prefix && (
+                              <span className="p5-stage-model-item-prefix">
+                                {prefix}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="p5-stage-model-pop-foot">
+                      <button
+                        type="button"
+                        className="p5-stage-model-foot-btn"
+                        onClick={() => handleListModels('worker')}
+                      >
+                        ↻ 刷新列表
+                      </button>
+                      <button
+                        type="button"
+                        className="p5-stage-model-foot-btn is-accent"
+                        onClick={() => {
+                          setStageModelPickerOpen(false);
+                          dispatch({
+                            type: 'TOGGLE_SYSTEM_MENU',
+                            open: true,
+                            tab: 'worker',
+                          });
+                        }}
+                      >
+                        ⚙ 模型接口设置 →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {isLongWaiting && (
@@ -2147,8 +2522,62 @@ export const StageApp: React.FC = () => {
               </button>
             )}
 
-            <form className="p5-input-bar-slash" onSubmit={handleSubmitInput}>
+            {(pendingImages.length > 0 || imageError) && (
+              <div className="p5-image-tray" data-testid="stage-image-tray">
+                {pendingImages.map((img, i) => (
+                  <div className="p5-image-thumb" key={`${i}-${img.name ?? ''}`}>
+                    <img src={img.previewUrl} alt={img.name ?? `图片 ${i + 1}`} />
+                    <button
+                      type="button"
+                      className="p5-image-thumb-x"
+                      title="移除"
+                      onClick={() => setPendingImages((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {imageError && <span className="p5-image-error">{imageError}</span>}
+              </div>
+            )}
+            <form
+              className="p5-input-bar-slash"
+              onSubmit={handleSubmitInput}
+              onDragOver={(e) => {
+                if (Array.from(e.dataTransfer.types).includes('Files')) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                if (e.dataTransfer.files.length === 0) return;
+                e.preventDefault();
+                if (!imagesAllowed) {
+                  setImageError(IMAGE_BLOCKED_MSG);
+                  return;
+                }
+                addImageFiles(e.dataTransfer.files);
+              }}
+            >
               <div className="p5-input-field-box">
+                <button
+                  type="button"
+                  className="p5-attach-btn"
+                  data-testid="stage-attach-btn"
+                  title={imagesAllowed ? '附加图片（也可以直接粘贴或拖入）' : IMAGE_BLOCKED_MSG}
+                  disabled={needsOnboarding || !imagesAllowed}
+                  onClick={() => imagePickerRef.current?.click()}
+                >
+                  📎
+                </button>
+                <input
+                  ref={imagePickerRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    if (e.target.files) addImageFiles(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
                 <input
                   ref={inputRef}
                   type="text"
@@ -2157,6 +2586,16 @@ export const StageApp: React.FC = () => {
                   disabled={needsOnboarding}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
+                  onPaste={(e) => {
+                    const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'));
+                    if (files.length === 0) return;
+                    e.preventDefault();
+                    if (!imagesAllowed) {
+                      setImageError(IMAGE_BLOCKED_MSG);
+                      return;
+                    }
+                    addImageFiles(files);
+                  }}
                   placeholder={
                     needsOnboarding
                       ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
@@ -2172,7 +2611,7 @@ export const StageApp: React.FC = () => {
                 data-testid="stage-send-btn"
                 disabled={
                   needsOnboarding ||
-                  (sourceMode !== 'demo' && !inputValue.trim())
+                  (sourceMode !== 'demo' && !inputValue.trim() && pendingImages.length === 0)
                 }
               >
                 {state.turnActive ? '插话 ▶' : '投喂 ▶'}

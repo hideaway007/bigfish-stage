@@ -20,13 +20,22 @@ export interface StageDataSourceCallbacks {
   onConnectionChange: (status: ConnectionStatus) => void;
 }
 
+/** 用户随消息附带的图片（base64，不含 data: 前缀）。 */
+export interface StageImageAttachment {
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  data: string;
+  name?: string;
+  /** 本地预览用的 object URL / data URL。 */
+  previewUrl: string;
+}
+
 export interface StageDataSource {
   readonly mode: DataSourceMode;
   connect(): void;
   retryNow(): void;
   dispose(): void;
-  send(text: string): void;
-  steer(text: string): void;
+  send(text: string, images?: readonly StageImageAttachment[]): void;
+  steer(text: string, images?: readonly StageImageAttachment[]): void;
   stop(): void;
   decidePermission(requestId: string, allowed: boolean): void;
   listSessions(): void;
