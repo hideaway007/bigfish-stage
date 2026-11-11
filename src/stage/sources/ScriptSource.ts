@@ -29,7 +29,6 @@ import {
   toCharacterSummary,
 } from '../characterLoader';
 import { pickCharacterTouchReaction } from '../touchReactions';
-import { buildDemoVoicePreviewWavBase64 } from '../ttsPlayer';
 import type {
   StageDataSource,
   StageDataSourceCallbacks,
@@ -745,21 +744,29 @@ export class ScriptSource implements StageDataSource {
     text: string,
     lineId?: string
   ): void {
-    const audioBase64 = buildDemoVoicePreviewWavBase64(
-      characterId,
-      text?.length ?? 16
-    );
-    if (!audioBase64) return;
-    this.scheduleDemoTimer(() => {
-      this.callbacks.onServerMessage({
-        type: 'tts_audio',
-        characterId,
-        lineId,
-        text,
-        audioBase64,
-        mimeType: 'audio/wav',
+    const clean = text?.trim();
+    if (!clean) return;
+    void fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId, text: clean }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.ok && data.audioBase64 && !this.disposed) {
+          this.callbacks.onServerMessage({
+            type: 'tts_audio',
+            characterId,
+            lineId,
+            text: clean,
+            audioBase64: data.audioBase64,
+            mimeType: data.mimeType || 'audio/wav',
+          });
+        }
+      })
+      .catch(() => {
+        // Offline demo without local backend: stay silent rather than playing synthetic beeps
       });
-    }, 75);
   }
 
   private emitDemoGitStatus(): void {

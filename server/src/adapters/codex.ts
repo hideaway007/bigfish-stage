@@ -307,6 +307,14 @@ export class DirectEndpointSession implements WorkerSession {
 
   constructor(private options: StartSessionOptions) {
     this.sessionId = options.resumeId || `ses_${randomUUID().slice(0, 8)}`;
+    if (options.rolePrompt?.trim()) {
+      this.history = [
+        {
+          role: 'system',
+          content: `${options.rolePrompt.trim()}\n请直接、自然、专业地用简体中文回应用户的问题或协助推进编程任务。`,
+        },
+      ];
+    }
     const key = options.connection === 'endpoint' ? options.endpoint.apiKey : undefined;
     const redact = (value: unknown): unknown =>
       typeof value === 'string' && key

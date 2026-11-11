@@ -28,10 +28,10 @@ export const CHARACTER_ROLE_META: Record<string, CharacterRoleMeta> = {
     auditionLine: '委托人，书签已经夹好。来龙去脉越清楚，我望天的时间越短。',
   },
   'codex-dragon': {
-    shortTitle: 'Codex 龙娘 · 严苛审查',
-    specialtyTag: '严苛审查 / 深水排障',
-    specialtyDesc: '专抓隐蔽边界 Bug、竞态隐患与高难度补丁验证',
-    auditionLine: '醒了。大概五成。便签递给我，哪里有 Bug 我盯着看。',
+    shortTitle: '白龙娘 · 严苛审查',
+    specialtyTag: '严苛审查 / 全局洞察',
+    specialtyDesc: '银角白翼的高洁白龙娘，专抓隐蔽边界 Bug 与复杂逻辑漏洞',
+    auditionLine: '嘘——别出声，这一行隐藏的破绽，已经被我看穿了。',
   },
 };
 
@@ -58,10 +58,10 @@ export const DEFAULT_TOUCH_ZONE_LABELS: Record<
     body: '整理女仆袖口',
   },
   'codex-dragon': {
-    head: '摸摸小龙角',
-    face: '戳戳困倦脸颊',
-    prop: '递上 >_ 便签',
-    body: '拍拍睡衣抱枕',
+    head: '轻抚白龙角',
+    face: '凝视紫罗兰眼眸',
+    prop: '戳戳蓝色小云朵',
+    body: '轻触洁白龙翼',
   },
 };
 
@@ -88,10 +88,10 @@ const TOUCH_ONOMATOPOEIA: Record<
     body: ['✦ 熨好啦!', '★ 随时待命', '♥ 失礼了'],
   },
   'codex-dragon': {
-    head: ['★ 小龙角!', '✦ 龙角一颤!', '♥ 醒了五成!'],
-    face: ['✦ 别戳啦!', '💤 呼啊…!', '♥ 眯着呢'],
-    prop: ['⚡ >_ 便签!', '★ 终端就绪!', '✦ 敲回车!'],
-    body: ['💤 再睡五分…', '★ 枕头让位!', '✦ 尾巴晃~'],
+    head: ['✦ 银白龙角!', '★ 花结轻晃!', '♥ 请轻一点'],
+    face: ['✦ 嘘——!', '♥ 紫眸凝视', '★ 看穿了哦'],
+    prop: ['☁ 噗呦小云!', '✦ 软绵绵!', '★ 别捏云朵'],
+    body: ['✦ 白翼微张!', '★ 银鳞微光', '♥ 优雅落定'],
   },
 };
 
@@ -192,31 +192,31 @@ const BUILTIN_TOUCH_REACTIONS: Record<
   },
   'codex-dragon': {
     head: {
-      emotion: 'shocked',
+      emotion: 'happy',
       lines: [
-        '唔……！龙角很敏感。清醒度一下飙到八成了。你故意的吧。',
-        '摸龙角……不加清醒度，只会让尾巴跟着晃。说吧，改哪个文件。',
+        '嘘——龙角微凉，这枚白色花结可别碰歪了哦，搭档。',
+        '轻抚白龙角是祈求灵感的意思吗？嗯，我分你一半目光。',
       ],
     },
     face: {
-      emotion: 'idle',
+      emotion: 'thinking',
       lines: [
-        '呼啊……别戳。眼睛已经睁开一半了。代码看得清。',
-        '脸有点软？因为刚从枕头上抬起来。手没软，能敲终端。',
+        '食指竖在唇边，是让您静心听逻辑回声的意思，不是不让您说话。',
+        '紫罗兰色的眼睛看代码最清楚……哪一行藏着瑕疵，一眼便知。',
       ],
     },
     prop: {
-      emotion: 'working',
+      emotion: 'happy',
       lines: [
-        '>_ 便签拿稳了。写清楚边界条件，小龙三下给你修利索。',
-        '这张便签是热的……刚跑完测试捞出来的。搭档要验一下吗。',
+        '这朵蓝色小云朵很乖吧？它正帮我盯着远处的运行轨迹呢。',
+        '噗呦～轻轻戳一下它就会开心转圈，别把它吓跑啦。',
       ],
     },
     body: {
-      emotion: 'happy',
+      emotion: 'idle',
       lines: [
-        '睡衣很暖和。拍我也没用，修完这个 Bug 还是要睡五分钟的。',
-        '嗯，我在。枕头已经让位给键盘了，搭档随时发车。',
+        '纯白双翼与银鳞龙尾已经舒展开了，随时为您护航整场重构。',
+        '裙摆上的花结纹章一尘不染。搭档，请下达下一道指令吧。',
       ],
     },
   },

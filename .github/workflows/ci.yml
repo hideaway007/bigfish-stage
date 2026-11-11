@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix server ci
+      - name: Validate character packs
+        run: npm run check:characters
+      - name: Typecheck frontend & server
+        run: |
+          npm run typecheck
+          npm --prefix server run check
+      - name: Run server unit tests
+        run: npm --prefix server test
+      - name: Build web bundle & native engine
+        run: npm run build:all

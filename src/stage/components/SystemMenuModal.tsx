@@ -59,11 +59,14 @@ const TABS: Array<{ id: SystemMenuTab; zh: string }> = [
 ];
 
 const CHIRP3_HD_FEMALE_VOICES: Array<{ value: string; label: string }> = [
-  { value: 'cmn-CN-Chirp3-HD-Leda', label: 'Leda · 元气清亮' },
-  { value: 'cmn-CN-Chirp3-HD-Aoede', label: 'Aoede · 甜酷灵动' },
-  { value: 'cmn-CN-Chirp3-HD-Achernar', label: 'Achernar · 温柔知性' },
-  { value: 'cmn-CN-Chirp3-HD-Zephyr', label: 'Zephyr · 轻柔困倦' },
-  { value: 'cmn-CN-Chirp3-HD-Kore', label: 'Kore · 明快干练' },
+  { value: 'Leda', label: 'Leda · 日系元气萌妹音（大肥鱼推荐）' },
+  { value: 'Autonoe', label: 'Autonoe · 傲娇甜酷少女音（哈基米推荐）' },
+  { value: 'Laomedeia', label: 'Laomedeia · 清雅温柔大小姐音（Claude娘推荐）' },
+  { value: 'Zephyr', label: 'Zephyr · 空灵高洁龙女御姐音（白龙娘推荐）' },
+  { value: 'Despina', label: 'Despina · 超甜软萌萝莉音' },
+  { value: 'Callirrhoe', label: 'Callirrhoe · 轻柔三无文学音' },
+  { value: 'Aoede', label: 'Aoede · 成熟利落学姐音' },
+  { value: 'Kore', label: 'Kore · 沉稳知性女声' },
 ];
 
 function formatAdapterDisplayName(ad: WorkerAdapterInfo): string {
@@ -676,7 +679,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                               }
                             >
                               <option value="google-cloud">
-                                Google Cloud Chirp3-HD（本机中文女声 · 推荐）
+                                Google Cloud · Gemini 3.8 Flash TTS（大模型情感配音 · 推荐）
                               </option>
                               <option value="openai-tts">
                                 OpenAI 兼容语音合成 (TTS)
@@ -712,10 +715,10 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           </div>
                         </div>
 
-                        {/* 4 Character Chirp3-HD Voice Dropdowns */}
+                        {/* 4 Character Gemini 3.8 TTS Voice Dropdowns */}
                         <div className="p5-form-group">
                           <span className="p5-form-label">
-                            各角色专属声线（Chirp3-HD 中文女声）
+                            各角色专属声线（Gemini 3.8 Flash TTS 情感女声）
                           </span>
                           <div className="p5-tts-voice-grid">
                             {characters.map((ch) => {

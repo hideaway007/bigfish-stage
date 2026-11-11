@@ -43,7 +43,7 @@ function writeStoredTtsMuted(muted: boolean): void {
   }
 }
 
-let ttsMuted: boolean = readStoredTtsMuted() ?? false;
+let ttsMuted: boolean = readStoredTtsMuted() ?? true;
 const muteListeners = new Set<TtsMuteListener>();
 const amplitudeListeners = new Set<AmplitudeListener>();
 

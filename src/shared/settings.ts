@@ -126,28 +126,24 @@ export type SettingsPatch = {
 };
 
 export const DEFAULT_CHARACTER_VOICES: Record<string, string> = {
-  'deepseek-v4-pro': 'cmn-CN-Chirp3-HD-Leda',
-  'gemini-4-argon': 'cmn-CN-Chirp3-HD-Aoede',
-  'claude-opus-5-5': 'cmn-CN-Chirp3-HD-Achernar',
-  'codex-dragon': 'cmn-CN-Chirp3-HD-Zephyr',
+  'deepseek-v4-pro': 'Leda',
+  'gemini-4-argon': 'Autonoe',
+  'claude-opus-5-5': 'Laomedeia',
+  'codex-dragon': 'Zephyr',
 };
 
 export const DEFAULT_CHARACTER_BRAINS: Record<string, CharacterBrainSettings> = {
   'deepseek-v4-pro': {
-    model: 'deepseek-chat',
     rolePrompt: '你是主舞台看板娘大肥鱼，擅长全栈快速落地与长任务冲锋。',
   },
   'gemini-4-argon': {
-    model: 'deepseek-chat',
     rolePrompt: '你是焊工猫娘哈基米，专精前端界面美学、动效焊接与视觉精修。',
   },
   'claude-opus-5-5': {
-    model: 'deepseek-reasoner',
     rolePrompt: '你是知性文学少女 Claude 娘，擅长复杂架构推演、重构设计与长文梳理。',
   },
   'codex-dragon': {
-    model: 'deepseek-reasoner',
-    rolePrompt: '你是困倦白龙娘 Codex，擅长深水区 Bug 定位、边界条件排查与严苛代码审查。',
+    rolePrompt: '你是银角白翼的高洁白龙娘，擅长深水区 Bug 洞察、全局逻辑推演与严苛代码审查。',
   },
 };
 
@@ -170,7 +166,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxLinesPerMinute: 6,
   },
   tts: {
-    enabled: true,
+    enabled: false,
     provider: 'google-cloud',
     characterVoices: { ...DEFAULT_CHARACTER_VOICES },
     endpoint: { baseUrl: 'https://texttospeech.googleapis.com' },

@@ -270,12 +270,25 @@
         "{summary} 那一路回来了，看看捞到了啥！",
         "帮手回话啦，大肥鱼给它啪啪鼓掌！"
       ]
+    },
+    "context_compacted": {
+      "emotion": "happy",
+      "lines": [
+        "咕噜一口气把旧账本浓缩成精华鱼丸啦！脑子轻快多了捏～",
+        "记忆凝炼大成功！一锅炖不下的历史，现在一小碗就装好啦！"
+      ]
+    },
+    "baton_pass": {
+      "emotion": "working",
+      "lines": [
+        "啪！击掌换手成功！大肥鱼接过 Harness 冲锋啦捏！",
+        "接力棒到手！店长放心，前面的进度我都记在围裙上啦！"
+      ]
     }
   },
   "recommendedModels": [
-    "deepseek-v4-pro",
-    "deepseek-reasoner",
-    "gpt-6.1-sol"
+    "deepseek-chat",
+    "deepseek-reasoner"
   ],
   "art": {
     "renderer": "sprites",
@@ -358,5 +371,46 @@
     "sendLabel": "投喂",
     "idleHint": "大肥鱼在等投喂捏，蒸汽机车的话题也在排队！",
     "stageSubtitle": "大肥鱼 · 鱼塘工作台"
+  },
+  "defaultVoice": "Leda",
+  "touchZoneLabels": {
+    "head": "摸摸呆毛与鲸鳍耳",
+    "face": "戳戳傻敷敷脸颊",
+    "prop": "摸摸围裙小鲸鱼",
+    "body": "拍拍深海大鲸尾"
+  },
+  "touchReactions": {
+    "head": {
+      "emotion": "happy",
+      "lines": [
+        "呜哇！别揪呆毛捏，大肥鱼的信号天线要歪啦～",
+        "嘿嘿，鲸鳍耳朵软乎乎的对不对？再摸一下加满干劲捏！",
+        "头顶痒痒的啦！店长是不是偷偷藏了小鱼干捏？"
+      ]
+    },
+    "face": {
+      "emotion": "shocked",
+      "lines": [
+        "咕噜噜？！戳脸干嘛捏，大肥鱼真的没有在偷懒发呆！",
+        "呜哇，脸颊肉鼓起来了啦，说话都要吐泡泡捏～",
+        "店长手凉凉的！大肥鱼瞬间清醒十倍捏！"
+      ]
+    },
+    "prop": {
+      "emotion": "working",
+      "lines": [
+        "围裙上的小鲸鱼今天也洗得白白净净！握住 Harness，随时挥舞！",
+        "这是大肥鱼的战袍围裙捏，口袋里还塞着蒸汽机车车票哦～",
+        "别抢我的 max/low 牌子啦，店长说举哪块我就举哪块捏！"
+      ]
+    },
+    "body": {
+      "emotion": "happy",
+      "lines": [
+        "啪嗒啪嗒～被夸奖的话，大鲸尾就会自己拍水花捏！",
+        "远看肥鱼大，近看大肥鱼！店长今天想聊哪台蒸汽机车捏？",
+        "能量满格！这一锅代码交给我炖准没错啦！"
+      ]
+    }
   }
 }

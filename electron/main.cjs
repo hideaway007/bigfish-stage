@@ -23,11 +23,27 @@ const mime = {
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
   '.m4a': 'audio/mp4',
+  '.moc3': 'application/octet-stream',
 };
+
+function resolveAppProjectRoot() {
+  if (app.isPackaged) {
+    return app.getAppPath();
+  }
+  return path.resolve(__dirname, '..');
+}
+
+function resolveCharactersRoot(projectRoot) {
+  const pubChars = path.join(projectRoot, 'public/characters');
+  if (fs.existsSync(pubChars)) return pubChars;
+  const distChars = path.join(projectRoot, 'dist/characters');
+  if (fs.existsSync(distChars)) return distChars;
+  return pubChars;
+}
 
 async function startInternalStaticServer(projectRoot) {
   const distDir = path.join(projectRoot, 'dist');
-  const charactersDir = path.join(projectRoot, 'public/characters');
+  const charactersDir = resolveCharactersRoot(projectRoot);
 
   staticServer = http.createServer((req, res) => {
     try {
@@ -112,9 +128,9 @@ async function initNativeEngine(projectRoot) {
 
   const store = new SettingsStore();
   await store.load();
-  const characters = new CharacterCatalog(path.join(projectRoot, 'public/characters'));
+  const characters = new CharacterCatalog(resolveCharactersRoot(projectRoot));
   await characters.load();
-  const registry = createRegistry(path.join(path.dirname(store.path), 'codex'));
+  const registry = createRegistry(path.join(path.dirname(store.path), 'dsh'));
 
   sessionController = new SessionController(store, characters, registry, (message) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -228,7 +244,6 @@ function setupMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// 注册纯原生 IPC 消息接收
 ipcMain.on('stage-command', async (_event, command) => {
   if (!sessionController) return;
   try {
@@ -248,7 +263,6 @@ ipcMain.on('stage-command', async (_event, command) => {
   }
 });
 
-// 注册原生目录选择 IPC
 ipcMain.handle('native-pick-directory', async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -263,7 +277,7 @@ ipcMain.handle('native-pick-directory', async () => {
 
 app.whenReady().then(async () => {
   setupMenu();
-  const projectRoot = path.resolve(__dirname, '..');
+  const projectRoot = resolveAppProjectRoot();
   const port = await startInternalStaticServer(projectRoot);
   await initNativeEngine(projectRoot);
   createMainWindow(port);

@@ -1540,11 +1540,13 @@ export const StageApp: React.FC = () => {
 
             <div className="p5-workspace-header-right">
               <SfxMuteButton />
-              <TtsMuteButton
-                onToggleServerSync={(enabled) =>
-                  handleUpdateSettings({ tts: { enabled } })
-                }
-              />
+              {state.serverSettings.tts?.enabled && (
+                <TtsMuteButton
+                  onToggleServerSync={(enabled) =>
+                    handleUpdateSettings({ tts: { enabled } })
+                  }
+                />
+              )}
 
               <button
                 type="button"
