@@ -98,6 +98,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   );
   const [showWorkerAdvanced, setShowWorkerAdvanced] = useState(false);
   const [showVoiceAdvanced, setShowVoiceAdvanced] = useState(false);
+  const [dirPickError, setDirPickError] = useState<string | null>(null);
 
   useEffect(() => {
     setWorkerModelDraft(settings.worker.model);
@@ -109,7 +110,10 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   }, [settings, settingsSyncedAt]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setDirPickError(null);
+      return;
+    }
     if (activeTab === 'worker') {
       onListModels('worker');
     } else if (
@@ -206,8 +210,8 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       pack.recommendedModels && pack.recommendedModels.length > 0
                         ? pack.recommendedModels
                         : [
-                            'remote-magpie/antigravity/gemini-3.8-flash',
-                            'codex/gpt-6.1-sol',
+                            'claude-opus-5-5',
+                            'gpt-6.1-sol',
                             'deepseek-v4-pro',
                           ];
 
@@ -225,7 +229,6 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         }
                         onClick={() => {
                           onSwitchCharacter(ch.id);
-                          onUpdateSettings({ activeCharacterId: ch.id });
                         }}
                       >
                         {/* 第 1 层：大头像 + 大名字 & 小字简介 + 切换角色按钮 */}
@@ -267,7 +270,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           <div className="p5-model-pills">
                             {recModels.map((m) => {
                               const isSelectedModel =
-                                settings.worker.model === m;
+                                isCurrent && settings.worker.model === m;
                               return (
                                 <button
                                   key={m}
@@ -276,9 +279,10 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                                     isSelectedModel ? 'is-selected' : ''
                                   }`}
                                   onClick={() => {
-                                    onSwitchCharacter(ch.id);
+                                    if (!isCurrent) {
+                                      onSwitchCharacter(ch.id);
+                                    }
                                     onUpdateSettings({
-                                      activeCharacterId: ch.id,
                                       worker: { model: m },
                                     });
                                   }}
@@ -434,7 +438,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                                 onChange={(e) =>
                                   setWorkerBaseUrlDraft(e.target.value)
                                 }
-                                placeholder="http://127.0.0.1:3425/v1"
+                                placeholder="http://127.0.0.1:8000/v1"
                               />
                               <button
                                 type="button"
@@ -502,6 +506,21 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                               >
                                 保存
                               </button>
+                              {settings.worker.endpoint.apiKeySet && (
+                                <button
+                                  type="button"
+                                  className="p5-apply-btn p5-apply-btn--danger"
+                                  data-testid="worker-apikey-clear-btn"
+                                  onClick={() => {
+                                    setWorkerApiKeyDraft('');
+                                    onUpdateSettings({
+                                      worker: { endpoint: { apiKey: '' } },
+                                    });
+                                  }}
+                                >
+                                  清除密钥
+                                </button>
+                              )}
                             </div>
                           </div>
                         </>
@@ -603,7 +622,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                                 onChange={(e) =>
                                   setVoiceBaseUrlDraft(e.target.value)
                                 }
-                                placeholder="http://127.0.0.1:3425/v1"
+                                placeholder="http://127.0.0.1:8000/v1"
                               />
                               <button
                                 type="button"
@@ -676,6 +695,21 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                               >
                                 保存
                               </button>
+                              {settings.voice.endpoint.apiKeySet && (
+                                <button
+                                  type="button"
+                                  className="p5-apply-btn p5-apply-btn--danger"
+                                  data-testid="voice-apikey-clear-btn"
+                                  onClick={() => {
+                                    setVoiceApiKeyDraft('');
+                                    onUpdateSettings({
+                                      voice: { endpoint: { apiKey: '' } },
+                                    });
+                                  }}
+                                >
+                                  清除密钥
+                                </button>
+                              )}
                             </div>
                           </div>
                         </>
@@ -708,13 +742,17 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         type="text"
                         className="p5-form-input"
                         value={projectDirDraft}
-                        onChange={(e) => setProjectDirDraft(e.target.value)}
+                        onChange={(e) => {
+                          setProjectDirDraft(e.target.value);
+                          if (dirPickError) setDirPickError(null);
+                        }}
                         placeholder="/Users/你的名字/项目文件夹"
                       />
                       <button
                         type="button"
                         className="p5-apply-btn p5-apply-btn--test"
                         onClick={async () => {
+                          setDirPickError(null);
                           try {
                             const electronAPI = (
                               window as unknown as {
@@ -734,15 +772,34 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                             const res = await fetch('/api/pick-directory', {
                               method: 'POST',
                             });
-                            if (res.ok) {
-                              const data = await res.json();
-                              if (data.ok && data.path) {
-                                setProjectDirDraft(data.path);
-                                onUpdateSettings({ projectDir: data.path });
-                              }
+                            const data = await res
+                              .json()
+                              .catch(() => ({} as Record<string, unknown>));
+                            if (!res.ok) {
+                              setDirPickError(
+                                (typeof data.error === 'string' && data.error) ||
+                                  (typeof data.message === 'string' && data.message) ||
+                                  `无法唤起系统文件夹选择器（HTTP ${res.status}），请在上方输入框直接粘贴路径。`
+                              );
+                              return;
+                            }
+                            if (data.cancelled) {
+                              return;
+                            }
+                            if (data.ok && typeof data.path === 'string' && data.path) {
+                              setProjectDirDraft(data.path);
+                              onUpdateSettings({ projectDir: data.path });
+                            } else if (data.ok === false) {
+                              setDirPickError(
+                                (typeof data.error === 'string' && data.error) ||
+                                  (typeof data.message === 'string' && data.message) ||
+                                  '无法打开系统文件夹选择器，请在上方输入框直接填写文件夹路径。'
+                              );
                             }
                           } catch {
-                            // ignore
+                            setDirPickError(
+                              '无法连接本地服务以打开文件夹选择器，请在上方输入框直接填写文件夹路径。'
+                            );
                           }
                         }}
                       >
@@ -755,6 +812,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         onClick={() => {
                           const trimmed = projectDirDraft.trim();
                           if (trimmed) {
+                            setDirPickError(null);
                             onUpdateSettings({ projectDir: trimmed });
                           }
                         }}
@@ -762,6 +820,15 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         保存
                       </button>
                     </div>
+                    {dirPickError && (
+                      <p
+                        className="p5-pond-dir-error"
+                        data-testid="pond-pick-dir-error"
+                        role="alert"
+                      >
+                        {dirPickError}
+                      </p>
+                    )}
                   </div>
 
                   {onStartNewSessionWithDir && (

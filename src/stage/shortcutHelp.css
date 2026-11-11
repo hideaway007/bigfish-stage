@@ -1,4 +1,5 @@
 .p5-shortcut-trigger { position: fixed; right: 18px; top: 58px; z-index: 54; padding: 5px 9px; border: 1px solid #64748b; background: #0b0f17; color: #e2e8f0; font: 11px var(--font-mono, monospace); cursor: pointer; }
+.p5-shortcut-trigger.is-sr-only { position: fixed; left: 0; top: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border: 0; opacity: 0; pointer-events: none; }
 .p5-shortcut-trigger:hover, .p5-shortcut-trigger:focus-visible { border-color: #fbbf24; color: #fbbf24; }
 .p5-shortcut-backdrop { z-index: 100; color: #f8fafc; }
 .p5-shortcut-panel { width: min(650px, 92vw); max-height: 86vh; overflow-y: auto; background: #0a0a0c; border: 3px solid #f8fafc; box-shadow: 9px 9px 0 #dc2626; padding: 20px; font-family: var(--font-body, sans-serif); }

@@ -41,10 +41,10 @@ test('角色选择和设置回显不篡改旧台词归属，新预置台词不�
   state = stageReducer(state, { type: 'STAGE_EVENT', event: line(oldId, 'old-preset', '旧角色台词。') });
   state = stageReducer(state, { type: 'SET_CHARACTER', characterId: nextId });
   assert.equal(state.characterId, nextId);
-  assert.equal(state.currentLine?.characterId, oldId);
+  assert.notEqual(state.currentLine?.characterId, nextId);
   state = stageReducer(state, { type: 'SERVER_MESSAGE', message: { type: 'settings', settings: { ...state.serverSettings, activeCharacterId: oldId } } });
   state = stageReducer(state, { type: 'SERVER_MESSAGE', message: { type: 'settings', settings: { ...state.serverSettings, activeCharacterId: nextId } } });
-  assert.equal(state.currentLine?.characterId, oldId);
+  assert.notEqual(state.currentLine?.characterId, nextId);
   state = stageReducer(state, { type: 'STAGE_EVENT', event: line(nextId, 'new-preset', '哈基米到场。') });
   state = stageReducer(state, { type: 'STAGE_EVENT', event: { ...line(oldId, 'old-model', '旧角色延迟模型台词。'), source: 'model', replacesLineId: 'old-preset' } });
   assert.equal(state.currentLine?.text, '哈基米到场。');

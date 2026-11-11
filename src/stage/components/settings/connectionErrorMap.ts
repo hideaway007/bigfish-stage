@@ -153,7 +153,7 @@ export function mapConnectionFailure(
       explanation:
         '连接已发出但在限定时间内未收到模型返回，可能是上游推理网关负载过高、网络代理阻塞或模型冷启动过慢。',
       nextStep:
-        '请检查网络或代理链路是否顺畅，或先切换为响应更快的轻量模型（如 `remote-magpie/antigravity/gemini-3.8-flash`）后重试。',
+        '请检查网络或代理链路是否顺畅，或先切换为响应更快的轻量模型（如 `gemini-3.8-flash`）后重试。',
       rawMessage: raw,
     };
   }
@@ -217,7 +217,7 @@ export function mapConnectionFailure(
 }
 
 export interface ModelProviderGroup {
-  /** 分组前缀键，如 "codex/"、"remote-magpie/"、"direct" */
+  /** 分组前缀键，如 "codex/"、"anthropic/"、"direct" */
   prefixKey: string;
   /** 分组展示标题 */
   label: string;
@@ -226,7 +226,7 @@ export interface ModelProviderGroup {
 }
 
 /**
- * 按提供商前缀（如 `codex/`、`remote-magpie/`）对模型列表分组。
+ * 按提供商前缀（如 `codex/`、`anthropic/`）对模型列表分组。
  */
 export function groupModelsByProvider(models: string[]): ModelProviderGroup[] {
   const groupMap = new Map<string, string[]>();

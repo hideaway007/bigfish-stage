@@ -48,7 +48,7 @@ export function validOrigin(origin: string | undefined): boolean {
       && origin === url.origin;
   } catch { return false; }
 }
-const mime: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
+const mime: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' };
 async function staticFile(root: string, path: string) {
   if (path.includes('\0') || path.includes('\\')) return null;
   try {
@@ -95,6 +95,16 @@ export async function startServer(options: ServerOptions = {}) {
         return;
       }
       if (path === '/api/pick-directory') {
+        if (request.method !== 'POST') {
+          response.writeHead(405, { 'Content-Type': 'application/json' });
+          response.end(JSON.stringify({ ok: false, error: 'Method Not Allowed' }));
+          return;
+        }
+        if (!validOrigin(request.headers.origin)) {
+          response.writeHead(403, { 'Content-Type': 'application/json' });
+          response.end(JSON.stringify({ ok: false, error: 'Forbidden origin' }));
+          return;
+        }
         try {
           const selected = await pickNativeDirectory();
           response.writeHead(200, { 'Content-Type': 'application/json' });

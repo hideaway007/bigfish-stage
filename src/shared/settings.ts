@@ -79,8 +79,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   voice: {
     enabled: true,
-    // 默认指向本机 magpie 网关（免 key）；用户可改成任意 OpenAI 兼容地址
-    endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', model: 'remote-magpie/antigravity/gemini-3.8-flash' },
+    // 默认指向本机 OpenAI 兼容网关；用户可改成任意 OpenAI 兼容地址
+    endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', model: 'gpt-4o-mini' },
     maxLinesPerMinute: 6,
   },
   performance: { typingCharsPerSec: 40 },

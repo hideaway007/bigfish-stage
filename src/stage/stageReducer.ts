@@ -355,12 +355,28 @@ function applySingleStageEvent(
     }
 
     case 'character_line': {
-      // If the real AI (worker_text) has already started answering in this turn,
-      // do not let canned preset catchphrases overwrite the real reply in the dialogue box!
+      // Only block canned preset character_lines from overwriting worker_text
+      // while state.turnActive is true AND event.characterId === state.characterId.
+      // When !state.turnActive (idle) or when event.characterId !== state.currentLine?.characterId,
+      // ALWAYS apply the incoming character_line!
+      const resolvedCharId = event.characterId || state.characterId;
+      const lineSource =
+        event.source ?? (event.replacesLineId ? 'model' : 'preset');
       const hasRealReplyInTurn = (() => {
+        if (
+          !state.turnActive ||
+          lineSource !== 'preset' ||
+          resolvedCharId !== state.characterId ||
+          (state.currentLine &&
+            resolvedCharId !== state.currentLine.characterId)
+        ) {
+          return false;
+        }
         for (let i = events.length - 1; i >= 0; i -= 1) {
           const ev = events[i];
-          if (ev.type === 'user_message') break;
+          if (ev.type === 'user_message' || ev.type === 'session_started') {
+            break;
+          }
           if (ev.type === 'worker_text' && ev.text.trim().length > 0) {
             return true;
           }
@@ -376,7 +392,7 @@ function applySingleStageEvent(
         event.replacesLineId &&
           state.currentLine &&
           state.currentLine.lineKey === event.replacesLineId &&
-          state.currentLine.characterId === event.characterId
+          state.currentLine.characterId === resolvedCharId
       );
       // A delayed model response may update history, but cannot replace another line/character.
       if (event.replacesLineId && !isReplacement) return nextStateBase;
@@ -393,10 +409,10 @@ function applySingleStageEvent(
           state.emotionSwitchKey + (emotionChanged ? 2 : 1),
         currentLine: {
           lineKey,
-          characterId: event.characterId || state.characterId,
+          characterId: resolvedCharId,
           emotion: event.emotion,
           text: event.text,
-          source: event.source ?? (event.replacesLineId ? 'model' : 'preset'),
+          source: lineSource,
           replaceVersion: isReplacement
             ? (state.currentLine?.replaceVersion ?? 0) + 1
             : 0,
@@ -662,13 +678,20 @@ export function stageReducer(
     }
 
     case 'SET_CHARACTER': {
-      if (state.characterId === action.characterId) return state;
+      const nextCharId = action.characterId;
+      if (state.characterId === nextCharId) return state;
+      const shouldResetLine =
+        !state.turnActive &&
+        Boolean(
+          state.currentLine && state.currentLine.characterId !== nextCharId
+        );
       return {
         ...state,
-        characterId: action.characterId,
+        characterId: nextCharId,
         characterSwitchKey: state.characterSwitchKey + 1,
         emotionSwitchKey: state.emotionSwitchKey + 1,
-        currentLine: state.currentLine,
+        currentEmotion: shouldResetLine ? 'idle' : state.currentEmotion,
+        currentLine: shouldResetLine ? null : state.currentLine,
       };
     }
 
@@ -859,6 +882,12 @@ export function stageReducer(
           const nextCharId =
             message.settings.activeCharacterId || state.characterId;
           const charChanged = nextCharId !== state.characterId;
+          const shouldResetLine =
+            charChanged &&
+            !state.turnActive &&
+            Boolean(
+              state.currentLine && state.currentLine.characterId !== nextCharId
+            );
           return {
             ...state,
             serverSettings: message.settings,
@@ -870,7 +899,8 @@ export function stageReducer(
             emotionSwitchKey: charChanged
               ? state.emotionSwitchKey + 1
               : state.emotionSwitchKey,
-            currentLine: state.currentLine,
+            currentEmotion: shouldResetLine ? 'idle' : state.currentEmotion,
+            currentLine: shouldResetLine ? null : state.currentLine,
             modelName: !state.turnActive
               ? message.settings.worker.model || state.modelName
               : state.modelName,

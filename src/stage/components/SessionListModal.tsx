@@ -68,7 +68,10 @@ export const SessionListModal: React.FC<SessionListModalProps> = ({ source, turn
       }
       if (event.key === 'Enter' && (event.target === searchRef.current || event.target === dialogRef.current || (event.target as HTMLElement).dataset.testid === 'session-row')) {
         event.preventDefault();
-        if (selected && !turnActive && !busy) source.resumeSession(selected.sessionId);
+        if (selected && !turnActive && !busy) {
+          source.resumeSession(selected.sessionId);
+          onClose();
+        }
       }
       if (event.key === 'Tab') {
         const elements = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, [tabindex="0"]') ?? []);
@@ -92,7 +95,7 @@ export const SessionListModal: React.FC<SessionListModalProps> = ({ source, turn
         <div className="p5-session-toolbar">
           <input ref={searchRef} type="search" aria-label="搜索会话" placeholder="搜索标题、模型、文件夹…" data-testid="session-search" value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(undefined); }} />
           <button type="button" data-testid="session-refresh" disabled={busy} onClick={() => source.listSessions()}>刷新</button>
-          <button type="button" className="p5-session-primary" data-testid="session-new" disabled={turnActive || busy} onClick={() => source.newSession()}>＋ 新会话</button>
+          <button type="button" className="p5-session-primary" data-testid="session-new" disabled={turnActive || busy} onClick={() => { source.newSession(); onClose(); }}>＋ 新会话</button>
         </div>
         {source.mode === 'demo' && <p className="p5-session-note">演示会话 · 继续会话将重置演示剧本，可关闭面板后发送指令。</p>}
         {turnActive && <p className="p5-session-note" role="status">当前回合进行中，请先结束或喊停，再切换会话。</p>}
@@ -113,7 +116,7 @@ export const SessionListModal: React.FC<SessionListModalProps> = ({ source, turn
         </div>
         <footer className="p5-session-footer">
           <span>↑ ↓ 选择 · Enter 继续<span className="p5-session-count">{sessions.length} 个会话</span></span>
-          <button type="button" className="p5-session-primary" data-testid="session-resume" disabled={!selected || turnActive || busy} onClick={() => selected && source.resumeSession(selected.sessionId)}>继续 {selected?.current ? '当前会话' : '选中会话'} ▶</button>
+          <button type="button" className="p5-session-primary" data-testid="session-resume" disabled={!selected || turnActive || busy} onClick={() => { if (selected) { source.resumeSession(selected.sessionId); onClose(); } }}>继续 {selected?.current ? '当前会话' : '选中会话'} ▶</button>
         </footer>
       </div>
     </div>, document.body

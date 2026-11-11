@@ -13,6 +13,7 @@ interface EngineeringViewProps {
   steers: SteerItem[];
   inputValue: string;
   turnActive: boolean;
+  isDemo?: boolean;
   onInputChange: (val: string) => void;
   onSubmitInput: (e: React.FormEvent) => void;
   onResolvePermission: (allowed: boolean) => void;
@@ -29,15 +30,22 @@ export const EngineeringView: React.FC<EngineeringViewProps> = ({
   steers,
   inputValue,
   turnActive,
+  isDemo,
   onInputChange,
   onSubmitInput,
   onResolvePermission,
   onExitEngineeringView,
   onReplayScript,
 }) => {
+  const resolvedIsDemo =
+    isDemo ??
+    (typeof window !== 'undefined' &&
+      (new URLSearchParams(window.location.search).get('demo') === '1' ||
+        new URLSearchParams(window.location.search).get('demo') === 'true'));
+
   return (
     <div className="eng-view-root" data-testid="engineering-view">
-      <ShortcutHelp />
+      <ShortcutHelp showTrigger />
       <header className="eng-view-header">
         <div className="eng-view-header-left">
           <span className="eng-badge-mode">ENGINEERING VIEW // 朴素工程视图</span>
@@ -61,7 +69,7 @@ export const EngineeringView: React.FC<EngineeringViewProps> = ({
             className="eng-btn"
             onClick={onReplayScript}
           >
-            重播剧本
+            {resolvedIsDemo ? '↻ 重播剧本' : '＋ 新建会话'}
           </button>
           <button
             type="button"

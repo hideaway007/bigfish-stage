@@ -32,7 +32,7 @@ export class SessionListFeed {
   /** 服务端不认识 list_sessions（超时，或因「未知命令」断开连接）时调用 */
   markUnsupported(): void {
     window.clearTimeout(this.timer);
-    this.publish({ ...this.state, status: 'unsupported', error: '服务端暂不支持会话列表（等待 B 侧实现）' });
+    this.publish({ ...this.state, status: 'unsupported', error: '当前服务暂未返回历史会话记录，可点击右上角「＋ 新会话」开启对话。' });
   }
 
   receive(message: ServerMessage): void {

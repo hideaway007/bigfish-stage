@@ -4,7 +4,7 @@
 .p5-switch-wipe {
   position: fixed;
   inset: 0;
-  z-index: 25;
+  z-index: 52;
   pointer-events: none;
   overflow: hidden;
   --wipe-ms: 620ms;
@@ -162,7 +162,32 @@
   transform: translateX(-50%) skewX(-8deg);
 }
 
-/* ───────── 技能卡：更凶的斜切入场 + 速度线 + 分类强调色 ───────── */
+/* ───────── 行动行 & 技能卡：斜切入场 + 分类左边框强调色 ───────── */
+.p5-action-row {
+  --skill-accent: #38bdf8;
+  border-left-color: var(--skill-accent);
+  animation: p5ActionRowIn 220ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.p5-action-row.tool-read { --skill-accent: #38bdf8; }
+.p5-action-row.tool-edit { --skill-accent: #facc15; }
+.p5-action-row.tool-write { --skill-accent: #fb923c; }
+.p5-action-row.tool-bash { --skill-accent: #4ade80; }
+.p5-action-row.tool-search { --skill-accent: #c084fc; }
+.p5-action-row.tool-web { --skill-accent: #2dd4bf; }
+.p5-action-row.tool-task { --skill-accent: #f472b6; }
+.p5-action-row.tool-other { --skill-accent: #e5e7eb; }
+
+@keyframes p5ActionRowIn {
+  0% {
+    opacity: 0;
+    transform: translateX(28px) skewX(-8deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) skewX(-4deg);
+  }
+}
+
 .p5-active-skills-zone .p5-skill-cutin-card {
   --skill-accent: #ffe600;
   position: relative;
@@ -237,19 +262,24 @@
 
 /* ───────── 减弱动效 ───────── */
 @media (prefers-reduced-motion: reduce) {
-  .p5-active-skills-zone .p5-skill-cutin-card {
-    animation: p5SkillFadeIn 120ms linear both;
+  .p5-active-skills-zone .p5-skill-cutin-card,
+  .p5-action-row {
+    animation: p5SkillFadeIn 120ms linear both !important;
   }
   .p5-skill-cutin-card::after {
     display: none;
   }
   .p5-char-switch-anim,
   .p5-portrait-stage,
+  .p5-portrait-bounce,
+  .p5-compaction-blade,
   .p5-permission-cutin,
   .p5-permission-backdrop {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
   }
+  .p5-cursor-wedge,
+  .p5-portrait-breathing .p5-portrait-img,
   .p5-bg-slash-red,
   .p5-bg-slash-black,
   .p5-bg-halftone {

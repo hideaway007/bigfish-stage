@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   isNativeApp: true,
+  platform: process.platform,
   sendCommand: (command) => ipcRenderer.send('stage-command', command),
   onMessage: (callback) => {
     const listener = (_event, message) => callback(message);

@@ -62,8 +62,8 @@ export const RecommendedModelChips: React.FC<RecommendedModelChipsProps> = ({
 
       <div className="p5-model-pills">
         {recommendedModels.map((m) => {
-          const isWorker = currentWorkerModel === m;
-          const isVoice = currentVoiceModel === m;
+          const isWorker = isCurrentCharacter && currentWorkerModel === m;
+          const isVoice = isCurrentCharacter && currentVoiceModel === m;
           const isAppliedAny = isWorker || isVoice;
           const isOpen = openModel === m;
 
@@ -71,6 +71,7 @@ export const RecommendedModelChips: React.FC<RecommendedModelChipsProps> = ({
             <div key={m} className="p5-rec-chip-wrap">
               <button
                 type="button"
+                title={m}
                 data-testid={
                   isCurrentCharacter
                     ? `rec-model-chip-${m}`

@@ -110,10 +110,12 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
                 type="button"
                 role="option"
                 aria-selected={isSelected}
+                title={m}
                 data-testid={`${target}-model-option-${m}`}
                 className={`p5-model-chip-btn ${
                   isSelected ? 'is-selected' : ''
                 }`}
+                style={{ maxWidth: '100%', overflowWrap: 'anywhere' }}
                 onClick={() => selectAndApply(m)}
               >
                 {m}

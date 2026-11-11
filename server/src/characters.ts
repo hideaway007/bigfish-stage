@@ -4,6 +4,7 @@ import type { CharacterPack, CharacterSummary, Reaction } from '../../src/shared
 import type { Emotion, StageEvent, ToolKind } from '../../src/shared/stage-events';
 
 const emotions: Emotion[] = ['idle', 'thinking', 'working', 'happy', 'worried', 'shocked'];
+const CANONICAL_CHARACTER_ORDER = ['deepseek-v4-pro', 'gemini-4-argon', 'claude-opus-5-5', 'codex-dragon'];
 const safeAsset = (value: unknown): value is string => typeof value === 'string' && !!value && !value.startsWith('/') && !value.includes('\\') && !value.includes(':') && !value.split('/').includes('..');
 export function validateCharacter(value: unknown, directoryId: string): CharacterPack {
   const c = value as CharacterPack;
@@ -40,11 +41,20 @@ export class CharacterCatalog {
   }
   get(id: string) { return this.packs.get(id); }
   summaries(): CharacterSummary[] {
-    return [...this.packs.values()].map(c => {
-      const portrait = c.art.portrait ?? (c.art.renderer === 'sprites' ? c.art.emotions.idle : undefined);
-      return { id: c.id, name: c.name, codename: c.codename, themeColor: c.themeColor, renderer: c.art.renderer,
-        portraitUrl: portrait ? `/characters/${encodeURIComponent(c.id)}/${portrait.split('/').map(encodeURIComponent).join('/')}` : null };
-    });
+    return [...this.packs.values()]
+      .sort((a, b) => {
+        const ia = CANONICAL_CHARACTER_ORDER.indexOf(a.id);
+        const ib = CANONICAL_CHARACTER_ORDER.indexOf(b.id);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return a.id.localeCompare(b.id);
+      })
+      .map(c => {
+        const portrait = c.art.portrait ?? (c.art.renderer === 'sprites' ? c.art.emotions.idle : undefined);
+        return { id: c.id, name: c.name, codename: c.codename, themeColor: c.themeColor, renderer: c.art.renderer,
+          portraitUrl: portrait ? `/characters/${encodeURIComponent(c.id)}/${portrait.split('/').map(encodeURIComponent).join('/')}` : null };
+      });
   }
 }
 export function reactionKey(event: StageEvent, tool?: ToolKind): string {

@@ -277,7 +277,7 @@ const BOOTSTRAP_META: Record<
     accentColor: '#FDBA74',
   },
   'codex-dragon': {
-    name: 'Codex 娘（困倦睡衣小龙娘）',
+    name: 'Codex 龙娘（困倦睡衣小龙娘）',
     codename: 'OPENAI · CODEX',
     tagline: '核热 · 梦游终端 · 后台静默执行官',
     themeColor: '#38BDF8',

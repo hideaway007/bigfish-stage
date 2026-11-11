@@ -274,8 +274,8 @@
   },
   "recommendedModels": [
     "deepseek-v4-pro",
-    "gpt-6.1-sol",
-    "remote-magpie/antigravity/gemini-3.8-flash"
+    "deepseek-reasoner",
+    "gpt-6.1-sol"
   ],
   "art": {
     "renderer": "sprites",

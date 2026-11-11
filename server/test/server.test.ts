@@ -44,6 +44,8 @@ test('真实 HTTP/WS：握手、设置、动态适配器、停止、重连、历
     assert.equal((await fetch(`http://127.0.0.1:${app.port}/`)).status, 200);
     assert.equal((await fetch(`http://127.0.0.1:${app.port}/characters/deepseek-v4-pro/character.json`)).status, 200);
     assert.equal((await fetch(`http://127.0.0.1:${app.port}/characters/%2e%2e%2fsettings.json`)).status, 404);
+    assert.equal((await fetch(`http://127.0.0.1:${app.port}/api/pick-directory`)).status, 405);
+    assert.equal((await fetch(`http://127.0.0.1:${app.port}/api/pick-directory`, { method: 'POST', headers: { Origin: 'http://evil.example' } })).status, 403);
     await new Promise<void>((resolve, reject) => {
       const bad = new WebSocket(`ws://127.0.0.1:${app.port}/ws`, { origin: 'http://evil.example' }); clients.push(bad);
       bad.on('unexpected-response', (_request, response) => { assert.equal(response.statusCode, 403); response.resume(); bad.terminate(); resolve(); }); bad.on('error', () => {});
@@ -75,5 +77,17 @@ test('真实 HTTP/WS：握手、设置、动态适配器、停止、重连、历
     assert.ok(!JSON.stringify(client.messages).includes('"apiKey":'));
     client.send({ type: 'list_models', target: 'worker' }); assert.deepEqual((await client.wait(m => m.type === 'models') as any).models, ['test-model']);
     client.send({ type: 'test_connection', target: 'worker' }); assert.equal((await client.wait(m => m.type === 'connection_test') as any).ok, true);
+    from = client.messages.length;
+    client.send({ type: 'list_sessions', limit: 10 });
+    const sessionsMsg = await client.wait(m => (m as any).type === 'sessions', from) as any;
+    assert.ok(Array.isArray(sessionsMsg.sessions));
+    assert.ok(sessionsMsg.sessions.length >= 2);
+    const activeSummary = sessionsMsg.sessions.find((s: any) => s.sessionId === 'resume-id');
+    assert.ok(activeSummary);
+    assert.equal(activeSummary.current, true);
+    const firstSummary = sessionsMsg.sessions.find((s: any) => s.sessionId === 'test-session');
+    assert.ok(firstSummary);
+    assert.equal(firstSummary.title, 'test');
+    assert.ok(firstSummary.turnCount >= 1);
   } finally { for (const socket of clients) socket.terminate(); await app.close(); await rm(root, { recursive: true, force: true }); }
 });

@@ -6,6 +6,7 @@ import {
   subscribeCharacterPacks,
 } from './characterLoader';
 import {
+  computeDiffStats,
   createInitialStageState,
   stageReducer,
   type SkillCardItem,
@@ -27,13 +28,13 @@ import { PermissionModal } from './components/PermissionModal';
 import { BacklogModal } from './components/BacklogModal';
 import { SessionListControl } from './components/SessionListModal';
 import { EngineeringView } from './components/EngineeringView';
-import { isTypingTarget } from './components/ShortcutHelp';
+import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
 import { defaultCharacterLine, resolveEmotionLabel, resolveUiCopy } from './uiCopy';
 import { SwitchTransition, SfxMuteButton } from './components/SwitchTransition';
 import { playSfx } from './sfx';
 import { OnboardingCard } from './components/OnboardingCard';
-import type { ToolKind } from '../shared/stage-events';
+import type { StageEvent, ToolKind } from '../shared/stage-events';
 import type { SettingsPatch } from '../shared/settings';
 import type { ServerMessage } from '../shared/wire';
 
@@ -83,6 +84,165 @@ function extractInlineDiffLines(diff?: string): { kind: 'add' | 'del'; text: str
   return rows;
 }
 
+export function tokenizeSpeakerName(rawName: string): string[] {
+  const base = rawName.split('（')[0].trim();
+  const matches = base.match(/[A-Za-z0-9._-]+|[^\sA-Za-z0-9._-]/g);
+  return matches && matches.length > 0 ? matches : [base];
+}
+
+export function formatWorkspaceLabel(cwd: string): string {
+  if (!cwd) return '尚未选择项目文件夹';
+  const normalized = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length <= 2) return cwd;
+  return `…/${parts.slice(-2).join('/')}`;
+}
+
+function stripTypingMarkdown(text: string): string {
+  return text
+    .replace(/```[a-zA-Z0-9_-]*\n?/g, '')
+    .replace(/`/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/^#{1,4}\s+/gm, '');
+}
+
+function renderInlineMarkdown(line: string, keyPrefix: string): React.ReactNode {
+  const segments = line.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+  const parts: React.ReactNode[] = [];
+
+  segments.forEach((seg, idx) => {
+    if (!seg) return;
+    if (seg.startsWith('`') && seg.endsWith('`') && seg.length > 2) {
+      parts.push(
+        <code key={`${keyPrefix}-code-${idx}`} className="p5-md-code">
+          {seg.slice(1, -1)}
+        </code>
+      );
+    } else if (seg.startsWith('**') && seg.endsWith('**') && seg.length > 4) {
+      parts.push(
+        <strong key={`${keyPrefix}-bold-${idx}`} className="p5-md-bold">
+          {seg.slice(2, -2)}
+        </strong>
+      );
+    } else {
+      parts.push(seg);
+    }
+  });
+
+  return parts.length === 1 ? parts[0] : parts;
+}
+
+export function renderFormattedText(text: string): React.ReactNode {
+  if (!text) return null;
+  if (
+    !text.includes('```') &&
+    !text.includes('`') &&
+    !text.includes('**') &&
+    !text.includes('\n')
+  ) {
+    return text;
+  }
+
+  const blocks: React.ReactNode[] = [];
+  let blockIdx = 0;
+
+  const pushProseSegment = (segment: string, segKey: string) => {
+    const rawLines = segment.replace(/\r\n/g, '\n').split('\n');
+    let listBuffer: { key: string; content: React.ReactNode }[] = [];
+    let paraBuffer: React.ReactNode[] = [];
+
+    const flushList = () => {
+      if (listBuffer.length === 0) return;
+      blocks.push(
+        <ul key={`${segKey}-ul-${blockIdx++}`} className="p5-md-list">
+          {listBuffer.map((item) => (
+            <li key={item.key}>{item.content}</li>
+          ))}
+        </ul>
+      );
+      listBuffer = [];
+    };
+
+    const flushPara = () => {
+      if (paraBuffer.length === 0) return;
+      blocks.push(
+        <span key={`${segKey}-p-${blockIdx++}`} className="p5-md-para">
+          {paraBuffer}
+        </span>
+      );
+      paraBuffer = [];
+    };
+
+    rawLines.forEach((rawLine, lineIdx) => {
+      const trimmed = rawLine.trim();
+      if (!trimmed) {
+        flushList();
+        flushPara();
+        return;
+      }
+
+      const bulletMatch =
+        trimmed.match(/^[-*•]\s+(.*)$/) || trimmed.match(/^\d+\.\s+(.*)$/);
+      if (bulletMatch) {
+        flushPara();
+        listBuffer.push({
+          key: `${segKey}-li-${lineIdx}`,
+          content: renderInlineMarkdown(
+            bulletMatch[1],
+            `${segKey}-li-${lineIdx}`
+          ),
+        });
+        return;
+      }
+
+      flushList();
+      const headingMatch = trimmed.match(/^#{1,4}\s+(.*)$/);
+      const inlineNode = headingMatch ? (
+        <strong key={`${segKey}-h-${lineIdx}`} className="p5-md-heading">
+          {renderInlineMarkdown(headingMatch[1], `${segKey}-h-${lineIdx}`)}
+        </strong>
+      ) : (
+        renderInlineMarkdown(rawLine, `${segKey}-ln-${lineIdx}`)
+      );
+
+      if (paraBuffer.length > 0) {
+        paraBuffer.push(<br key={`${segKey}-br-${lineIdx}`} />);
+      }
+      paraBuffer.push(inlineNode);
+    });
+
+    flushList();
+    flushPara();
+  };
+
+  const fenceParts = text.split(/(```[a-zA-Z0-9_-]*\n?[\s\S]*?```)/g);
+  fenceParts.forEach((part, idx) => {
+    if (!part) return;
+    if (part.startsWith('```') && part.endsWith('```') && part.length >= 6) {
+      const inner = part.slice(3, -3);
+      const newlineIdx = inner.indexOf('\n');
+      const firstLine = newlineIdx >= 0 ? inner.slice(0, newlineIdx).trim() : '';
+      const isLangToken = /^[a-zA-Z0-9_-]{1,20}$/.test(firstLine);
+      const codeBody = (
+        newlineIdx >= 0 && isLangToken ? inner.slice(newlineIdx + 1) : inner
+      ).replace(/\n$/, '');
+      blocks.push(
+        <pre
+          key={`pre-${blockIdx++}`}
+          className="p5-md-pre"
+          data-lang={isLangToken ? firstLine : undefined}
+        >
+          <code>{codeBody}</code>
+        </pre>
+      );
+    } else {
+      pushProseSegment(part, `seg-${idx}`);
+    }
+  });
+
+  return blocks.length === 1 ? blocks[0] : blocks;
+}
+
 export const StageApp: React.FC = () => {
   const [sourceMode] = useState<DataSourceMode>(detectSourceMode);
 
@@ -116,7 +276,7 @@ export const StageApp: React.FC = () => {
   const [contextTokens, setContextTokens] = useState<{
     used: number;
     max: number;
-  }>({ used: 45000, max: 1000000 });
+  }>({ used: 0, max: 1000000 });
   const [compactionState, setCompactionState] = useState<{
     activeCutin: boolean;
     turnsCompacted: number;
@@ -201,14 +361,25 @@ export const StageApp: React.FC = () => {
   }, [state.skillCards]);
 
   useEffect(() => {
-    if (state.events.length === 0) return;
+    if (state.events.length === 0) {
+      setContextTokens({ used: 0, max: 1000000 });
+      return;
+    }
     const lastEv = state.events[state.events.length - 1];
-    if (lastEv.type === 'context_usage') {
-      setContextTokens({
-        used: lastEv.usedTokens,
-        max: lastEv.maxTokens || 1000000,
-      });
-    } else if (lastEv.type === 'context_compacted') {
+    if (lastEv.type === 'session_started') {
+      setContextTokens({ used: 0, max: 1000000 });
+      setCompactionState((prev) => ({
+        ...prev,
+        activeCutin: false,
+        compactedAt: null,
+      }));
+      return;
+    }
+    if (lastEv.type === 'turn_done' && lastEv.ok) {
+      playSfx('complete');
+    }
+    if (lastEv.type === 'context_compacted') {
+      playSfx('compaction');
       const msg =
         lastEv.summary ||
         `已成功将前 ${lastEv.turnsCompacted} 轮历史压缩为摘要卡，释放 ${lastEv.freedTokens.toLocaleString()} Tokens！`;
@@ -219,26 +390,73 @@ export const StageApp: React.FC = () => {
         summaryText: msg,
         compactedAt: Date.now(),
       });
-      setContextTokens((prev) => ({
-        used:
-          lastEv.afterTokens ??
-          Math.max(18000, prev.used - lastEv.freedTokens),
-        max: prev.max,
-      }));
-    } else {
-      // Estimate realistic token growth from trajectory events when backend hasn't sent explicit context_usage yet
-      const baseTokens = 45000;
-      const dynamicTokens =
-        baseTokens +
-        state.skillCards.length * 14500 +
-        state.events.length * 1200 -
-        (compactionState.compactedAt ? compactionState.freedTokens : 0);
-      setContextTokens((prev) => ({
-        used: Math.max(18000, Math.min(prev.max, dynamicTokens)),
-        max: prev.max,
-      }));
     }
-  }, [state.events, state.skillCards.length, compactionState.compactedAt, compactionState.freedTokens]);
+
+    // Scan from newest to oldest within the current session (stopping at the most recent session_started)
+    let latestUsage: Extract<StageEvent, { type: 'context_usage' }> | null =
+      null;
+    let latestCompactedAfterUsage: Extract<
+      StageEvent,
+      { type: 'context_compacted' }
+    > | null = null;
+    let sessionStartIdx = 0;
+
+    for (let i = state.events.length - 1; i >= 0; i -= 1) {
+      const ev = state.events[i];
+      if (ev.type === 'session_started') {
+        sessionStartIdx = i;
+        break;
+      }
+      if (
+        !latestUsage &&
+        ev.type === 'context_compacted' &&
+        !latestCompactedAfterUsage
+      ) {
+        latestCompactedAfterUsage = ev;
+      }
+      if (ev.type === 'context_usage') {
+        latestUsage = ev;
+        break;
+      }
+    }
+
+    if (latestUsage) {
+      const maxTokens = latestUsage.maxTokens || 1000000;
+      let usedTokens = latestUsage.usedTokens;
+      if (latestCompactedAfterUsage) {
+        usedTokens =
+          latestCompactedAfterUsage.afterTokens ??
+          Math.max(0, usedTokens - latestCompactedAfterUsage.freedTokens);
+      } else if (
+        compactionState.compactedAt &&
+        compactionState.compactedAt > latestUsage.at
+      ) {
+        usedTokens = Math.max(0, usedTokens - compactionState.freedTokens);
+      }
+      setContextTokens({
+        used: Math.max(0, Math.min(maxTokens, usedTokens)),
+        max: maxTokens,
+      });
+      return;
+    }
+
+    const sessionEvents = state.events.slice(sessionStartIdx);
+    const userAndWorkerCount = sessionEvents.filter(
+      (e) => e.type === 'user_message' || e.type === 'worker_text'
+    ).length;
+    if (userAndWorkerCount === 0 && state.skillCards.length === 0) {
+      setContextTokens((prev) => ({ used: 0, max: prev.max }));
+      return;
+    }
+    const dynamicTokens =
+      userAndWorkerCount * 3000 +
+      state.skillCards.length * 8000 -
+      (compactionState.compactedAt ? compactionState.freedTokens : 0);
+    setContextTokens((prev) => ({
+      used: Math.max(0, Math.min(prev.max, dynamicTokens)),
+      max: prev.max,
+    }));
+  }, [state.events, state.skillCards.length]);
 
   useEffect(() => {
     if (!compactionState.activeCutin) return;
@@ -250,17 +468,26 @@ export const StageApp: React.FC = () => {
 
   const handleTriggerCompactionDemo = () => {
     playSfx('allow');
+    const freed = 80000;
     setCompactionState({
       activeCutin: true,
       turnsCompacted: 10,
-      freedTokens: 80000,
+      freedTokens: freed,
       summaryText: '已成功将前 10 轮历史压缩为摘要卡，释放 80,000 Tokens！',
       compactedAt: Date.now(),
     });
-    setContextTokens((prev) => ({
-      used: Math.max(24000, prev.used > 90000 ? prev.used - 80000 : 45000),
-      max: prev.max,
-    }));
+    setContextTokens((prev) => {
+      if (sourceMode !== 'demo') {
+        return {
+          used: prev.used > 0 ? Math.max(0, prev.used - freed) : 0,
+          max: prev.max,
+        };
+      }
+      return {
+        used: prev.used > 0 ? Math.max(0, prev.used - freed) : 24000,
+        max: prev.max,
+      };
+    });
   };
 
   // Schedule auto-collapse of finished skill cards after ~2.6s
@@ -332,7 +559,13 @@ export const StageApp: React.FC = () => {
     const stepMs = state.fastForward ? 8 : baseStepMs;
     const stepChars = state.fastForward ? 4 : 1;
     const tId = window.setTimeout(() => {
-      setTypedLength((prev) => Math.min(fullLineText.length, prev + stepChars));
+      setTypedLength((prev) => {
+        const next = Math.min(fullLineText.length, prev + stepChars);
+        if (next % 3 === 0) {
+          playSfx('type');
+        }
+        return next;
+      });
     }, stepMs);
     return () => window.clearTimeout(tId);
   }, [fullLineText, typedLength, state.fastForward, typingCharsPerSec]);
@@ -505,6 +738,11 @@ export const StageApp: React.FC = () => {
     if (needsOnboarding) return;
     const trimmed = inputValue.trim();
 
+    if (sourceMode !== 'demo' && !trimmed) {
+      inputRef.current?.focus();
+      return;
+    }
+
     if (state.turnActive) {
       const steerText =
         trimmed || '顺便确认按钮带上 data-variant="theme-primary" 属性！';
@@ -544,9 +782,46 @@ export const StageApp: React.FC = () => {
   const hudStatusMeta = HUD_STATUS_TEXT[state.hudStatus];
   const emotionMeta = resolveEmotionLabel(character, state.currentEmotion);
 
-  const selectedCard: SkillCardItem | null =
-    state.skillCards.find((c) => c.toolUseId === state.selectedToolUseId) ??
-    null;
+  const selectedCard: SkillCardItem | null = (() => {
+    if (!state.selectedToolUseId) return null;
+    const activeHit = state.skillCards.find(
+      (c) => c.toolUseId === state.selectedToolUseId
+    );
+    if (activeHit) return activeHit;
+
+    let startEv: Extract<StageEvent, { type: 'tool_start' }> | null = null;
+    let endEv: Extract<StageEvent, { type: 'tool_end' }> | null = null;
+    for (const ev of state.events) {
+      if (
+        ev.type === 'tool_start' &&
+        ev.toolUseId === state.selectedToolUseId
+      ) {
+        startEv = ev;
+      } else if (
+        ev.type === 'tool_end' &&
+        ev.toolUseId === state.selectedToolUseId
+      ) {
+        endEv = ev;
+      }
+    }
+    if (!startEv && !endEv) return null;
+    const diff = endEv?.diff;
+    return {
+      toolUseId: state.selectedToolUseId,
+      tool: startEv?.tool ?? (diff ? 'edit' : 'other'),
+      rawName: startEv?.rawName ?? 'tool',
+      summary: startEv?.summary ?? endEv?.summary ?? '历史工具调用档案',
+      file: startEv?.file,
+      startedAt: startEv?.at ?? endEv?.at ?? Date.now(),
+      endedAt: endEv?.at,
+      status: endEv ? (endEv.ok ? 'success' : 'error') : 'running',
+      endSummary: endEv?.summary,
+      diff,
+      output: endEv?.output,
+      diffStats: computeDiffStats(diff),
+      collapsedToLog: true,
+    };
+  })();
 
   const latestUserMsg = [...state.events]
     .reverse()
@@ -560,7 +835,7 @@ export const StageApp: React.FC = () => {
   const maxK = Math.round(contextTokens.max / 1000);
   const contextPercent = Math.min(
     100,
-    Math.max(4, Math.round((contextTokens.used / contextTokens.max) * 100))
+    Math.max(0, Math.round((contextTokens.used / contextTokens.max) * 100))
   );
 
   const touchedFiles = Array.from(
@@ -609,16 +884,47 @@ export const StageApp: React.FC = () => {
 
   const displayedText =
     fullLineText.slice(0, typedLength) || defaultCharacterLine(character);
+  const isLongDialogue =
+    fullLineText.length > 140 ||
+    fullLineText.includes('\n') ||
+    fullLineText.includes('```');
+
+  const conclusionCandidate =
+    latestWorkerFinal && latestWorkerFinal.type === 'worker_text'
+      ? latestWorkerFinal.text
+      : !state.turnActive && state.lastTurnSummary
+      ? state.lastTurnSummary
+      : null;
+  const isConclusionDuplicateOfDialogue =
+    Boolean(conclusionCandidate) &&
+    Boolean(state.currentLine?.text) &&
+    state.currentLine!.text.trim() === conclusionCandidate!.trim();
+  const shouldShowConclusionCard =
+    Boolean(conclusionCandidate?.trim()) && !isConclusionDuplicateOfDialogue;
 
   const isDisconnected =
     sourceMode === 'live' && connStatus.state !== 'connected';
   const needsOnboarding =
     (sourceMode === 'live' || sourceMode === 'native') && !state.serverSettings.projectDir;
+  const isNativeApp =
+    sourceMode === 'native' ||
+    (typeof window !== 'undefined' &&
+      Boolean(window.electronAPI?.isNativeApp));
 
-  const backlogCount = state.events.filter((e) =>
-    ['user_message', 'character_line', 'tool_start', 'worker_text'].includes(
-      e.type
-    )
+  const backlogCount = state.events.filter(
+    (e) =>
+      [
+        'user_message',
+        'steer_queued',
+        'character_line',
+        'worker_text',
+        'tool_start',
+        'permission_request',
+        'permission_resolved',
+        'error',
+        'turn_done',
+      ].includes(e.type) ||
+      (e.type === 'tool_end' && !e.ok)
   ).length;
 
   const viewportStyle = {
@@ -628,7 +934,7 @@ export const StageApp: React.FC = () => {
 
   return (
     <div
-      className="p5-stage-viewport"
+      className={`p5-stage-viewport ${isNativeApp ? 'is-native-app' : ''}`}
       data-testid="p5-stage-viewport"
       data-active-character={character.id}
       style={viewportStyle}
@@ -919,22 +1225,7 @@ export const StageApp: React.FC = () => {
             </div>
 
             <div className="p5-workspace-header-right">
-              <button
-                type="button"
-                className={`p5-pill-btn p5-pill-btn--ghost ${
-                  state.fastForward ? 'is-active-ff' : ''
-                }`}
-                onClick={() =>
-                  dispatch({
-                    type: 'SET_FAST_FORWARD',
-                    fast: !state.fastForward,
-                  })
-                }
-                data-testid="fast-forward-btn"
-                title="按住 Ctrl 快进演出（也可点击切换）"
-              >
-                <kbd>CTRL</kbd> {state.fastForward ? '快进中' : '快进'}
-              </button>
+              <SfxMuteButton />
 
               <button
                 type="button"
@@ -944,18 +1235,6 @@ export const StageApp: React.FC = () => {
               >
                 <kbd>L</kbd> 对话回看 ({backlogCount})
               </button>
-
-              <button
-                type="button"
-                className="p5-skip-sr-btn"
-                onClick={() => dispatch({ type: 'TOGGLE_ENGINEERING_VIEW' })}
-                data-testid="engineering-view-btn"
-                tabIndex={-1}
-              >
-                工程视图
-              </button>
-
-              <SfxMuteButton />
 
               <button
                 type="button"
@@ -970,10 +1249,35 @@ export const StageApp: React.FC = () => {
               >
                 <kbd>ESC</kbd> 设置
               </button>
+
+              <button
+                type="button"
+                className="p5-skip-sr-btn"
+                onClick={() =>
+                  dispatch({
+                    type: 'SET_FAST_FORWARD',
+                    fast: !state.fastForward,
+                  })
+                }
+                data-testid="fast-forward-btn"
+                tabIndex={-1}
+              >
+                快进
+              </button>
+
+              <button
+                type="button"
+                className="p5-skip-sr-btn"
+                onClick={() => dispatch({ type: 'TOGGLE_ENGINEERING_VIEW' })}
+                data-testid="engineering-view-btn"
+                tabIndex={-1}
+              >
+                工程视图
+              </button>
             </div>
           </header>
 
-          {/* ── 2. P5 COMIC SPEECH BUBBLE WITH POINTER TAIL ── */}
+          {/* ── 2. AUTHENTIC P5 JAGGED TRAPEZOID DIALOGUE BOX (复刻 P5 原作锯齿闪电尾 + 反色字名牌 + 右下大白三角游标) ── */}
           <section className="p5-dialogue-section" data-testid="dialogue-layer">
             <div className="p5-dialogue-top-row">
               <div className="p5-user-mission-bar">
@@ -992,28 +1296,27 @@ export const StageApp: React.FC = () => {
                   </span>
                 )}
               </div>
-
-              <button
-                type="button"
-                className="p5-meta-pill p5-workspace-top-pill"
-                onClick={() =>
-                  dispatch({
-                    type: 'TOGGLE_SYSTEM_MENU',
-                    open: true,
-                    tab: 'pond',
-                  })
-                }
-                title={state.cwd}
-              >
-                <span>工作区</span>
-                <strong>📁 {state.cwd} ▾</strong>
-              </button>
             </div>
 
             <div className="p5-comic-bubble-wrap">
+              {/* P5 tilted white nameplate with smart word/CJK tokenizer & inverted 2nd token */}
               <div className="p5-speaker-sticker">
-                <span data-testid="dialogue-speaker-name">
-                  {dialogueCharacter.name.split('（')[0]}
+                <span
+                  className="p5-speaker-chars"
+                  data-testid="dialogue-speaker-name"
+                >
+                  {tokenizeSpeakerName(dialogueCharacter.name).map(
+                    (token, idx) =>
+                      idx === 1 ? (
+                        <span key={idx} className="p5-speaker-char-invert">
+                          {token}
+                        </span>
+                      ) : (
+                        <span key={idx} className="p5-speaker-char-normal">
+                          {token}
+                        </span>
+                      )
+                  )}
                 </span>
                 <span
                   className="p5-speaker-codename-sr"
@@ -1031,8 +1334,6 @@ export const StageApp: React.FC = () => {
                 )}
               </div>
 
-              <div className="p5-comic-tail" aria-hidden="true" />
-
               <div
                 className="p5-dialogue-box"
                 onClick={skipTypewriter}
@@ -1041,22 +1342,83 @@ export const StageApp: React.FC = () => {
                 aria-label="角色当前台词"
                 title="点击对话框或按 Space 立即显示整句"
               >
-                <p
+                {/* Main slanted quadrilateral box (inset: 0, non-scaling stroke) */}
+                <svg
+                  className="p5-dialogue-svg-bg"
+                  viewBox="0 0 1000 250"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <polygon
+                    points="8,24 990,10 968,236 16,242"
+                    fill="#07070c"
+                    stroke="#07070c"
+                    strokeWidth="14"
+                    strokeLinejoin="miter"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polygon
+                    points="8,24 990,10 968,236 16,242"
+                    fill="#09090f"
+                    stroke="#ffffff"
+                    strokeWidth="6"
+                    strokeLinejoin="miter"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+
+                {/* Fixed-aspect cross-column P5 single-Z lightning tail piercing into left character frame */}
+                <svg
+                  className="p5-dialogue-tail-svg"
+                  viewBox="0 0 180 84"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <polygon
+                    points="180,12 82,34 106,18 4,52 108,42 84,60 180,66"
+                    fill="#09090f"
+                  />
+                  <polyline
+                    points="170,13 82,34 106,18 4,52 108,42 84,60 170,65"
+                    fill="none"
+                    stroke="#07070c"
+                    strokeWidth="13"
+                    strokeLinejoin="miter"
+                    strokeMiterlimit="10"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polyline
+                    points="172,13 82,34 106,18 4,52 108,42 84,60 172,65"
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth="5.5"
+                    strokeLinejoin="miter"
+                    strokeMiterlimit="10"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+
+                <div
                   key={fadeReplaceKey}
                   className={`p5-dialogue-text ${
+                    isLongDialogue ? 'is-long-text' : ''
+                  } ${
                     fadeReplaceKey > 0 ? 'p5-dialogue-text--fade-replace' : ''
                   }`}
                   data-testid="dialogue-line-text"
                 >
-                  「{displayedText}」
-                  <span
-                    className={`p5-dialogue-cursor ${
-                      isTypingLine ? 'is-typing' : 'is-ready'
-                    }`}
-                  >
-                    ▼
-                  </span>
-                </p>
+                  {isTypingLine
+                    ? stripTypingMarkdown(displayedText)
+                    : renderFormattedText(displayedText)}
+                </div>
+
+                {/* Authentic P5 giant tilted white wedge cursor on bottom-right */}
+                <span
+                  className={`p5-dialogue-cursor p5-cursor-wedge ${
+                    isTypingLine ? 'is-typing' : 'is-ready'
+                  }`}
+                  aria-hidden="true"
+                />
 
                 <button
                   type="button"
@@ -1307,9 +1669,8 @@ export const StageApp: React.FC = () => {
                     );
                   })}
 
-                  {/* Worker Answer Body Card in Trajectory */}
-                  {(latestWorkerFinal ||
-                    (!state.turnActive && state.lastTurnSummary)) && (
+                  {/* Worker Answer Body Card in Trajectory (only when distinct from current dialogue bubble) */}
+                  {shouldShowConclusionCard && conclusionCandidate && (
                     <div
                       className="p5-worker-answer-card"
                       data-testid="trajectory-answer-card"
@@ -1322,12 +1683,9 @@ export const StageApp: React.FC = () => {
                           耗时 {turnDurationSec}s · 模型 {state.modelName}
                         </span>
                       </div>
-                      <p className="p5-worker-answer-body">
-                        {latestWorkerFinal &&
-                        latestWorkerFinal.type === 'worker_text'
-                          ? latestWorkerFinal.text
-                          : state.lastTurnSummary}
-                      </p>
+                      <div className="p5-worker-answer-body">
+                        {renderFormattedText(conclusionCandidate)}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1358,7 +1716,7 @@ export const StageApp: React.FC = () => {
             </div>
           </section>
 
-          {/* ── 4. SLEEK SLANTED COMMAND INPUT BAR ── */}
+          {/* ── 4. SLEEK SLANTED COMMAND INPUT BAR (工作区移至右下角投喂按钮上方) ── */}
           <section className="p5-command-dock" data-testid="player-input-zone">
             <div className="p5-dock-quick-chips">
               <div className="p5-chip-group">
@@ -1369,38 +1727,22 @@ export const StageApp: React.FC = () => {
                   >
                     ▲ 请先在上方引导卡选定项目文件夹后再投喂任务
                   </span>
-                ) : !state.turnActive ? (
+                ) : state.turnActive ? (
                   <>
-                    <button
-                      type="button"
-                      className="p5-mini-chip p5-mini-chip--btn"
-                      onClick={handleReplayOrNewSession}
-                    >
-                      + 新建会话
-                    </button>
-                    <button
-                      type="button"
-                      className="p5-mini-chip p5-mini-chip--btn"
-                      data-testid="example-instruction-btn"
-                      onClick={() => setInputValue(DEFAULT_FIRST_USER_PROMPT)}
-                    >
-                      ⚡ 填入示例任务指令
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="p5-mini-chip p5-mini-chip--btn is-steer"
-                      data-testid="quick-steer-btn"
-                      onClick={() => {
-                        sourceRef.current?.steer(
-                          '顺便检查一下深色模式下的按钮边框对比度！'
-                        );
-                      }}
-                    >
-                      ⚡ 一键插话 (Steer)
-                    </button>
+                    {sourceMode === 'demo' && (
+                      <button
+                        type="button"
+                        className="p5-mini-chip p5-mini-chip--btn is-steer"
+                        data-testid="quick-steer-btn"
+                        onClick={() => {
+                          sourceRef.current?.steer(
+                            '顺便检查一下深色模式下的按钮边框对比度！'
+                          );
+                        }}
+                      >
+                        ⚡ 一键插话 (Steer)
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="p5-mini-chip p5-mini-chip--btn is-stop"
@@ -1410,9 +1752,36 @@ export const StageApp: React.FC = () => {
                       ■ 喊停 (STOP)
                     </button>
                   </>
-                )}
+                ) : null}
               </div>
+
+              <button
+                type="button"
+                className="p5-meta-pill p5-workspace-dock-pill"
+                onClick={() =>
+                  dispatch({
+                    type: 'TOGGLE_SYSTEM_MENU',
+                    open: true,
+                    tab: 'pond',
+                  })
+                }
+                title={state.cwd}
+              >
+                <span>工作区</span>
+                <strong>📁 {formatWorkspaceLabel(state.cwd)} ▾</strong>
+              </button>
             </div>
+            {!needsOnboarding && !state.turnActive && (
+              <button
+                type="button"
+                className="p5-skip-sr-btn"
+                data-testid="example-instruction-btn"
+                onClick={() => setInputValue(DEFAULT_FIRST_USER_PROMPT)}
+                tabIndex={-1}
+              >
+                填入示例任务指令
+              </button>
+            )}
 
             <form className="p5-input-bar-slash" onSubmit={handleSubmitInput}>
               <div className="p5-input-field-box">
@@ -1437,7 +1806,10 @@ export const StageApp: React.FC = () => {
                 type="submit"
                 className="p5-send-slash-btn"
                 data-testid="stage-send-btn"
-                disabled={needsOnboarding}
+                disabled={
+                  needsOnboarding ||
+                  (sourceMode !== 'demo' && !inputValue.trim())
+                }
               >
                 {state.turnActive ? '插话 ▶' : '投喂 ▶'}
               </button>
@@ -1482,7 +1854,7 @@ export const StageApp: React.FC = () => {
         </div>
       )}
 
-      {/* ── OVERLAYS: 权限选择肢 / 档案层 / BACKLOG / SYSTEM 菜单 ── */}
+      {/* ── OVERLAYS: 权限选择肢 / 档案层 / BACKLOG / SYSTEM 菜单 / 快捷键帮助 ── */}
       <PermissionModal
         permission={state.pendingPermission}
         selectedChoice={state.permissionChoice}
@@ -1530,6 +1902,19 @@ export const StageApp: React.FC = () => {
         onListModels={handleListModels}
         onTestConnection={handleTestConnection}
         onStartNewSessionWithDir={handleStartNewSessionWithDir}
+      />
+
+      <ShortcutHelp
+        archiveAvailable={state.skillCards.length > 0}
+        onOpenArchive={() => {
+          const last = state.skillCards[state.skillCards.length - 1];
+          if (last) {
+            dispatch({
+              type: 'SELECT_SKILL_CARD',
+              toolUseId: last.toolUseId,
+            });
+          }
+        }}
       />
     </div>
   );
