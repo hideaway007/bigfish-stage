@@ -243,8 +243,30 @@ export function renderFormattedText(text: string): React.ReactNode {
   return blocks.length === 1 ? blocks[0] : blocks;
 }
 
-export const StageApp: React.FC = () => {
-  const [sourceMode] = useState<DataSourceMode>(detectSourceMode);
+function formatStageModelBanner(modelName: string | undefined, fallbackCodename: string): string {
+  const raw = (modelName || '').trim();
+  if (!raw || raw === 'dsh/default' || raw === 'dsh/magpie') {
+    return fallbackCodename;
+  }
+  const parts = raw.split('/').filter(Boolean);
+  const short = parts[parts.length - 1] || raw;
+  return short.replace(/_/g, '-').toUpperCase();
+}
+
+export interface StageAppProps {
+  externalSource?: StageDataSource;
+  embeddedInDsh?: boolean;
+  sessionKey?: string;
+}
+
+export const StageApp: React.FC<StageAppProps> = ({
+  externalSource,
+  embeddedInDsh = false,
+  sessionKey,
+}) => {
+  const [sourceMode] = useState<DataSourceMode>(() =>
+    externalSource ? externalSource.mode : detectSourceMode()
+  );
 
   const [state, dispatch] = useReducer(
     stageReducer,
@@ -262,9 +284,9 @@ export const StageApp: React.FC = () => {
   }, []);
 
   const [connStatus, setConnStatus] = useState<ConnectionStatus>({
-    state: sourceMode === 'demo' ? 'connected' : 'connecting',
+    state: externalSource || sourceMode === 'demo' ? 'connected' : 'connecting',
     attempt: 0,
-    hasEverConnected: sourceMode === 'demo',
+    hasEverConnected: Boolean(externalSource) || sourceMode === 'demo',
   });
 
   const [inputValue, setInputValue] = useState<string>(
@@ -273,6 +295,9 @@ export const StageApp: React.FC = () => {
   const [typedLength, setTypedLength] = useState<number>(0);
   const [fadeReplaceKey, setFadeReplaceKey] = useState<number>(0);
   const [inlinePreviewId, setInlinePreviewId] = useState<string | null>(null);
+  const [stageModelPickerOpen, setStageModelPickerOpen] = useState(false);
+  const [stageModelQuery, setStageModelQuery] = useState('');
+  const stageModelPopoverRef = useRef<HTMLDivElement | null>(null);
   const [contextTokens, setContextTokens] = useState<{
     used: number;
     max: number;
@@ -324,11 +349,21 @@ export const StageApp: React.FC = () => {
     };
 
     const source: StageDataSource =
-      sourceMode === 'demo'
+      externalSource
+        ? externalSource
+        : sourceMode === 'demo'
         ? new ScriptSource(callbacks)
         : sourceMode === 'native'
         ? new NativeAppSource(callbacks)
         : new LiveSource(callbacks);
+
+    if (externalSource && 'bindCallbacks' in externalSource) {
+      (
+        externalSource as StageDataSource & {
+          bindCallbacks?: (cb: StageDataSourceCallbacks) => void;
+        }
+      ).bindCallbacks?.(callbacks);
+    }
 
     sourceRef.current = source;
     source.connect();
@@ -341,7 +376,66 @@ export const StageApp: React.FC = () => {
       }
       collapseTimersRef.current.clear();
     };
-  }, [sourceMode]);
+  }, [sourceMode, externalSource, sessionKey]);
+
+  // Listen for sidebar settings button, Creator preset prefill, and Cmd+, / Ctrl+,
+  useEffect(() => {
+    const onOpenMenu = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ tab?: SystemMenuTab }>).detail;
+      dispatch({
+        type: 'TOGGLE_SYSTEM_MENU',
+        open: true,
+        ...(detail?.tab ? { tab: detail.tab } : {}),
+      });
+    };
+    const onPrefill = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ prompt?: string }>).detail;
+      if (detail?.prompt) {
+        setInputValue(detail.prompt);
+        window.setTimeout(() => inputRef.current?.focus(), 60);
+      }
+    };
+    const onCommaShortcut = (ev: KeyboardEvent) => {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === ',') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        dispatch({ type: 'TOGGLE_SYSTEM_MENU' });
+      }
+    };
+    window.addEventListener('bigfish:open-system-menu', onOpenMenu);
+    window.addEventListener('bigfish:prefill-prompt', onPrefill);
+    window.addEventListener('keydown', onCommaShortcut, true);
+    return () => {
+      window.removeEventListener('bigfish:open-system-menu', onOpenMenu);
+      window.removeEventListener('bigfish:prefill-prompt', onPrefill);
+      window.removeEventListener('keydown', onCommaShortcut, true);
+    };
+  }, []);
+
+  // Close stage inline model picker on outside click or Escape
+  useEffect(() => {
+    if (!stageModelPickerOpen) return;
+    const onPointerDown = (ev: MouseEvent) => {
+      if (
+        stageModelPopoverRef.current &&
+        !stageModelPopoverRef.current.contains(ev.target as Node)
+      ) {
+        setStageModelPickerOpen(false);
+      }
+    };
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.stopPropagation();
+        setStageModelPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [stageModelPickerOpen]);
 
   // Sync fastForward with data source
   useEffect(() => {
@@ -903,8 +997,9 @@ export const StageApp: React.FC = () => {
     Boolean(conclusionCandidate?.trim()) && !isConclusionDuplicateOfDialogue;
 
   const isDisconnected =
-    sourceMode === 'live' && connStatus.state !== 'connected';
+    !embeddedInDsh && sourceMode === 'live' && connStatus.state !== 'connected';
   const needsOnboarding =
+    !embeddedInDsh &&
     (sourceMode === 'live' || sourceMode === 'native') && !state.serverSettings.projectDir;
   const isNativeApp =
     sourceMode === 'native' ||
@@ -934,7 +1029,7 @@ export const StageApp: React.FC = () => {
 
   return (
     <div
-      className={`p5-stage-viewport ${isNativeApp ? 'is-native-app' : ''}`}
+      className={`p5-stage-viewport${isNativeApp ? ' is-native-app' : ''}${embeddedInDsh ? ' is-dsh-embedded' : ''}`}
       data-testid="p5-stage-viewport"
       data-active-character={character.id}
       style={viewportStyle}
@@ -1055,13 +1150,41 @@ export const StageApp: React.FC = () => {
               {shortNickname}
             </div>
 
-            <div className="p5-char-name-pill">
-              <span
-                className="p5-char-name-main"
+            <div
+              className="p5-char-name-pill p5-char-name-pill--interactive"
+              ref={stageModelPopoverRef}
+            >
+              <button
+                type="button"
+                className={`p5-stage-model-trigger ${
+                  stageModelPickerOpen ? 'is-open' : ''
+                }`}
                 data-testid="character-codename"
+                aria-haspopup="listbox"
+                aria-expanded={stageModelPickerOpen}
+                title={`当前驱动模型：${
+                  state.serverSettings.worker.model || state.modelName || character.codename
+                }（点击切换模型）`}
+                onClick={() => {
+                  playSfx('select');
+                  const next = !stageModelPickerOpen;
+                  setStageModelPickerOpen(next);
+                  if (next) {
+                    setStageModelQuery('');
+                    handleListModels('worker');
+                  }
+                }}
               >
-                {character.codename}
-              </span>
+                <span className="p5-char-name-main">
+                  {formatStageModelBanner(
+                    state.serverSettings.worker.model || state.modelName,
+                    character.codename
+                  )}
+                </span>
+                <span className="p5-stage-model-caret" aria-hidden="true">
+                  {stageModelPickerOpen ? '▴' : '▾'}
+                </span>
+              </button>
 
               <span
                 className="p5-speaker-codename-sr"
@@ -1080,6 +1203,161 @@ export const StageApp: React.FC = () => {
                   {turnDurationSec}s
                 </strong>
               </span>
+
+              {stageModelPickerOpen && (() => {
+                const activeModel =
+                  state.serverSettings.worker.model || state.modelName || '';
+                const recList =
+                  character.recommendedModels && character.recommendedModels.length > 0
+                    ? character.recommendedModels
+                    : [];
+                const catalogList = state.workerModels.models || [];
+                const mergedModels = Array.from(
+                  new Set([
+                    ...(activeModel && activeModel !== 'dsh/default' ? [activeModel] : []),
+                    ...catalogList,
+                    ...recList,
+                  ])
+                );
+                const q = stageModelQuery.trim().toLowerCase();
+                const filtered = q
+                  ? mergedModels.filter((m) => m.toLowerCase().includes(q))
+                  : mergedModels;
+
+                const applyModelChoice = (targetModel: string) => {
+                  const clean = targetModel.trim();
+                  if (!clean) return;
+                  playSfx('select');
+                  handleUpdateSettings({ worker: { model: clean } });
+                  setStageModelPickerOpen(false);
+                };
+
+                return (
+                  <div
+                    className="p5-stage-model-popover"
+                    data-testid="stage-model-popover"
+                    role="dialog"
+                    aria-label="切换驱动模型"
+                  >
+                    <div className="p5-stage-model-pop-head">
+                      <div className="p5-stage-model-pop-title">
+                        <span className="p5-stage-model-pop-tag">MODEL</span>
+                        <span>选择当前驱动模型</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="p5-stage-model-pop-close"
+                        onClick={() => setStageModelPickerOpen(false)}
+                        aria-label="关闭模型选择"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <form
+                      className="p5-stage-model-search-row"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (filtered.length > 0 && stageModelQuery.trim()) {
+                          applyModelChoice(filtered[0]);
+                        } else if (stageModelQuery.trim()) {
+                          applyModelChoice(stageModelQuery);
+                        }
+                      }}
+                    >
+                      <span className="p5-stage-model-search-icon">⌕</span>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={stageModelQuery}
+                        onChange={(e) => setStageModelQuery(e.target.value)}
+                        placeholder="搜索或输入模型 ID 回车切换…"
+                        className="p5-stage-model-search-input"
+                        data-testid="stage-model-search-input"
+                      />
+                    </form>
+
+                    <div className="p5-stage-model-list" role="listbox">
+                      {state.workerModels.loading && mergedModels.length === 0 && (
+                        <div className="p5-stage-model-empty">正在读取可用模型列表…</div>
+                      )}
+                      {!state.workerModels.loading && filtered.length === 0 && (
+                        <div className="p5-stage-model-empty">
+                          {stageModelQuery.trim() ? (
+                            <button
+                              type="button"
+                              className="p5-stage-model-item is-custom-apply"
+                              onClick={() => applyModelChoice(stageModelQuery)}
+                            >
+                              <span>直接使用自定义模型：</span>
+                              <strong>{stageModelQuery.trim()}</strong>
+                            </button>
+                          ) : (
+                            '暂无模型列表，点击下方进入模型设置配置接口'
+                          )}
+                        </div>
+                      )}
+                      {filtered.map((m) => {
+                        const isCurrent = m === activeModel;
+                        const slashIdx = m.lastIndexOf('/');
+                        const shortId = slashIdx >= 0 ? m.slice(slashIdx + 1) : m;
+                        const prefix = slashIdx > 0 ? m.slice(0, slashIdx) : '';
+                        const isRec = recList.includes(m);
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            role="option"
+                            aria-selected={isCurrent}
+                            className={`p5-stage-model-item ${
+                              isCurrent ? 'is-active' : ''
+                            }`}
+                            onClick={() => applyModelChoice(m)}
+                          >
+                            <div className="p5-stage-model-item-main">
+                              <span className="p5-stage-model-item-name">
+                                {isCurrent ? `✓ ${shortId}` : shortId}
+                              </span>
+                              {isRec && (
+                                <span className="p5-stage-model-rec-pill">推荐</span>
+                              )}
+                            </div>
+                            {prefix && (
+                              <span className="p5-stage-model-item-prefix">
+                                {prefix}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="p5-stage-model-pop-foot">
+                      <button
+                        type="button"
+                        className="p5-stage-model-foot-btn"
+                        onClick={() => handleListModels('worker')}
+                      >
+                        ↻ 刷新列表
+                      </button>
+                      <button
+                        type="button"
+                        className="p5-stage-model-foot-btn is-accent"
+                        onClick={() => {
+                          setStageModelPickerOpen(false);
+                          dispatch({
+                            type: 'TOGGLE_SYSTEM_MENU',
+                            open: true,
+                            tab: 'worker',
+                          });
+                        }}
+                      >
+                        ⚙ 模型接口设置 →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {isLongWaiting && (

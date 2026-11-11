@@ -7,8 +7,8 @@
   "main": "electron/main.cjs",
   "scripts": {
     "build:engine": "esbuild server/src/session.ts server/src/settings-store.ts server/src/characters.ts server/src/adapters/registry.ts --bundle --platform=node --format=esm --outdir=electron/engine --external:electron --external:ws",
-    "app": "npm run build:engine && electron electron/main.cjs",
-    "app:build": "npm run build && npm run build:engine && electron electron/main.cjs",
+    "app": "npm run build:stage && electron electron/main.cjs",
+    "app:build": "npm run build && npm run build:stage && electron electron/main.cjs",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
@@ -16,7 +16,10 @@
     "mock:server": "node scripts/mock-server.mjs",
     "preview": "vite preview",
     "start": "vite build && npm --prefix server run start",
-    "dev:server": "npm --prefix server run dev"
+    "dev:server": "npm --prefix server run dev",
+    "dsh": "npm run build:stage && dsh --profile bigfish",
+    "dsh:web": "npm run build:stage && dsh --profile bigfish --no-open --port 62000",
+    "build:stage": "node packages/dsh-client-ui-p5stage/build.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

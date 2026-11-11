@@ -18,6 +18,7 @@ export type HudStatus = 'idle' | 'thinking' | 'acting';
 
 export type SystemMenuTab =
   | 'characters'
+  | 'presets'
   | 'worker'
   | 'voice'
   | 'pond'
