@@ -1780,45 +1780,8 @@ export const StageApp: React.FC<StageAppProps> = ({
               </div>
             )}
 
-            {/* Bottom Row: 4 Character Avatars (Left) + Dynamic P5 Context Radar Dial (Right) */}
+            {/* Bottom Row: Dynamic P5 Context Radar Dial (Left) + 4 Character Avatars (Right) */}
             <div className="p5-bottom-left-dock">
-              <div className="p5-party-medals" data-testid="party-bar">
-                {state.characters.map((ch) => {
-                  const isActive = ch.id === character.id;
-                  const shortLabel = ch.name.split('（')[0];
-                  return (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      data-testid={`party-member-${ch.id}`}
-                      className={`p5-medal-item ${isActive ? 'is-active' : ''}`}
-                      style={
-                        {
-                          '--member-color': ch.themeColor,
-                        } as React.CSSProperties
-                      }
-                      onClick={() => handleSwitchCharacter(ch.id)}
-                      title={`${ch.name} (${ch.codename})`}
-                    >
-                      <div className="p5-medal-ring">
-                        {ch.portraitUrl ? (
-                          <img
-                            src={ch.portraitUrl}
-                            alt={shortLabel}
-                            className="p5-party-avatar"
-                          />
-                        ) : (
-                          <span className="p5-party-avatar-text">
-                            {shortLabel.slice(0, 2)}
-                          </span>
-                        )}
-                      </div>
-                      <span className="p5-medal-name">{shortLabel}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
               {/* Dynamic P5 Tactical Radar Dial for Context Usage */}
               <div
                 className={`p5-context-radar ${
@@ -1883,6 +1846,43 @@ export const StageApp: React.FC<StageAppProps> = ({
                     {isCompacting ? '✦ 凝炼中…' : '✦ 记忆凝炼'}
                   </button>
                 </div>
+              </div>
+
+              <div className="p5-party-medals" data-testid="party-bar">
+                {state.characters.map((ch) => {
+                  const isActive = ch.id === character.id;
+                  const shortLabel = ch.name.split('（')[0];
+                  return (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      data-testid={`party-member-${ch.id}`}
+                      className={`p5-medal-item ${isActive ? 'is-active' : ''}`}
+                      style={
+                        {
+                          '--member-color': ch.themeColor,
+                        } as React.CSSProperties
+                      }
+                      onClick={() => handleSwitchCharacter(ch.id)}
+                      title={`${ch.name} (${ch.codename})`}
+                    >
+                      <div className="p5-medal-ring">
+                        {ch.portraitUrl ? (
+                          <img
+                            src={ch.portraitUrl}
+                            alt={shortLabel}
+                            className="p5-party-avatar"
+                          />
+                        ) : (
+                          <span className="p5-party-avatar-text">
+                            {shortLabel.slice(0, 2)}
+                          </span>
+                        )}
+                      </div>
+                      <span className="p5-medal-name">{shortLabel}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -2493,22 +2493,6 @@ export const StageApp: React.FC<StageAppProps> = ({
                   </button>
                 )}
               </div>
-
-              <button
-                type="button"
-                className="p5-meta-pill p5-workspace-dock-pill"
-                onClick={() =>
-                  dispatch({
-                    type: 'TOGGLE_SYSTEM_MENU',
-                    open: true,
-                    tab: 'pond',
-                  })
-                }
-                title={state.cwd}
-              >
-                <span>工作区</span>
-                <strong>📁 {formatWorkspaceLabel(state.cwd)} ▾</strong>
-              </button>
             </div>
             {!needsOnboarding && !state.turnActive && (
               <button
