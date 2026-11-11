@@ -33,7 +33,20 @@ function createEntry(ev: StageEvent, id: number, characterName: string,
     case 'steer_queued': return { ...base, type: '用户', style: 'steer', badge: '场外插话', text: ev.text };
     case 'character_line': {
       const speaker = (ev.characterId && getCachedCharacterPack(ev.characterId).name.split('（')[0]) || characterName;
-      return { ...base, type: '台词', style: 'char', badge: `${speaker} · [${ev.emotion.toUpperCase()}]`, text: ev.text };
+      const tag = ev.source === 'touch' ? '互动' : ev.emotion.toUpperCase();
+      return { ...base, type: '台词', style: 'char', badge: `${speaker} · [${tag}]`, text: ev.text };
+    }
+    case 'sub_navigator_line': {
+      const navi = (ev.characterId && getCachedCharacterPack(ev.characterId).name.split('（')[0]) || '场外支援';
+      return { ...base, type: '台词', style: 'char', badge: `NAVI // ${navi}`, text: ev.text };
+    }
+    case 'baton_pass': {
+      const fromN = getCachedCharacterPack(ev.fromCharacterId).name.split('（')[0];
+      const toN = getCachedCharacterPack(ev.toCharacterId).name.split('（')[0];
+      return { ...base, type: '结算', style: 'done', badge: `BATON PASS // ${fromN} ➔ ${toN}`, text: ev.summary };
+    }
+    case 'context_compacted': {
+      return { ...base, type: '结算', style: 'done', badge: 'MEMORY // 记忆凝炼', text: ev.summary || `压缩前 ${ev.turnsCompacted} 轮历史，释放 ${ev.freedTokens.toLocaleString()} Tokens` };
     }
     case 'worker_text': return { ...base, type: '原文', style: 'worker', badge: `WORKER RAW${ev.final ? ' // FINAL' : ''}`, text: ev.text };
     case 'tool_start': {

@@ -33,9 +33,24 @@ export interface FriendlyConnectionDiagnosis {
  */
 export function mapConnectionFailure(
   rawMessage: string,
-  target: 'worker' | 'voice' = 'worker'
+  target: 'worker' | 'voice' | 'tts' = 'worker'
 ): FriendlyConnectionDiagnosis {
   const raw = (rawMessage || '').trim() || '未知连接错误';
+
+  if (
+    target === 'tts' &&
+    /gcloud|ADC|application-default|凭据|Google\s*Cloud|texttospeech/i.test(raw)
+  ) {
+    return {
+      category: 'auth_failed',
+      title: '尚未检测到 Google Cloud 语音凭据',
+      explanation:
+        '本机 Google TTS 需要有效的 gcloud 默认登录状态或语音 API Key 才能合成实时人声。',
+      nextStep:
+        '可在终端执行 `gcloud auth application-default login`，或在下方展开「高级语音凭据」填入 API Key 后重试。',
+      rawMessage: raw,
+    };
+  }
 
   // 1. Codex CLI executable missing / ENOENT
   if (
@@ -83,7 +98,7 @@ export function mapConnectionFailure(
       explanation:
         '当前填写的 Base URL 不是合法的 HTTP/HTTPS 地址，请求无法发出。',
       nextStep:
-        '请将接口地址改为包含协议头与 `/v1` 的完整地址（如 `http://127.0.0.1:3425/v1`），点击「保存地址」后再测。',
+        '请将接口地址改为包含协议头与 `/v1` 的完整地址（如 `https://api.deepseek.com/v1`），点击「保存」后再测。',
       rawMessage: raw,
     };
   }
@@ -132,7 +147,7 @@ export function mapConnectionFailure(
       category: 'conn_refused',
       title: '无法连接到模型接口（连接被拒绝或网关未启动）',
       explanation:
-        '向接口地址发起请求时被拒绝或网络不可达，通常是本地模型网关（如 127.0.0.1:3425）尚未启动或端口填写有误。',
+        '向接口地址发起请求时被拒绝或网络不可达，可能是网络代理异常或本地兼容服务尚未启动。',
       nextStep:
         '请确认本地模型网关进程已启动并监听对应端口，核对 Base URL 后点击「保存地址」再次测试。',
       rawMessage: raw,
@@ -194,7 +209,7 @@ export function mapConnectionFailure(
       category: 'generic_endpoint',
       title: '模型接口未能连通（请核对网关地址、模型名与密钥）',
       explanation:
-        '测试请求未拿到有效回复。常见原因包括：本地网关（如 127.0.0.1:3425）未启动、Base URL 漏写 `/v1`、所选模型不在网关列表中，或 API Key 不匹配。',
+        '测试请求未拿到有效回复。常见原因包括：接口地址漏写 `/v1`、所选模型不在服务列表中，或 API Key 不匹配。',
       nextStep:
         '① 确认网关已启动且 Base URL 含 `/v1` 并点「保存地址」；② 点「↻ 刷新可选模型」选一个可用模型并点「应用模型」；③ 如需鉴权请更新 Key 后重测。',
       rawMessage: raw,
@@ -207,6 +222,8 @@ export function mapConnectionFailure(
     title:
       target === 'voice'
         ? '台词模型连接测试未通过'
+        : target === 'tts'
+        ? '角色语音 (TTS) 连通测试未通过'
         : '执行 Agent 连接测试未通过',
     explanation:
       '测试请求未能成功完成，可能是接口地址、模型名称或本机运行环境配置不匹配。',

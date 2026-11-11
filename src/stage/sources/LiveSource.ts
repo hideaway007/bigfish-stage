@@ -4,6 +4,7 @@ import {
   type ClientCommand,
   type ServerMessage,
 } from '../../shared/wire';
+import type { CharacterTouchZone } from '../../shared/stage-events';
 import type { SettingsPatch } from '../../shared/settings';
 import { SessionListFeed } from './SessionListFeed';
 import { fetchCharacterPack } from '../characterLoader';
@@ -144,8 +145,58 @@ export class LiveSource implements StageDataSource {
     this.sendRawCommand({ type: 'list_models', target });
   }
 
-  public testConnection(target: 'worker' | 'voice'): void {
+  public testConnection(target: 'worker' | 'voice' | 'tts'): void {
     this.sendRawCommand({ type: 'test_connection', target });
+  }
+
+  public compactSession(): void {
+    this.sendRawCommand({ type: 'compact_session' });
+  }
+
+  public batonPass(toCharacterId: string, instruction?: string): void {
+    void fetchCharacterPack(toCharacterId);
+    const trimmed = instruction?.trim();
+    this.sendRawCommand({
+      type: 'baton_pass',
+      toCharacterId,
+      ...(trimmed ? { instruction: trimmed } : {}),
+    });
+  }
+
+  public interactCharacter(
+    characterId: string,
+    zone: CharacterTouchZone
+  ): void {
+    this.sendRawCommand({
+      type: 'interact_character',
+      characterId,
+      zone,
+    });
+  }
+
+  public synthesizeTts(
+    characterId: string,
+    text: string,
+    lineId?: string
+  ): void {
+    this.sendRawCommand({
+      type: 'synthesize_tts',
+      characterId,
+      text,
+      ...(lineId ? { lineId } : {}),
+    });
+  }
+
+  public requestGitStatus(): void {
+    this.sendRawCommand({ type: 'git_status' });
+  }
+
+  public revertGitFile(path: string): void {
+    this.sendRawCommand({ type: 'git_revert_file', path });
+  }
+
+  public commitGit(message: string): void {
+    this.sendRawCommand({ type: 'git_commit', message });
   }
 
   public sendRawCommand(cmd: ClientCommand): void {

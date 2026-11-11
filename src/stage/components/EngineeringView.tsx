@@ -135,6 +135,31 @@ export const EngineeringView: React.FC<EngineeringViewProps> = ({
                   </div>
                 )}
 
+                {ev.type === 'sub_navigator_line' && (
+                  <div className="eng-char-text">
+                    <span className="eng-emotion-tag">
+                      [NAVI:{ev.characterId}/{ev.emotion}]
+                    </span>{' '}
+                    {ev.text}
+                  </div>
+                )}
+
+                {ev.type === 'baton_pass' && (
+                  <div>
+                    <strong>
+                      [BATON PASS] {ev.fromCharacterId} ➔ {ev.toCharacterId}
+                    </strong>{' '}
+                    — {ev.summary}
+                  </div>
+                )}
+
+                {ev.type === 'context_compacted' && (
+                  <div>
+                    <strong>[COMPACTED]</strong> turns={ev.turnsCompacted},
+                    freed={ev.freedTokens} tokens — {ev.summary}
+                  </div>
+                )}
+
                 {ev.type === 'thinking' && (
                   <div className="eng-mono-muted">
                     Agent thinking... (reasoning in progress)

@@ -48,6 +48,22 @@ export class ScriptPlayer {
           },
         };
       }
+      if (
+        step.event.type === 'sub_navigator_line' &&
+        step.event.characterId === characterId
+      ) {
+        const fallbackNavi =
+          characterId === 'gemini-4-argon'
+            ? 'claude-opus-5-5'
+            : 'gemini-4-argon';
+        return {
+          ...step,
+          event: {
+            ...step.event,
+            characterId: fallbackNavi,
+          },
+        };
+      }
       return step;
     });
   }
