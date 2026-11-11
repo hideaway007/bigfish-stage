@@ -2,6 +2,7 @@ import type {
   ClientCommand,
   ServerMessage,
 } from '../../shared/wire';
+import type { CharacterTouchZone } from '../../shared/stage-events';
 import type { SettingsPatch } from '../../shared/settings';
 import type { SessionListState } from './SessionListFeed';
 
@@ -35,7 +36,14 @@ export interface StageDataSource {
   switchCharacter(characterId: string): void;
   updateSettings(patch: SettingsPatch): void;
   listModels(target: 'worker' | 'voice'): void;
-  testConnection(target: 'worker' | 'voice'): void;
+  testConnection(target: 'worker' | 'voice' | 'tts'): void;
+  compactSession?(): void;
+  batonPass?(toCharacterId: string, instruction?: string): void;
+  interactCharacter?(characterId: string, zone: CharacterTouchZone): void;
+  synthesizeTts?(characterId: string, text: string, lineId?: string): void;
+  requestGitStatus?(): void;
+  revertGitFile?(path: string): void;
+  commitGit?(message: string): void;
   setFastForward?(fast: boolean): void;
   replayDemo?(): void;
   sendRawCommand?(cmd: ClientCommand): void;

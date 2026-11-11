@@ -1,28 +1,15 @@
 /**
- * 角色包格式（Phase 1 契约）
- *
- * 每个角色是一个文件夹：public/characters/<id>/
- *   character.json   —— 本文件定义的 CharacterPack
- *   art/...          —— 立绘资源，路径写在 art 字段里（相对角色文件夹）
- *
- * 新增角色 = 新增一个文件夹，不改任何代码。
- * 角色只负责「人设 + 演出」，与执行 Agent / 模型互不绑定。
+ * 角色包格式（Phase 2 契约：支持分部位触摸互动反应与默认 TTS 声线）
  */
-import type { Emotion, StageEventType, ToolKind } from './stage-events';
+import type { CharacterTouchZone, Emotion, StageEventType, ToolKind } from './stage-events';
 
-/**
- * 反应表的键：
- * - 事件类型本身，如 'thinking' / 'permission_request' / 'turn_done'
- * - 带工具种类的细分，如 'tool_start:edit' / 'tool_end:bash'
- * - 失败细分：'tool_end:fail' / 'turn_done:fail'
- * 查找顺序：最细的键优先，找不到再退回事件类型本身。
- */
 export type ReactionKey =
   | StageEventType
   | `tool_start:${ToolKind}`
   | `tool_end:${ToolKind}`
   | 'tool_end:fail'
-  | 'turn_done:fail';
+  | 'turn_done:fail'
+  | `touch:${CharacterTouchZone}`;
 
 export interface Reaction {
   emotion: Emotion;
@@ -49,21 +36,18 @@ export type ArtManifest =
 
 /** 情绪徽章文案：左上角表情标签。缺省时 UI 用通用文案 */
 export type EmotionLabels = Partial<Record<Emotion, { en?: string; zh: string }>>;
+
+/** 分部位触摸热区提示文案（如 head="摸摸呆毛"） */
+export type TouchZoneLabels = Partial<Record<CharacterTouchZone, string>>;
+
 /** 随角色变化的舞台文案，全部可选；缺省时 UI 用中性通用文案 */
 export interface CharacterUiCopy {
-  /** 角色对用户的称呼，如「店长」 */
   userTitle?: string;
-  /** 输入框标题，如「FEED THE FISH // 投喂大肥鱼」 */
   inputTitle?: string;
-  /** 输入框占位文字 */
   inputPlaceholder?: string;
-  /** 输入区左侧小标签，如「FEED // 投喂指令」 */
   inputTag?: string;
-  /** 发送按钮文字 */
   sendLabel?: string;
-  /** 舞台待命时的提示 */
   idleHint?: string;
-  /** 顶部 logo 副标题，如「大肥鱼 · 深海工作台」 */
   stageSubtitle?: string;
 }
 
@@ -71,20 +55,21 @@ export interface CharacterPack {
   schemaVersion: 1;
   id: string;
   name: string;
-  /** 大号英文代号，如 "DEEPSEEK · V4 PRO" */
   codename: string;
   tagline: string;
   themeColor: string;
   accentColor?: string;
+  /** 角色默认 Google Cloud TTS 声线，如 cmn-CN-Chirp3-HD-Leda */
+  defaultVoice?: string;
   persona: {
-    /** 给台词模型的人设说明（第二人称，描述性格、说话方式、梗） */
     systemPrompt: string;
-    /** 一句话说话风格，便于 UI 展示 */
     speechStyle: string;
     catchphrases: string[];
   };
   reactions: Partial<Record<ReactionKey, Reaction>>;
-  /** 推荐搭配的模型（仅提示，不强制） */
+  /** 分部位点击互动反应（可选，也可写在 reactions['touch:head'] 中） */
+  touchReactions?: Partial<Record<CharacterTouchZone, Reaction>>;
+  touchZoneLabels?: TouchZoneLabels;
   recommendedModels?: string[];
   art: ArtManifest;
   emotionLabels?: EmotionLabels;
@@ -97,7 +82,6 @@ export interface CharacterSummary {
   name: string;
   codename: string;
   themeColor: string;
-  /** 可直接用于 <img src> 的 URL，如 /characters/deepseek-v4-pro/art/portrait.png */
   portraitUrl: string | null;
   renderer: ArtManifest['renderer'];
 }
