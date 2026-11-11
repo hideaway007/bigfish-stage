@@ -1,11 +1,5 @@
 /**
- * Stage 事件协议（A / B 两个任务共用的唯一契约）
- *
- * - 任务 A（假数据原型）：用 StageEvent[] 写剧本，UI 只认这些事件。
- * - 任务 B（桥接验证）：把执行 Agent（本阶段为 Codex CLI）的真实输出翻译成这些事件，按 JSON Lines 输出。
- *
- * 两边对齐在这里，之后 UI 换成真实数据源时一行 UI 代码都不用改。
- * 要改这个文件，必须在任务报告里写明改了什么、为什么。
+ * Stage 事件协议（前后端唯一共享舞台事件契约）
  */
 
 export type Emotion =
@@ -18,6 +12,8 @@ export type Emotion =
 
 export type ToolKind = 'read' | 'edit' | 'write' | 'bash' | 'search' | 'web' | 'task' | 'other';
 
+export type CharacterTouchZone = 'head' | 'face' | 'body' | 'prop';
+
 interface Base {
   /** 毫秒时间戳 */
   at: number;
@@ -26,23 +22,23 @@ interface Base {
 export type StageEvent = Base &
   (
     // ── 会话 ──
-    | { type: 'session_started'; sessionId: string; model?: string; cwd?: string }
+    | { type: 'session_started'; sessionId: string; model?: string; cwd?: string; characterId?: string }
     | { type: 'user_message'; id: string; text: string }
     /** 用户在任务进行中插话：先进入排队状态 */
     | { type: 'steer_queued'; id: string; text: string }
-    /** Worker 真正读到了这条插话（例如 --replay-user-messages 回显） */
+    /** Worker 真正读到了这条插话 */
     | { type: 'steer_acked'; id: string }
     | { type: 'interrupted'; reason?: string }
 
-    // ── Worker（执行 Agent，如 Codex / Claude Code）原始活动 ──
+    // ── Worker（DeepSeek Harness / Direct API）原始活动 ──
     | { type: 'thinking' }
-    /** Worker 的原始文字输出，不带人设。final=true 表示这一轮的最终回答 */
+    /** Worker 的原始文字输出，final=true 表示这一轮的最终回答 */
     | { type: 'worker_text'; text: string; final?: boolean }
     | {
         type: 'tool_start';
         toolUseId: string;
         tool: ToolKind;
-        /** 执行 Agent 的原始工具或事件名，如 Edit / Bash / command_execution */
+        /** 执行 Agent 的原始工具或事件名，如 Edit / Bash */
         rawName: string;
         /** 一行人类可读摘要，如 "Edit src/app.ts" */
         summary: string;
@@ -91,18 +87,35 @@ export type StageEvent = Base &
         summary?: string;
       }
 
-    // ── 前台角色（任务 A 手写；以后由前台人设模型生成，B 不产生）──
+    // ── P5 怪盗团协同演出事件：换手接力 (Baton Pass) & 场外副官插嘴 (Sub-Navigator) ──
+    | {
+        type: 'baton_pass';
+        fromCharacterId: string;
+        toCharacterId: string;
+        summary: string;
+      }
+    | {
+        type: 'sub_navigator_line';
+        characterId: string;
+        emotion: Emotion;
+        text: string;
+        lineId?: string;
+      }
+
+    // ── 前台角色台词与触摸互动 ──
     | {
         type: 'character_line';
         characterId: string;
         emotion: Emotion;
         text: string;
-        /** 台词唯一 ID（Phase 1 起由服务端填写；剧本模式可省略） */
+        /** 台词唯一 ID */
         lineId?: string;
-        /** preset = 角色包预置台词（即时）；model = 台词模型生成（稍后） */
-        source?: 'preset' | 'model';
-        /** 若存在：用本句替换之前那句 preset 台词（UI 原地替换，不新增一条） */
+        /** preset = 角色包预置台词；model = 台词模型生成；touch = 部位触摸彩蛋 */
+        source?: 'preset' | 'model' | 'touch';
+        /** 若存在：用本句替换之前那句 preset 台词 */
         replacesLineId?: string;
+        /** 若来自部位触摸互动，记录触摸区域 */
+        touchZone?: CharacterTouchZone;
       }
   );
 

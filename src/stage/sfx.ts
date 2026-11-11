@@ -190,7 +190,12 @@ function attachGlobalGestureUnlock(): void {
       const btn = target?.closest('button, a');
       if (!btn || (btn as HTMLButtonElement).disabled) return;
       const testId = btn.getAttribute('data-testid') || '';
-      if (testId === 'sfx-mute-btn') return;
+      if (
+        testId === 'sfx-mute-btn' ||
+        testId === 'sfx-mute-toggle' ||
+        testId === 'tts-mute-btn'
+      )
+        return;
       if (testId === 'stage-send-btn') {
         playSfx('send');
         return;

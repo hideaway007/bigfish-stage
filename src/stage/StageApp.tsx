@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import {
   DEFAULT_CHARACTER_ID,
   getCachedCharacterPack,
@@ -32,9 +32,29 @@ import { ShortcutHelp, isTypingTarget } from './components/ShortcutHelp';
 import { SystemMenuModal } from './components/SystemMenuModal';
 import { defaultCharacterLine, resolveEmotionLabel, resolveUiCopy } from './uiCopy';
 import { SwitchTransition, SfxMuteButton } from './components/SwitchTransition';
+import {
+  AllOutFinishOverlay,
+  BatonPassCutin,
+  BatonPassModal,
+  NavigatorCutin,
+  type AllOutFinishData,
+  type BatonPassCutinData,
+  type NavigatorCutinData,
+} from './components/P5Cutins';
 import { playSfx } from './sfx';
+import { pickCharacterTouchReaction } from './touchReactions';
+import {
+  TtsMuteButton,
+  hasStoredTtsMutePreference,
+  playTtsAudioFrame,
+  setTtsMuted,
+} from './ttsPlayer';
 import { OnboardingCard } from './components/OnboardingCard';
-import type { StageEvent, ToolKind } from '../shared/stage-events';
+import type {
+  CharacterTouchZone,
+  StageEvent,
+  ToolKind,
+} from '../shared/stage-events';
 import type { SettingsPatch } from '../shared/settings';
 import type { ServerMessage } from '../shared/wire';
 
@@ -315,10 +335,25 @@ export const StageApp: React.FC<StageAppProps> = ({
     summaryText: '已将前 10 轮历史压缩为摘要卡，释放 80,000 Tokens！',
     compactedAt: null,
   });
+  const [isCompacting, setIsCompacting] = useState<boolean>(false);
+  const [batonModalOpen, setBatonModalOpen] = useState<boolean>(false);
+  const [allOutFinishData, setAllOutFinishData] =
+    useState<AllOutFinishData | null>(null);
+  const [batonCutinData, setBatonCutinData] =
+    useState<BatonPassCutinData | null>(null);
+  const [naviCutinData, setNaviCutinData] =
+    useState<NavigatorCutinData | null>(null);
 
   const sourceRef = useRef<StageDataSource | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const collapseTimersRef = useRef<Map<string, number>>(new Map());
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const lastBatonCutinAtRef = useRef<number>(0);
+  const pendingTouchFallbackRef = useRef<{
+    characterId: string;
+    zone: CharacterTouchZone;
+  } | null>(null);
 
   const prevLineTrackRef = useRef<{
     lineKey: string;
@@ -337,10 +372,153 @@ export const StageApp: React.FC<StageAppProps> = ({
     state.currentLine?.characterId ?? state.characterId
   );
 
+  const dismissAllOutFinish = useCallback(() => {
+    setAllOutFinishData(null);
+  }, []);
+  const dismissBatonCutin = useCallback(() => {
+    setBatonCutinData(null);
+  }, []);
+  const dismissNaviCutin = useCallback(() => {
+    setNaviCutinData(null);
+  }, []);
+
   // Connect data source on mount
   useEffect(() => {
     const callbacks: StageDataSourceCallbacks = {
       onServerMessage: (message: ServerMessage) => {
+        if (message.type === 'tts_audio') {
+          void playTtsAudioFrame(message);
+          return;
+        }
+
+        if (message.type === 'welcome' && message.settings?.tts) {
+          if (!hasStoredTtsMutePreference()) {
+            setTtsMuted(!message.settings.tts.enabled, false);
+          }
+        } else if (message.type === 'settings' && message.settings?.tts) {
+          if (!hasStoredTtsMutePreference()) {
+            setTtsMuted(!message.settings.tts.enabled, false);
+          }
+        }
+
+        if (
+          message.type === 'command_error' &&
+          message.commandType === 'interact_character' &&
+          pendingTouchFallbackRef.current
+        ) {
+          const fallback = pendingTouchFallbackRef.current;
+          pendingTouchFallbackRef.current = null;
+          const pack = getCachedCharacterPack(fallback.characterId);
+          const picked = pickCharacterTouchReaction(pack, fallback.zone);
+          dispatch({
+            type: 'STAGE_EVENT',
+            event: {
+              type: 'character_line',
+              lineId: `line_local_touch_${Date.now()}`,
+              source: 'touch',
+              touchZone: fallback.zone,
+              characterId: fallback.characterId,
+              emotion: picked.emotion,
+              text: picked.text,
+              at: Date.now(),
+            },
+          });
+          return;
+        }
+
+        if (
+          message.type === 'command_error' &&
+          message.commandType === 'compact_session'
+        ) {
+          setIsCompacting(false);
+        }
+
+        if (message.type === 'event') {
+          const ev = message.event;
+          const snap = stateRef.current;
+
+          if (ev.type === 'error') {
+            setIsCompacting(false);
+          } else if (ev.type === 'context_compacted') {
+            setIsCompacting(false);
+            playSfx('compaction');
+            const msg =
+              ev.summary ||
+              `已成功将前 ${ev.turnsCompacted} 轮历史压缩为摘要卡，释放 ${ev.freedTokens.toLocaleString()} Tokens！`;
+            setCompactionState({
+              activeCutin: true,
+              turnsCompacted: ev.turnsCompacted,
+              freedTokens: ev.freedTokens,
+              summaryText: msg,
+              compactedAt: Date.now(),
+            });
+          } else if (ev.type === 'sub_navigator_line') {
+            playSfx('hover');
+            setNaviCutinData({
+              key: Date.now(),
+              characterId: ev.characterId,
+              emotion: ev.emotion,
+              text: ev.text,
+            });
+          } else if (ev.type === 'baton_pass') {
+            const now = Date.now();
+            if (now - lastBatonCutinAtRef.current > 2000) {
+              lastBatonCutinAtRef.current = now;
+              playSfx('switch');
+              setBatonCutinData({
+                key: now,
+                fromCharacterId: ev.fromCharacterId,
+                toCharacterId: ev.toCharacterId,
+                summary: ev.summary,
+              });
+            }
+          } else if (ev.type === 'turn_done' && ev.ok) {
+            playSfx('complete');
+            if (snap.skillCards.length >= 1) {
+              const activePack = getCachedCharacterPack(snap.characterId);
+              const elapsedMs =
+                ev.durationMs ??
+                (snap.turnStartedAt
+                  ? Math.max(200, Date.now() - snap.turnStartedAt)
+                  : snap.turnDurationMs);
+              const filesSet = new Set(
+                snap.skillCards
+                  .map(
+                    (c) =>
+                      c.file ||
+                      (c.tool === 'edit' || c.tool === 'write'
+                        ? c.summary
+                        : undefined)
+                  )
+                  .filter((f): f is string => Boolean(f))
+              );
+              const diffTotals = snap.skillCards.reduce(
+                (acc, c) => {
+                  if (c.diffStats) {
+                    acc.added += c.diffStats.added;
+                    acc.removed += c.diffStats.removed;
+                  }
+                  return acc;
+                },
+                { added: 0, removed: 0 }
+              );
+              setAllOutFinishData({
+                key: Date.now(),
+                characterId: activePack.id,
+                characterName: activePack.name,
+                codename: activePack.codename,
+                themeColor: activePack.themeColor,
+                durationSec: (elapsedMs / 1000).toFixed(1),
+                filesCount: filesSet.size,
+                added: diffTotals.added,
+                removed: diffTotals.removed,
+                toolCount: snap.skillCards.length,
+                summaryText: ev.summary ?? null,
+              });
+            }
+          }
+        }
+
         dispatch({ type: 'SERVER_MESSAGE', message });
       },
       onConnectionChange: (status: ConnectionStatus) => {
@@ -469,22 +647,6 @@ export const StageApp: React.FC<StageAppProps> = ({
       }));
       return;
     }
-    if (lastEv.type === 'turn_done' && lastEv.ok) {
-      playSfx('complete');
-    }
-    if (lastEv.type === 'context_compacted') {
-      playSfx('compaction');
-      const msg =
-        lastEv.summary ||
-        `已成功将前 ${lastEv.turnsCompacted} 轮历史压缩为摘要卡，释放 ${lastEv.freedTokens.toLocaleString()} Tokens！`;
-      setCompactionState({
-        activeCutin: true,
-        turnsCompacted: lastEv.turnsCompacted,
-        freedTokens: lastEv.freedTokens,
-        summaryText: msg,
-        compactedAt: Date.now(),
-      });
-    }
 
     // Scan from newest to oldest within the current session (stopping at the most recent session_started)
     let latestUsage: Extract<StageEvent, { type: 'context_usage' }> | null =
@@ -560,28 +722,34 @@ export const StageApp: React.FC<StageAppProps> = ({
     return () => window.clearTimeout(tId);
   }, [compactionState.activeCutin]);
 
-  const handleTriggerCompactionDemo = () => {
-    playSfx('allow');
-    const freed = 80000;
-    setCompactionState({
-      activeCutin: true,
-      turnsCompacted: 10,
-      freedTokens: freed,
-      summaryText: '已成功将前 10 轮历史压缩为摘要卡，释放 80,000 Tokens！',
-      compactedAt: Date.now(),
-    });
-    setContextTokens((prev) => {
-      if (sourceMode !== 'demo') {
-        return {
-          used: prev.used > 0 ? Math.max(0, prev.used - freed) : 0,
-          max: prev.max,
-        };
-      }
-      return {
-        used: prev.used > 0 ? Math.max(0, prev.used - freed) : 24000,
+  useEffect(() => {
+    if (!isCompacting) return;
+    const safetyTimer = window.setTimeout(() => {
+      setIsCompacting(false);
+    }, 12000);
+    return () => window.clearTimeout(safetyTimer);
+  }, [isCompacting]);
+
+  const handleTriggerCompaction = () => {
+    if (isCompacting) return;
+    if (sourceMode === 'live' && connStatus.state !== 'connected') {
+      playSfx('compaction');
+      const freed = 64000;
+      setCompactionState({
+        activeCutin: true,
+        turnsCompacted: 8,
+        freedTokens: freed,
+        summaryText: '离线预览：已将历史对话压缩为摘要卡，释放 64,000 Tokens！',
+        compactedAt: Date.now(),
+      });
+      setContextTokens((prev) => ({
+        used: Math.max(0, prev.used - freed),
         max: prev.max,
-      };
-    });
+      }));
+      return;
+    }
+    setIsCompacting(true);
+    sourceRef.current?.compactSession?.();
   };
 
   // Schedule auto-collapse of finished skill cards after ~2.6s
@@ -694,9 +862,83 @@ export const StageApp: React.FC<StageAppProps> = ({
     sourceRef.current?.listModels(target);
   };
 
-  const handleTestConnection = (target: 'worker' | 'voice') => {
+  const handleTestConnection = (target: 'worker' | 'voice' | 'tts') => {
     dispatch({ type: 'MARK_CONN_TESTING', target });
     sourceRef.current?.testConnection(target);
+  };
+
+  const handleSynthesizeTts = (charId: string, text: string) => {
+    sourceRef.current?.synthesizeTts?.(
+      charId,
+      text,
+      `audition_${Date.now()}`
+    );
+  };
+
+  const handleTouchCharacterZone = (zone: CharacterTouchZone) => {
+    if (
+      sourceMode === 'demo' ||
+      (connStatus.state === 'connected' && sourceRef.current?.interactCharacter)
+    ) {
+      pendingTouchFallbackRef.current = {
+        characterId: character.id,
+        zone,
+      };
+      sourceRef.current?.interactCharacter?.(character.id, zone);
+      return;
+    }
+
+    // Offline local instant reaction
+    const picked = pickCharacterTouchReaction(character, zone);
+    dispatch({
+      type: 'STAGE_EVENT',
+      event: {
+        type: 'character_line',
+        lineId: `line_offline_touch_${Date.now()}`,
+        source: 'touch',
+        touchZone: zone,
+        characterId: character.id,
+        emotion: picked.emotion,
+        text: picked.text,
+        at: Date.now(),
+      },
+    });
+  };
+
+  const handleConfirmBatonPass = (
+    toCharacterId: string,
+    instruction: string
+  ) => {
+    const fromId = character.id;
+    setBatonModalOpen(false);
+    const now = Date.now();
+    lastBatonCutinAtRef.current = now;
+    playSfx('switch');
+    playSfx('allow');
+    setBatonCutinData({
+      key: now,
+      fromCharacterId: fromId,
+      toCharacterId,
+      summary:
+        instruction || '交接当前代码改动与对话上下文，继续推进下一棒！',
+    });
+    dispatch({ type: 'SET_CHARACTER', characterId: toCharacterId });
+    sourceRef.current?.batonPass?.(toCharacterId, instruction);
+  };
+
+  const handleRequestGitStatus = () => {
+    dispatch({ type: 'MARK_GIT_LOADING' });
+    sourceRef.current?.requestGitStatus?.();
+  };
+
+  const handleRevertGitFile = (path: string) => {
+    playSfx('deny');
+    sourceRef.current?.revertGitFile?.(path);
+  };
+
+  const handleCommitGit = (message: string) => {
+    playSfx('allow');
+    sourceRef.current?.commitGit?.(message);
   };
 
   const handleStartNewSessionWithDir = (projectDir: string) => {
@@ -705,9 +947,60 @@ export const StageApp: React.FC<StageAppProps> = ({
     dispatch({ type: 'TOGGLE_SYSTEM_MENU', open: false });
   };
 
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
+  const selectedCard: SkillCardItem | null = (() => {
+    if (!state.selectedToolUseId) return null;
+    const activeHit = state.skillCards.find(
+      (c) => c.toolUseId === state.selectedToolUseId
+    );
+    if (activeHit) return activeHit;
+
+    let startEv: Extract<StageEvent, { type: 'tool_start' }> | null = null;
+    let endEv: Extract<StageEvent, { type: 'tool_end' }> | null = null;
+    for (const ev of state.events) {
+      if (
+        ev.type === 'tool_start' &&
+        ev.toolUseId === state.selectedToolUseId
+      ) {
+        startEv = ev;
+      } else if (
+        ev.type === 'tool_end' &&
+        ev.toolUseId === state.selectedToolUseId
+      ) {
+        endEv = ev;
+      }
+    }
+    if (!startEv && !endEv) return null;
+    const diff = endEv?.diff;
+    return {
+      toolUseId: state.selectedToolUseId,
+      tool: startEv?.tool ?? (diff ? 'edit' : 'other'),
+      rawName: startEv?.rawName ?? 'tool',
+      summary: startEv?.summary ?? endEv?.summary ?? '历史工具调用档案',
+      file: startEv?.file,
+      startedAt: startEv?.at ?? endEv?.at ?? Date.now(),
+      endedAt: endEv?.at,
+      status: endEv ? (endEv.ok ? 'success' : 'error') : 'running',
+      endSummary: endEv?.summary,
+      diff,
+      output: endEv?.output,
+      diffStats: computeDiffStats(diff),
+      collapsedToLog: true,
+    };
+  })();
+
+  // Global keyboard shortcuts (stable window listeners via keyHandlerRef to avoid re-binding at 40Hz)
+  const keyHandlerRef = useRef<{
+    onKeyDown: (e: KeyboardEvent) => void;
+    onKeyUp: (e: KeyboardEvent) => void;
+    onBlur: () => void;
+  }>({
+    onKeyDown: () => {},
+    onKeyUp: () => {},
+    onBlur: () => {},
+  });
+
+  keyHandlerRef.current = {
+    onKeyDown: (e: KeyboardEvent) => {
       if (
         e.defaultPrevented ||
         e.isComposing ||
@@ -732,9 +1025,25 @@ export const StageApp: React.FC<StageAppProps> = ({
       }
 
       if (e.key === 'Escape') {
-        if (state.selectedToolUseId !== null) {
+        if (allOutFinishData) {
+          e.preventDefault();
+          setAllOutFinishData(null);
+          return;
+        }
+        if (batonCutinData) {
+          e.preventDefault();
+          setBatonCutinData(null);
+          return;
+        }
+        if (batonModalOpen) {
+          e.preventDefault();
+          setBatonModalOpen(false);
+          return;
+        }
+        if (state.selectedToolUseId !== null || state.gitDrawerOpen) {
           e.preventDefault();
           dispatch({ type: 'SELECT_SKILL_CARD', toolUseId: null });
+          dispatch({ type: 'TOGGLE_GIT_DRAWER', open: false });
           return;
         }
         if (state.backlogOpen) {
@@ -758,7 +1067,9 @@ export const StageApp: React.FC<StageAppProps> = ({
         state.pendingPermission &&
         !state.systemMenuOpen &&
         !state.backlogOpen &&
-        state.selectedToolUseId === null
+        !batonModalOpen &&
+        state.selectedToolUseId === null &&
+        !state.gitDrawerOpen
       ) {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
           e.preventDefault();
@@ -783,7 +1094,13 @@ export const StageApp: React.FC<StageAppProps> = ({
         activeTag === 'textarea' ||
         activeTag === 'select';
 
-      if (!isTypingInInput && !state.systemMenuOpen && !state.engineeringView) {
+      if (
+        !isTypingInInput &&
+        !state.systemMenuOpen &&
+        !batonModalOpen &&
+        !state.gitDrawerOpen &&
+        !state.engineeringView
+      ) {
         if (e.key === 'l' || e.key === 'L') {
           e.preventDefault();
           dispatch({ type: 'TOGGLE_BACKLOG' });
@@ -805,17 +1122,21 @@ export const StageApp: React.FC<StageAppProps> = ({
           return;
         }
       }
-    };
-
-    const onKeyUp = (e: KeyboardEvent) => {
+    },
+    onKeyUp: (e: KeyboardEvent) => {
       if (e.key === 'Control') {
         dispatch({ type: 'SET_FAST_FORWARD', fast: false });
       }
-    };
-
-    const onBlur = () => {
+    },
+    onBlur: () => {
       dispatch({ type: 'SET_FAST_FORWARD', fast: false });
-    };
+    },
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => keyHandlerRef.current.onKeyDown(e);
+    const onKeyUp = (e: KeyboardEvent) => keyHandlerRef.current.onKeyUp(e);
+    const onBlur = () => keyHandlerRef.current.onBlur();
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -825,7 +1146,7 @@ export const StageApp: React.FC<StageAppProps> = ({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  });
+  }, []);
 
   const handleSubmitInput = (e: React.FormEvent) => {
     e.preventDefault();
@@ -876,47 +1197,6 @@ export const StageApp: React.FC<StageAppProps> = ({
   const hudStatusMeta = HUD_STATUS_TEXT[state.hudStatus];
   const emotionMeta = resolveEmotionLabel(character, state.currentEmotion);
 
-  const selectedCard: SkillCardItem | null = (() => {
-    if (!state.selectedToolUseId) return null;
-    const activeHit = state.skillCards.find(
-      (c) => c.toolUseId === state.selectedToolUseId
-    );
-    if (activeHit) return activeHit;
-
-    let startEv: Extract<StageEvent, { type: 'tool_start' }> | null = null;
-    let endEv: Extract<StageEvent, { type: 'tool_end' }> | null = null;
-    for (const ev of state.events) {
-      if (
-        ev.type === 'tool_start' &&
-        ev.toolUseId === state.selectedToolUseId
-      ) {
-        startEv = ev;
-      } else if (
-        ev.type === 'tool_end' &&
-        ev.toolUseId === state.selectedToolUseId
-      ) {
-        endEv = ev;
-      }
-    }
-    if (!startEv && !endEv) return null;
-    const diff = endEv?.diff;
-    return {
-      toolUseId: state.selectedToolUseId,
-      tool: startEv?.tool ?? (diff ? 'edit' : 'other'),
-      rawName: startEv?.rawName ?? 'tool',
-      summary: startEv?.summary ?? endEv?.summary ?? '历史工具调用档案',
-      file: startEv?.file,
-      startedAt: startEv?.at ?? endEv?.at ?? Date.now(),
-      endedAt: endEv?.at,
-      status: endEv ? (endEv.ok ? 'success' : 'error') : 'running',
-      endSummary: endEv?.summary,
-      diff,
-      output: endEv?.output,
-      diffStats: computeDiffStats(diff),
-      collapsedToLog: true,
-    };
-  })();
-
   const latestUserMsg = [...state.events]
     .reverse()
     .find((ev) => ev.type === 'user_message');
@@ -953,6 +1233,33 @@ export const StageApp: React.FC<StageAppProps> = ({
     },
     { added: 0, removed: 0 }
   );
+
+  const handleReplayAllOutFinish = () => {
+    playSfx('complete');
+    setAllOutFinishData({
+      key: Date.now(),
+      characterId: character.id,
+      characterName: character.name,
+      codename: character.codename,
+      themeColor: character.themeColor,
+      durationSec: turnDurationSec === '0.0' ? '4.8' : turnDurationSec,
+      filesCount: touchedFiles.length,
+      added: totalDiffStats.added,
+      removed: totalDiffStats.removed,
+      toolCount: state.skillCards.length,
+      summaryText: state.lastTurnSummary,
+    });
+  };
+
+  const canBatonPass =
+    sourceMode === 'demo' ||
+    state.skillCards.length > 0 ||
+    state.events.some(
+      (e) =>
+        e.type === 'user_message' ||
+        e.type === 'worker_text' ||
+        e.type === 'tool_end'
+    );
 
   if (state.engineeringView) {
     return (
@@ -1012,6 +1319,9 @@ export const StageApp: React.FC<StageAppProps> = ({
         'user_message',
         'steer_queued',
         'character_line',
+        'sub_navigator_line',
+        'baton_pass',
+        'context_compacted',
         'worker_text',
         'tool_start',
         'permission_request',
@@ -1138,6 +1448,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                   state.currentEmotion === 'working' ||
                   isLongWaiting)
               }
+              onTouchZone={handleTouchCharacterZone}
             />
           </div>
 
@@ -1464,12 +1775,15 @@ export const StageApp: React.FC<StageAppProps> = ({
                   </span>
                   <button
                     type="button"
-                    className="p5-compaction-trigger-btn"
+                    className={`p5-compaction-trigger-btn ${
+                      isCompacting ? 'is-compacting' : ''
+                    }`}
                     data-testid="trigger-compaction-btn"
-                    onClick={handleTriggerCompactionDemo}
-                    title="触发 DSH 历史上下文记忆蒸馏压缩演出"
+                    onClick={handleTriggerCompaction}
+                    disabled={isCompacting}
+                    title="触发历史上下文记忆蒸馏压缩"
                   >
-                    ✦ 记忆凝炼
+                    {isCompacting ? '✦ 凝炼中…' : '✦ 记忆凝炼'}
                   </button>
                 </div>
               </div>
@@ -1504,6 +1818,28 @@ export const StageApp: React.FC<StageAppProps> = ({
 
             <div className="p5-workspace-header-right">
               <SfxMuteButton />
+              {state.serverSettings.tts?.enabled && (
+                <TtsMuteButton
+                  onToggleServerSync={(enabled) =>
+                    handleUpdateSettings({ tts: { enabled } })
+                  }
+                />
+              )}
+
+              <button
+                type="button"
+                className="p5-pill-btn p5-pill-btn--trophy"
+                onClick={() => dispatch({ type: 'TOGGLE_GIT_DRAWER', open: true })}
+                data-testid="git-trophy-btn"
+                title="查看工作区全量 Git 变更、单文件撤回与一键提交"
+              >
+                🗂 战利品变更
+                {state.gitStatus.loaded && state.gitStatus.files.length > 0 && (
+                  <span className="p5-trophy-count">
+                    {state.gitStatus.files.length}
+                  </span>
+                )}
+              </button>
 
               <button
                 type="button"
@@ -1566,12 +1902,25 @@ export const StageApp: React.FC<StageAppProps> = ({
                     : `等待${uiCopy.userTitle}下达第一条任务指令……`}
                 </span>
                 {state.lastTurnOk !== null && !state.turnActive && (
-                  <span
-                    className="p5-mission-done-stamp"
-                    data-testid="turn-done-badge"
-                  >
-                    {state.lastTurnOk ? '✓ 已完成' : '■ 已中止'}
-                  </span>
+                  <>
+                    <span
+                      className="p5-mission-done-stamp"
+                      data-testid="turn-done-badge"
+                    >
+                      {state.lastTurnOk ? '✓ 已完成' : '■ 已中止'}
+                    </span>
+                    {state.lastTurnOk && (
+                      <button
+                        type="button"
+                        className="p5-replay-allout-btn"
+                        data-testid="replay-allout-btn"
+                        onClick={handleReplayAllOutFinish}
+                        title="重播本轮总攻击任务结算演出"
+                      >
+                        ✦ 战果演出
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -2030,7 +2379,22 @@ export const StageApp: React.FC<StageAppProps> = ({
                       ■ 喊停 (STOP)
                     </button>
                   </>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    className="p5-mini-chip p5-mini-chip--btn is-baton"
+                    data-testid="baton-pass-btn"
+                    disabled={!canBatonPass}
+                    onClick={() => setBatonModalOpen(true)}
+                    title={
+                      canBatonPass
+                        ? '将当前会话摘要与代码改动交接给另一位角色接力推进'
+                        : '先完成至少一轮对话或修改后即可发起怪盗团换手接力'
+                    }
+                  >
+                    ⚡ 换手接力
+                  </button>
+                )}
               </div>
 
               <button
@@ -2109,6 +2473,18 @@ export const StageApp: React.FC<StageAppProps> = ({
         }
       />
 
+      {/* ── P5 SUB-NAVIGATOR DIAMOND RADAR CAMEO (右上角菱形雷达支援窗，绝不遮挡弹窗) ── */}
+      <NavigatorCutin data={naviCutinData} onDismiss={dismissNaviCutin} />
+
+      {/* ── P5 BATON PASS LIGHTNING RELAY CUT-IN (1.4s 击掌换手接力大演出) ── */}
+      <BatonPassCutin data={batonCutinData} onDismiss={dismissBatonCutin} />
+
+      {/* ── P5 ALL-OUT FINISH OVERLAY (2.4s 总攻击华丽收工结算大演出) ── */}
+      <AllOutFinishOverlay
+        data={allOutFinishData}
+        onDismiss={dismissAllOutFinish}
+      />
+
       {/* ── DSH MEMORY COMPACTION CUT-IN EFFECT (记忆凝炼专属技能演出) ── */}
       {compactionState.activeCutin && (
         <div
@@ -2136,17 +2512,39 @@ export const StageApp: React.FC<StageAppProps> = ({
       <PermissionModal
         permission={state.pendingPermission}
         selectedChoice={state.permissionChoice}
+        characterId={character.id}
         characterName={shortNickname}
+        portraitUrl={
+          state.characters.find((c) => c.id === character.id)?.portraitUrl
+        }
         onSelectChoice={(choice) =>
           dispatch({ type: 'SET_PERMISSION_CHOICE', choice })
         }
         onConfirm={handleConfirmPermission}
       />
 
+      <BatonPassModal
+        open={batonModalOpen}
+        activeCharacterId={character.id}
+        characters={state.characters}
+        settings={state.serverSettings}
+        onClose={() => setBatonModalOpen(false)}
+        onConfirm={handleConfirmBatonPass}
+      />
+
       <ArchiveModal
         card={selectedCard}
+        gitDrawerOpen={state.gitDrawerOpen}
+        gitStatus={state.gitStatus}
+        gitOpNotice={state.gitOpNotice}
         characterName={shortNickname}
-        onClose={() => dispatch({ type: 'SELECT_SKILL_CARD', toolUseId: null })}
+        onClose={() => {
+          dispatch({ type: 'SELECT_SKILL_CARD', toolUseId: null });
+          dispatch({ type: 'TOGGLE_GIT_DRAWER', open: false });
+        }}
+        onRequestGitStatus={handleRequestGitStatus}
+        onRevertGitFile={handleRevertGitFile}
+        onCommitGit={handleCommitGit}
       />
 
       <BacklogModal
@@ -2165,12 +2563,14 @@ export const StageApp: React.FC<StageAppProps> = ({
         activeTab={state.systemMenuTab}
         settings={state.serverSettings}
         settingsSyncedAt={state.settingsSyncedAt}
+        currentSessionId={state.sessionInfo?.sessionId ?? state.sessionId}
         characters={state.characters}
         workerAdapters={state.workerAdapters}
         workerModels={state.workerModels}
         voiceModels={state.voiceModels}
         workerConnTest={state.workerConnTest}
         voiceConnTest={state.voiceConnTest}
+        ttsConnTest={state.ttsConnTest}
         onSelectTab={(tab: SystemMenuTab) =>
           dispatch({ type: 'SET_SYSTEM_TAB', tab })
         }
@@ -2179,6 +2579,7 @@ export const StageApp: React.FC<StageAppProps> = ({
         onUpdateSettings={handleUpdateSettings}
         onListModels={handleListModels}
         onTestConnection={handleTestConnection}
+        onSynthesizeTts={handleSynthesizeTts}
         onStartNewSessionWithDir={handleStartNewSessionWithDir}
       />
 

@@ -302,6 +302,15 @@ export class DshStageSource implements StageDataSource {
           apiKeySet: true,
         },
       },
+      characterBrains: Object.fromEntries(
+        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [
+          cid,
+          {
+            rolePrompt: brain.rolePrompt,
+            ...(cid === this.activeCharacterId ? { model } : {}),
+          },
+        ])
+      ),
       voice: {
         enabled: false,
         endpoint: {
@@ -310,6 +319,16 @@ export class DshStageSource implements StageDataSource {
           apiKeySet: false,
         },
         maxLinesPerMinute: DEFAULT_SETTINGS.voice.maxLinesPerMinute,
+      },
+      tts: {
+        enabled: DEFAULT_SETTINGS.tts.enabled,
+        provider: DEFAULT_SETTINGS.tts.provider,
+        characterVoices: { ...DEFAULT_SETTINGS.tts.characterVoices },
+        endpoint: {
+          baseUrl: DEFAULT_SETTINGS.tts.endpoint.baseUrl,
+          apiKeySet: false,
+        },
+        speakingRate: DEFAULT_SETTINGS.tts.speakingRate,
       },
       performance: { ...DEFAULT_SETTINGS.performance },
     };
@@ -1075,7 +1094,10 @@ export class DshStageSource implements StageDataSource {
       }
       this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
     }
-    const requestedModel = patch.worker?.model;
+    const brainModel = patch.characterBrains
+      ? Object.values(patch.characterBrains).find((b) => typeof b?.model === 'string' && b.model.trim())?.model
+      : undefined;
+    const requestedModel = patch.worker?.model ?? brainModel;
     if (typeof requestedModel === 'string' && requestedModel.trim()) {
       const model = requestedModel.trim();
       const provider =
@@ -1112,7 +1134,12 @@ export class DshStageSource implements StageDataSource {
     });
   }
 
-  public testConnection(target: 'worker' | 'voice'): void {
+  public compactSession(): void {
+    const binding = this.ctx.sessions?.binding?.(this.sessionId);
+    void binding?.session?.command?.('/compact');
+  }
+
+  public testConnection(target: 'worker' | 'voice' | 'tts'): void {
     this.emitMessage({
       type: 'connection_test',
       target,

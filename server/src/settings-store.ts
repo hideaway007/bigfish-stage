@@ -2,10 +2,20 @@ import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promise
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_SETTINGS, type AppSettings, type PublicSettings, type SettingsPatch } from '../../src/shared/settings';
+import {
+  DEFAULT_CHARACTER_VOICES,
+  DEFAULT_SETTINGS,
+  type AppSettings,
+  type CharacterBrainSettings,
+  type ProviderEndpoint,
+  type PublicizeCharacterBrain,
+  type PublicSettings,
+  type SettingsPatch,
+} from '../../src/shared/settings';
 
 export const defaultSettingsPath = () => join(homedir(), '.config/bigfish-stage/settings.json');
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
 export function deepMerge<T>(base: T, patch: unknown): T {
   if (!object(base) || !object(patch)) return structuredClone(patch as T);
   const result = structuredClone(base) as Record<string, unknown>;
@@ -15,12 +25,28 @@ export function deepMerge<T>(base: T, patch: unknown): T {
   }
   return result as T;
 }
-function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+function validateHttpEndpoint(endpoint: unknown, label = '模型接口'): ProviderEndpoint {
+  assert(object(endpoint) && typeof endpoint.baseUrl === 'string' && (endpoint.apiKey === undefined || typeof endpoint.apiKey === 'string'), `${label}无效`);
+  const url = new URL(endpoint.baseUrl);
+  assert(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash, `${label}地址必须是 HTTP(S) 地址且不能内嵌凭据`);
+  return {
+    baseUrl: endpoint.baseUrl.replace(/\/+$/, ''),
+    ...(endpoint.apiKey ? { apiKey: endpoint.apiKey } : {}),
+  };
+}
+
 export function validateSettings(value: unknown): AppSettings {
   assert(object(value), '设置必须是对象');
-  const s = value as unknown as AppSettings;
-  const str = (v: unknown) => typeof v === 'string';
+  const merged = deepMerge(DEFAULT_SETTINGS, value);
+  const s = merged as unknown as AppSettings;
+  const str = (v: unknown): v is string => typeof v === 'string';
   const num = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+
   assert(s.version === 1 && str(s.activeCharacterId) && /^[\w-]+$/.test(s.activeCharacterId), '角色或设置版本无效');
   assert(s.projectDir === null || str(s.projectDir), '项目目录无效');
   assert(Array.isArray(s.recentProjects) && s.recentProjects.every(str), '最近项目列表无效');
@@ -29,36 +55,106 @@ export function validateSettings(value: unknown): AppSettings {
   assert(s.worker.extra === undefined || (object(s.worker.extra) && Object.values(s.worker.extra).every(str)), '适配器选项无效');
   assert(['endpoint', 'agent-default'].includes(s.worker.connection), '执行 Agent 连接方式无效');
   assert(object(s.voice) && typeof s.voice.enabled === 'boolean' && object(s.voice.endpoint), '台词设置无效');
-  const ep = s.voice.endpoint, workerEp = s.worker.endpoint;
+
+  const ep = s.voice.endpoint;
   assert(str(ep.model) && !!ep.model.trim(), '模型接口无效');
-  for (const endpoint of [ep, workerEp]) {
-    assert(object(endpoint) && str(endpoint.baseUrl) && (endpoint.apiKey === undefined || str(endpoint.apiKey)), '模型接口无效');
-    const url = new URL(endpoint.baseUrl);
-    assert(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash, '模型地址必须是 HTTP(S) 地址且不能内嵌凭据');
-  }
+  const cleanVoiceBase = validateHttpEndpoint(ep, '模型接口');
+  const cleanWorkerEp = validateHttpEndpoint(s.worker.endpoint, '模型接口');
+
   assert(num(s.voice.maxLinesPerMinute, 0, 60) && object(s.performance) && num(s.performance.typingCharsPerSec, 1, 1000), '限流或打字速度无效');
-  // Whitelist the public contract; never persist or echo arbitrary fields from a client.
+
+  // Validate per-character brains
+  const cleanBrains: Record<string, CharacterBrainSettings> = {};
+  if (object(s.characterBrains)) {
+    for (const [charId, rawBrain] of Object.entries(s.characterBrains)) {
+      if (!/^[\w-]+$/.test(charId) || !object(rawBrain)) continue;
+      const b = rawBrain as CharacterBrainSettings;
+      const entry: CharacterBrainSettings = {};
+      if (str(b.model) && b.model.trim()) entry.model = b.model.trim();
+      if (typeof b.useCustomEndpoint === 'boolean') entry.useCustomEndpoint = b.useCustomEndpoint;
+      if (b.endpoint && object(b.endpoint) && str(b.endpoint.baseUrl) && b.endpoint.baseUrl.trim()) {
+        entry.endpoint = validateHttpEndpoint(b.endpoint, `角色 ${charId} 接口`);
+      }
+      if (b.activeSessionId === null || (str(b.activeSessionId) && b.activeSessionId.trim())) {
+        entry.activeSessionId = b.activeSessionId ? b.activeSessionId.trim() : null;
+      }
+      if (str(b.rolePrompt) && b.rolePrompt.trim()) {
+        entry.rolePrompt = b.rolePrompt.trim().slice(0, 500);
+      }
+      cleanBrains[charId] = entry;
+    }
+  }
+
+  // Validate TTS settings
+  const rawTts = object(s.tts) ? s.tts : DEFAULT_SETTINGS.tts;
+  assert(typeof rawTts.enabled === 'boolean', 'TTS 开关无效');
+  assert(['google-cloud', 'openai-tts'].includes(rawTts.provider), 'TTS 服务商无效');
+  const cleanTtsEp = validateHttpEndpoint(rawTts.endpoint ?? DEFAULT_SETTINGS.tts.endpoint, 'TTS 接口');
+  const speakingRate = num(rawTts.speakingRate, 0.5, 2.0) ? rawTts.speakingRate : 1.04;
+  const cleanVoices: Record<string, string> = { ...DEFAULT_CHARACTER_VOICES };
+  if (object(rawTts.characterVoices)) {
+    for (const [charId, vName] of Object.entries(rawTts.characterVoices)) {
+      if (/^[\w-]+$/.test(charId) && str(vName) && vName.trim()) {
+        cleanVoices[charId] = vName.trim();
+      }
+    }
+  }
+
   return {
-    version: 1, activeCharacterId: s.activeCharacterId, projectDir: s.projectDir,
+    version: 1,
+    activeCharacterId: s.activeCharacterId,
+    projectDir: s.projectDir,
     recentProjects: s.recentProjects.slice(0, 20),
-    worker: { adapter: s.worker.adapter, model: s.worker.model, sandbox: s.worker.sandbox, connection: s.worker.connection,
-      endpoint: { baseUrl: workerEp.baseUrl.replace(/\/+$/, ''), ...(workerEp.apiKey ? { apiKey: workerEp.apiKey } : {}) },
-      ...(s.worker.extra ? { extra: { ...s.worker.extra } } : {}) },
-    voice: { enabled: s.voice.enabled, maxLinesPerMinute: s.voice.maxLinesPerMinute,
-      endpoint: { baseUrl: ep.baseUrl.replace(/\/+$/, ''), model: ep.model, ...(ep.apiKey ? { apiKey: ep.apiKey } : {}) } },
+    worker: {
+      adapter: s.worker.adapter,
+      model: s.worker.model,
+      sandbox: s.worker.sandbox,
+      connection: s.worker.connection,
+      endpoint: cleanWorkerEp,
+      ...(s.worker.extra ? { extra: { ...s.worker.extra } } : {}),
+    },
+    characterBrains: cleanBrains,
+    voice: {
+      enabled: s.voice.enabled,
+      maxLinesPerMinute: s.voice.maxLinesPerMinute,
+      endpoint: { ...cleanVoiceBase, model: ep.model },
+    },
+    tts: {
+      enabled: rawTts.enabled,
+      provider: rawTts.provider,
+      characterVoices: cleanVoices,
+      endpoint: cleanTtsEp,
+      ...(str(rawTts.gcpProject) && rawTts.gcpProject.trim() ? { gcpProject: rawTts.gcpProject.trim() } : {}),
+      speakingRate,
+    },
     performance: { typingCharsPerSec: s.performance.typingCharsPerSec },
   };
 }
+
 export function publicSettings(settings: AppSettings): PublicSettings {
   const clean = structuredClone(settings);
   const { apiKey: voiceKey, ...voiceEndpoint } = clean.voice.endpoint;
   const { apiKey: workerKey, ...workerEndpoint } = clean.worker.endpoint;
+  const { apiKey: ttsKey, ...ttsEndpoint } = clean.tts.endpoint;
+
+  const publicBrains: Record<string, PublicizeCharacterBrain> = {};
+  for (const [charId, brain] of Object.entries(clean.characterBrains ?? {})) {
+    const { endpoint, ...rest } = brain;
+    publicBrains[charId] = {
+      ...rest,
+      ...(endpoint ? { endpoint: { baseUrl: endpoint.baseUrl, apiKeySet: !!endpoint.apiKey } } : {}),
+    };
+  }
+
   return {
     ...clean,
     worker: { ...clean.worker, endpoint: { ...workerEndpoint, apiKeySet: !!workerKey } },
+    characterBrains: publicBrains,
     voice: { ...clean.voice, endpoint: { ...voiceEndpoint, apiKeySet: !!voiceKey } },
+    tts: { ...clean.tts, endpoint: { ...ttsEndpoint, apiKeySet: !!ttsKey } },
   };
 }
+
 export class SettingsStore {
   private value: AppSettings = structuredClone(DEFAULT_SETTINGS);
   constructor(readonly path = defaultSettingsPath()) {}
@@ -68,7 +164,11 @@ export class SettingsStore {
     try {
       this.value = validateSettings(deepMerge(DEFAULT_SETTINGS, JSON.parse(await readFile(this.path, 'utf8'))));
       await chmod(this.path, 0o600);
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('无法读取本地设置文件，请检查 JSON 与设置格式'); }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new Error('无法读取本地设置文件，请检查 JSON 与设置格式');
+      }
+    }
     let dirValid = false;
     if (this.value.projectDir) {
       try {

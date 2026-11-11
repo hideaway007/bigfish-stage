@@ -1,13 +1,13 @@
 /**
- * 设置项格式（Phase 1 契约）
+ * 设置项格式（Phase 2 契约：单平台 DeepSeek / DSH 底座 + 每角色独立大脑 + Google Cloud TTS）
  *
  * 服务端把设置存在用户本机：~/.config/bigfish-stage/settings.json（权限 600），绝不写进仓库。
  * 发给 UI 的是 PublicSettings：所有 apiKey 都被替换成 apiKeySet: boolean。
  */
 
-/** 任意 OpenAI 兼容接口的连接信息 */
+/** 任意 OpenAI / DeepSeek 兼容接口的连接信息 */
 export interface ProviderEndpoint {
-  /** 例如 http://127.0.0.1:3425/v1 */
+  /** 例如 https://api.deepseek.com/v1 或本机网关 http://127.0.0.1:3425/v1 */
   baseUrl: string;
   apiKey?: string;
 }
@@ -15,18 +15,31 @@ export interface ProviderEndpoint {
 export type ModelEndpoint = ProviderEndpoint & { model: string };
 
 export interface WorkerSettings {
-  /** 执行 Agent 适配器 ID。Phase 1 只有 'codex'，以后加 'claude-code' 等 */
+  /** 执行 Agent 适配器 ID：默认 'dsh'（DeepSeek Harness），轻量直连 'direct-chat' */
   adapter: string;
-  /** 执行 Agent 使用的模型，由用户自选（传给适配器） */
+  /** 默认模型（各角色可在 characterBrains 中单独覆盖自己的模型） */
   model: string;
-  /** 自定义 OpenAI 兼容接口，或沿用本机 Agent 的登录与配置 */
+  /** 自定义 OpenAI/DeepSeek 兼容接口，或沿用本机 DSH 默认配置 */
   connection: 'endpoint' | 'agent-default';
   endpoint: ProviderEndpoint;
   sandbox: 'read-only' | 'workspace-write';
   /** Agent 潜入预设模式（standard | ptc | minimal | cordis 或自定义预设 ID） */
   agentPreset?: string;
-  /** 适配器专属的额外选项（如 codex 可执行文件路径） */
+  /** 适配器专属的额外选项 */
   extra?: Record<string, string>;
+}
+
+/** 单个角色的独立大脑与独立会话槽配置（围绕统一 DeepSeek / DSH 底座） */
+export interface CharacterBrainSettings {
+  /** 角色独立使用的模型名（留空则沿用全局 worker.model） */
+  model?: string;
+  /** 是否使用该角色单独的 API Endpoint（默认 false，直接复用全局 DeepSeek API Key） */
+  useCustomEndpoint?: boolean;
+  endpoint?: ProviderEndpoint;
+  /** 该角色当前驻留的独立会话 ID（切换角色自动切回她自己的会话房间，互不串脑子） */
+  activeSessionId?: string | null;
+  /** 该角色额外的职责/人格指令补充 */
+  rolePrompt?: string;
 }
 
 export interface VoiceSettings {
@@ -35,6 +48,21 @@ export interface VoiceSettings {
   endpoint: ModelEndpoint;
   /** 每分钟最多生成几句模型台词（限流防刷屏） */
   maxLinesPerMinute: number;
+}
+
+/** 角色实时语音合成（TTS）设置，默认支持本机 Google Cloud Chirp3-HD 中文女声 */
+export interface TtsSettings {
+  /** 是否开启角色台词实时语音播报 */
+  enabled: boolean;
+  provider: 'google-cloud' | 'openai-tts';
+  /** 各角色对应的声线名称（如 cmn-CN-Chirp3-HD-Leda） */
+  characterVoices: Record<string, string>;
+  /** 可选：Google Cloud API Key 或 OpenAI TTS Endpoint Key；留空时自动探测本机 gcloud ADC */
+  endpoint: ProviderEndpoint;
+  /** 可选：Google Cloud Quota Project ID（仅存本机 settings.json，绝不入库） */
+  gcpProject?: string;
+  /** 语速倍率 0.7 ~ 1.4，默认 1.04 */
+  speakingRate: number;
 }
 
 export interface PerformanceSettings {
@@ -49,25 +77,76 @@ export interface AppSettings {
   projectDir: string | null;
   recentProjects: string[];
   worker: WorkerSettings;
+  /** 每个角色的独立大脑与独立会话绑定 */
+  characterBrains: Record<string, CharacterBrainSettings>;
   voice: VoiceSettings;
+  tts: TtsSettings;
   performance: PerformanceSettings;
 }
 
 type Publicize<T> = T extends ProviderEndpoint
   ? Omit<T, 'apiKey'> & { apiKeySet: boolean }
-  : T extends object
-    ? { [K in keyof T]: Publicize<T[K]> }
-    : T;
+  : T extends Record<string, CharacterBrainSettings>
+    ? Record<string, PublicizeCharacterBrain>
+    : T extends object
+      ? { [K in keyof T]: Publicize<T[K]> }
+      : T;
+
+export interface PublicizeCharacterBrain {
+  model?: string;
+  useCustomEndpoint?: boolean;
+  endpoint?: Omit<ProviderEndpoint, 'apiKey'> & { apiKeySet: boolean };
+  activeSessionId?: string | null;
+  rolePrompt?: string;
+}
 
 export type PublicSettings = Publicize<AppSettings>;
 
 /** UI 发来的局部修改。apiKey: '' 表示清除，undefined 表示不改 */
 export type SettingsPatch = {
-  [K in keyof AppSettings]?: AppSettings[K] extends object
-    ? AppSettings[K] extends unknown[]
-      ? AppSettings[K]
-      : { [P in keyof AppSettings[K]]?: AppSettings[K][P] extends object ? Partial<AppSettings[K][P]> : AppSettings[K][P] }
-    : AppSettings[K];
+  version?: 1;
+  activeCharacterId?: string;
+  projectDir?: string | null;
+  recentProjects?: string[];
+  worker?: Partial<Omit<WorkerSettings, 'endpoint'>> & {
+    endpoint?: Partial<ProviderEndpoint>;
+  };
+  characterBrains?: Record<
+    string,
+    Partial<Omit<CharacterBrainSettings, 'endpoint'>> & {
+      endpoint?: Partial<ProviderEndpoint>;
+    }
+  >;
+  voice?: Partial<Omit<VoiceSettings, 'endpoint'>> & {
+    endpoint?: Partial<ModelEndpoint>;
+  };
+  tts?: Partial<Omit<TtsSettings, 'endpoint' | 'characterVoices'>> & {
+    endpoint?: Partial<ProviderEndpoint>;
+    characterVoices?: Record<string, string>;
+  };
+  performance?: Partial<PerformanceSettings>;
+};
+
+export const DEFAULT_CHARACTER_VOICES: Record<string, string> = {
+  'deepseek-v4-pro': 'Leda',
+  'gemini-4-argon': 'Autonoe',
+  'claude-opus-5-5': 'Laomedeia',
+  'codex-dragon': 'Zephyr',
+};
+
+export const DEFAULT_CHARACTER_BRAINS: Record<string, CharacterBrainSettings> = {
+  'deepseek-v4-pro': {
+    rolePrompt: '你是主舞台看板娘大肥鱼，擅长全栈快速落地与长任务冲锋。',
+  },
+  'gemini-4-argon': {
+    rolePrompt: '你是焊工猫娘哈基米，专精前端界面美学、动效焊接与视觉精修。',
+  },
+  'claude-opus-5-5': {
+    rolePrompt: '你是知性文学少女 Claude 娘，擅长复杂架构推演、重构设计与长文梳理。',
+  },
+  'codex-dragon': {
+    rolePrompt: '你是银角白翼的高洁白龙娘，擅长深水区 Bug 洞察、全局逻辑推演与严苛代码审查。',
+  },
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -76,14 +155,25 @@ export const DEFAULT_SETTINGS: AppSettings = {
   projectDir: null,
   recentProjects: [],
   worker: {
-    adapter: 'codex', model: 'gpt-6.1-sol', sandbox: 'workspace-write', agentPreset: 'standard',
-    connection: 'endpoint', endpoint: { baseUrl: 'http://127.0.0.1:3425/v1' },
+    adapter: 'dsh',
+    model: 'deepseek-chat',
+    sandbox: 'workspace-write',
+    agentPreset: 'standard',
+    connection: 'endpoint',
+    endpoint: { baseUrl: 'https://api.deepseek.com/v1' },
   },
+  characterBrains: DEFAULT_CHARACTER_BRAINS,
   voice: {
     enabled: true,
-    // 默认指向本机 OpenAI 兼容网关；用户可改成任意 OpenAI 兼容地址
-    endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', model: 'gpt-4o-mini' },
+    endpoint: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
     maxLinesPerMinute: 6,
+  },
+  tts: {
+    enabled: false,
+    provider: 'google-cloud',
+    characterVoices: { ...DEFAULT_CHARACTER_VOICES },
+    endpoint: { baseUrl: 'https://texttospeech.googleapis.com' },
+    speakingRate: 1.04,
   },
   performance: { typingCharsPerSec: 40 },
 };
@@ -92,7 +182,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export interface WorkerAdapterInfo {
   id: string;
   name: string;
-  /** 本机是否可用（如 codex 命令是否存在），不可用时附原因 */
+  /** 本机是否可用（如 dsh 命令是否存在），不可用时附原因 */
   available: boolean;
   unavailableReason?: string;
 }

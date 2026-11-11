@@ -27,6 +27,8 @@ const VALID_TOOL_KINDS = new Set([
   'other',
 ]);
 
+const VALID_TOUCH_ZONES = new Set(['head', 'face', 'body', 'prop']);
+
 const VALID_STAGE_EVENT_TYPES = new Set([
   'session_started',
   'user_message',
@@ -41,6 +43,10 @@ const VALID_STAGE_EVENT_TYPES = new Set([
   'permission_resolved',
   'turn_done',
   'error',
+  'context_usage',
+  'context_compacted',
+  'baton_pass',
+  'sub_navigator_line',
   'character_line',
 ]);
 
@@ -53,11 +59,31 @@ function isValidReactionKey(key) {
   if (key.startsWith('tool_end:')) {
     return VALID_TOOL_KINDS.has(key.slice('tool_end:'.length));
   }
+  if (key.startsWith('touch:')) {
+    return VALID_TOUCH_ZONES.has(key.slice('touch:'.length));
+  }
   return false;
 }
 
 function isNonEmptyString(val) {
   return typeof val === 'string' && val.trim().length > 0;
+}
+
+function validateReactionObject(label, reaction, errors) {
+  if (!reaction || typeof reaction !== 'object') {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  if (!VALID_EMOTIONS.has(reaction.emotion)) {
+    errors.push(`${label} has invalid emotion "${reaction.emotion}"`);
+  }
+  if (
+    !Array.isArray(reaction.lines) ||
+    reaction.lines.length === 0 ||
+    !reaction.lines.every(isNonEmptyString)
+  ) {
+    errors.push(`${label}.lines must be a non-empty string[]`);
+  }
 }
 
 function validateCharacterDir(dirName) {
@@ -92,8 +118,10 @@ function validateCharacterDir(dirName) {
   if (pack.accentColor !== undefined && !isNonEmptyString(pack.accentColor)) {
     errors.push(`accentColor must be a non-empty string when provided`);
   }
+  if (pack.defaultVoice !== undefined && !isNonEmptyString(pack.defaultVoice)) {
+    errors.push(`defaultVoice must be a non-empty string when provided`);
+  }
 
-  // Persona check
   if (!pack.persona || typeof pack.persona !== 'object') {
     errors.push(`persona must be an object`);
   } else {
@@ -112,7 +140,6 @@ function validateCharacterDir(dirName) {
     }
   }
 
-  // Reactions check
   if (!pack.reactions || typeof pack.reactions !== 'object') {
     errors.push(`reactions must be an object`);
   } else {
@@ -120,24 +147,35 @@ function validateCharacterDir(dirName) {
       if (!isValidReactionKey(rKey)) {
         errors.push(`Invalid ReactionKey "${rKey}"`);
       }
-      if (!reaction || typeof reaction !== 'object') {
-        errors.push(`Reaction "${rKey}" must be an object`);
-        continue;
-      }
-      if (!VALID_EMOTIONS.has(reaction.emotion)) {
-        errors.push(`Reaction "${rKey}" has invalid emotion "${reaction.emotion}"`);
-      }
-      if (
-        !Array.isArray(reaction.lines) ||
-        reaction.lines.length === 0 ||
-        !reaction.lines.every(isNonEmptyString)
-      ) {
-        errors.push(`Reaction "${rKey}".lines must be a non-empty string[]`);
+      validateReactionObject(`Reaction "${rKey}"`, reaction, errors);
+    }
+  }
+
+  if (pack.touchReactions !== undefined) {
+    if (!pack.touchReactions || typeof pack.touchReactions !== 'object' || Array.isArray(pack.touchReactions)) {
+      errors.push(`touchReactions must be an object when provided`);
+    } else {
+      for (const [zone, reaction] of Object.entries(pack.touchReactions)) {
+        if (!VALID_TOUCH_ZONES.has(zone)) {
+          errors.push(`Invalid touch zone "${zone}" in touchReactions`);
+        }
+        validateReactionObject(`touchReactions.${zone}`, reaction, errors);
       }
     }
   }
 
-  // Recommended models check
+  if (pack.touchZoneLabels !== undefined) {
+    if (!pack.touchZoneLabels || typeof pack.touchZoneLabels !== 'object' || Array.isArray(pack.touchZoneLabels)) {
+      errors.push(`touchZoneLabels must be an object when provided`);
+    } else {
+      for (const [zone, label] of Object.entries(pack.touchZoneLabels)) {
+        if (!VALID_TOUCH_ZONES.has(zone) || !isNonEmptyString(label)) {
+          errors.push(`Invalid touchZoneLabels entry "${zone}"`);
+        }
+      }
+    }
+  }
+
   if (
     pack.recommendedModels !== undefined &&
     (!Array.isArray(pack.recommendedModels) ||
@@ -146,7 +184,6 @@ function validateCharacterDir(dirName) {
     errors.push(`recommendedModels must be string[] when provided`);
   }
 
-  // Art manifest & referenced files check
   if (!pack.art || typeof pack.art !== 'object') {
     errors.push(`art must be an object`);
   } else if (pack.art.renderer === 'sprites') {
@@ -230,8 +267,9 @@ function main() {
           ? Object.keys(res.pack.art.emotions).length
           : 0;
       const reactionCount = Object.keys(res.pack.reactions).length;
+      const touchCount = res.pack.touchReactions ? Object.keys(res.pack.touchReactions).length : 0;
       console.log(
-        `✓ Character pack [${dirName}] OK (${res.pack.codename} / ${res.pack.name}, renderer=${res.pack.art.renderer}, sprites=${emotionCount}, reactions=${reactionCount})`
+        `✓ Character pack [${dirName}] OK (${res.pack.codename} / ${res.pack.name}, voice=${res.pack.defaultVoice ?? 'default'}, sprites=${emotionCount}, reactions=${reactionCount}, touch=${touchCount})`
       );
     }
   }

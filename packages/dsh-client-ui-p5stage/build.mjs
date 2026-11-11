@@ -17,6 +17,7 @@ await mkdir(join(here, 'lib'), { recursive: true });
 
 const cssFiles = [
   'src/stage/stage.css',
+  'src/stage/cutins.css',
   'src/stage/polish.css',
   'src/stage/backlog.css',
   'src/stage/diffViewer.css',

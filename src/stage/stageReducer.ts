@@ -1,11 +1,17 @@
 import type { Emotion, StageEvent, ToolKind } from '../shared/stage-events';
 import type { CharacterSummary } from '../shared/character-pack';
 import {
+  DEFAULT_CHARACTER_BRAINS,
   DEFAULT_SETTINGS,
   type PublicSettings,
+  type PublicizeCharacterBrain,
   type WorkerAdapterInfo,
 } from '../shared/settings';
-import type { ServerMessage, SessionInfo } from '../shared/wire';
+import type {
+  GitChangedFile,
+  ServerMessage,
+  SessionInfo,
+} from '../shared/wire';
 import {
   DEFAULT_CHARACTER_ID,
   getCachedCharacterPack,
@@ -58,7 +64,7 @@ export interface ActiveDialogueLine {
   characterId: string;
   emotion: Emotion;
   text: string;
-  source?: 'preset' | 'model';
+  source?: 'preset' | 'model' | 'touch';
   replaceVersion: number;
   at: number;
 }
@@ -88,6 +94,23 @@ export interface ConnectionTestState {
   ok?: boolean;
   message?: string;
   latencyMs?: number;
+}
+
+export interface GitStatusState {
+  loading: boolean;
+  loaded: boolean;
+  isRepo: boolean;
+  branch?: string;
+  files: GitChangedFile[];
+  diff: string;
+  error?: string;
+}
+
+export interface GitOpNotice {
+  op: 'revert' | 'commit';
+  ok: boolean;
+  message: string;
+  at: number;
 }
 
 export interface StageState {
@@ -125,6 +148,7 @@ export interface StageState {
   systemMenuOpen: boolean;
   systemMenuTab: SystemMenuTab;
   fastForward: boolean;
+  gitDrawerOpen: boolean;
 
   serverSettings: PublicSettings;
   settingsSyncedAt: number | null;
@@ -136,6 +160,10 @@ export interface StageState {
   voiceModels: ModelListState;
   workerConnTest: ConnectionTestState;
   voiceConnTest: ConnectionTestState;
+  ttsConnTest: ConnectionTestState;
+
+  gitStatus: GitStatusState;
+  gitOpNotice: GitOpNotice | null;
 }
 
 export type StageAction =
@@ -147,11 +175,14 @@ export type StageAction =
   | { type: 'TOGGLE_BACKLOG'; open?: boolean }
   | { type: 'TOGGLE_ENGINEERING_VIEW'; open?: boolean }
   | { type: 'TOGGLE_SYSTEM_MENU'; open?: boolean; tab?: SystemMenuTab }
+  | { type: 'TOGGLE_GIT_DRAWER'; open?: boolean }
+  | { type: 'MARK_GIT_LOADING' }
+  | { type: 'CLEAR_GIT_OP_NOTICE' }
   | { type: 'SET_SYSTEM_TAB'; tab: SystemMenuTab }
   | { type: 'SET_FAST_FORWARD'; fast: boolean }
   | { type: 'SET_CHARACTER'; characterId: string }
   | { type: 'MARK_MODELS_LOADING'; target: 'worker' | 'voice' }
-  | { type: 'MARK_CONN_TESTING'; target: 'worker' | 'voice' }
+  | { type: 'MARK_CONN_TESTING'; target: 'worker' | 'voice' | 'tts' }
   | { type: 'DISMISS_ERROR' }
   | { type: 'TICK_TIMER'; now: number }
   | { type: 'RESET_STAGE' };
@@ -173,6 +204,22 @@ export function computeDiffStats(diff?: string): DiffStats | undefined {
 export function createDefaultPublicSettings(
   characterId: string = DEFAULT_CHARACTER_ID
 ): PublicSettings {
+  const characterBrains: Record<string, PublicizeCharacterBrain> = {};
+  for (const [id, brain] of Object.entries(DEFAULT_CHARACTER_BRAINS)) {
+    characterBrains[id] = {
+      model: brain.model,
+      useCustomEndpoint: Boolean(brain.useCustomEndpoint),
+      endpoint: brain.endpoint
+        ? {
+            baseUrl: brain.endpoint.baseUrl,
+            apiKeySet: Boolean(brain.endpoint.apiKey),
+          }
+        : undefined,
+      activeSessionId: brain.activeSessionId ?? null,
+      rolePrompt: brain.rolePrompt,
+    };
+  }
+
   return {
     version: 1,
     activeCharacterId: characterId,
@@ -182,6 +229,7 @@ export function createDefaultPublicSettings(
       ...DEFAULT_SETTINGS.worker,
       endpoint: { baseUrl: DEFAULT_SETTINGS.worker.endpoint.baseUrl, apiKeySet: false },
     },
+    characterBrains,
     voice: {
       enabled: DEFAULT_SETTINGS.voice.enabled,
       endpoint: {
@@ -190,6 +238,17 @@ export function createDefaultPublicSettings(
         apiKeySet: false,
       },
       maxLinesPerMinute: DEFAULT_SETTINGS.voice.maxLinesPerMinute,
+    },
+    tts: {
+      enabled: DEFAULT_SETTINGS.tts.enabled,
+      provider: DEFAULT_SETTINGS.tts.provider,
+      characterVoices: { ...DEFAULT_SETTINGS.tts.characterVoices },
+      endpoint: {
+        baseUrl: DEFAULT_SETTINGS.tts.endpoint.baseUrl,
+        apiKeySet: false,
+      },
+      gcpProject: DEFAULT_SETTINGS.tts.gcpProject,
+      speakingRate: DEFAULT_SETTINGS.tts.speakingRate,
     },
     performance: { ...DEFAULT_SETTINGS.performance },
   };
@@ -237,11 +296,22 @@ export function createInitialStageState(
     systemMenuOpen: false,
     systemMenuTab: 'characters',
     fastForward: false,
+    gitDrawerOpen: false,
 
     serverSettings: createDefaultPublicSettings(characterId),
     settingsSyncedAt: null,
     characters: defaultChars,
     workerAdapters: [
+      {
+        id: 'dsh',
+        name: 'DeepSeek Harness（全自动读写与终端执行）',
+        available: true,
+      },
+      {
+        id: 'direct-chat',
+        name: 'DeepSeek 直连模式（轻量极速对话）',
+        available: true,
+      },
       {
         id: 'codex',
         name: 'OpenAI Codex (app-server)',
@@ -254,6 +324,16 @@ export function createInitialStageState(
     voiceModels: { models: [], loading: false },
     workerConnTest: { testing: false },
     voiceConnTest: { testing: false },
+    ttsConnTest: { testing: false },
+
+    gitStatus: {
+      loading: false,
+      loaded: false,
+      isRepo: true,
+      files: [],
+      diff: '',
+    },
+    gitOpNotice: null,
   };
 }
 
@@ -334,7 +414,22 @@ function applySingleStageEvent(
         sessionId: event.sessionId,
         modelName: event.model ?? state.modelName,
         cwd: event.cwd ?? state.cwd,
+        characterId: event.characterId ?? state.characterId,
         hudStatus: 'idle',
+      };
+    }
+
+    case 'baton_pass': {
+      const nextCharId = event.toCharacterId || state.characterId;
+      const charChanged = nextCharId !== state.characterId;
+      return {
+        ...nextStateBase,
+        characterId: nextCharId,
+        characterSwitchKey: charChanged
+          ? state.characterSwitchKey + 1
+          : state.characterSwitchKey,
+        currentEmotion: 'working',
+        emotionSwitchKey: state.emotionSwitchKey + 1,
       };
     }
 
@@ -663,6 +758,62 @@ function applySingleStageEvent(
   }
 }
 
+function replayHistoryIntoState(
+  baseState: StageState,
+  history: StageEvent[],
+  turnActiveOverride?: boolean
+): StageState {
+  let nextState: StageState = {
+    ...baseState,
+    events: [],
+    skillCards: [],
+    steers: [],
+    pendingPermission: null,
+    lastPermissionDecision: null,
+    lastTurnOk: null,
+    lastTurnSummary: null,
+    turnActive: false,
+    turnStartedAt: null,
+    turnDurationMs: 0,
+    hudStatus: 'idle',
+    currentEmotion: 'idle',
+    currentLine: null,
+    lastError: null,
+  };
+
+  for (const ev of history) {
+    nextState = applySingleStageEvent(nextState, ev);
+  }
+
+  if (turnActiveOverride !== undefined) {
+    nextState = {
+      ...nextState,
+      turnActive: turnActiveOverride,
+      hudStatus: turnActiveOverride ? nextState.hudStatus : 'idle',
+    };
+  }
+
+  if (!nextState.turnActive) {
+    nextState = {
+      ...nextState,
+      skillCards: nextState.skillCards.map((c) => ({
+        ...c,
+        collapsedToLog: true,
+      })),
+    };
+  } else {
+    const now = Date.now();
+    nextState = {
+      ...nextState,
+      turnStartedAt: now - nextState.turnDurationMs,
+      lastEventAt: now,
+      idleWaitMs: 0,
+    };
+  }
+
+  return nextState;
+}
+
 export function stageReducer(
   state: StageState,
   action: StageAction
@@ -723,6 +874,34 @@ export function stageReducer(
       };
     }
 
+    case 'TOGGLE_GIT_DRAWER': {
+      const next =
+        action.open !== undefined ? action.open : !state.gitDrawerOpen;
+      return {
+        ...state,
+        gitDrawerOpen: next,
+        gitOpNotice: next ? state.gitOpNotice : null,
+      };
+    }
+
+    case 'MARK_GIT_LOADING': {
+      return {
+        ...state,
+        gitStatus: {
+          ...state.gitStatus,
+          loading: true,
+          error: undefined,
+        },
+      };
+    }
+
+    case 'CLEAR_GIT_OP_NOTICE': {
+      return {
+        ...state,
+        gitOpNotice: null,
+      };
+    }
+
     case 'SET_SYSTEM_TAB': {
       return { ...state, systemMenuTab: action.tab };
     }
@@ -762,6 +941,9 @@ export function stageReducer(
     case 'MARK_CONN_TESTING': {
       if (action.target === 'worker') {
         return { ...state, workerConnTest: { testing: true } };
+      }
+      if (action.target === 'tts') {
+        return { ...state, ttsConnTest: { testing: true } };
       }
       return { ...state, voiceConnTest: { testing: true } };
     }
@@ -808,6 +990,8 @@ export function stageReducer(
         case 'welcome': {
           const activeCharId =
             message.settings?.activeCharacterId || state.characterId;
+          const brainModel =
+            message.settings?.characterBrains?.[activeCharId]?.model;
           let nextState: StageState = {
             ...state,
             characterId: activeCharId,
@@ -825,6 +1009,7 @@ export function stageReducer(
             sessionId: message.session?.sessionId ?? state.sessionId,
             modelName:
               message.session?.model ||
+              brainModel ||
               message.settings?.worker?.model ||
               state.modelName,
             cwd:
@@ -834,39 +1019,11 @@ export function stageReducer(
           };
 
           if (message.history && message.history.length > 0) {
-            // Reset event-derived state and replay welcome.history
-            nextState = {
-              ...nextState,
-              events: [],
-              skillCards: [],
-              steers: [],
-              pendingPermission: null,
-              lastPermissionDecision: null,
-              lastTurnOk: null,
-              lastTurnSummary: null,
-              turnActive: false,
-              hudStatus: 'idle',
-            };
-            for (const ev of message.history) {
-              nextState = applySingleStageEvent(nextState, ev);
-            }
-            if (!nextState.turnActive) {
-              nextState = {
-                ...nextState,
-                skillCards: nextState.skillCards.map((c) => ({
-                  ...c,
-                  collapsedToLog: true,
-                })),
-              };
-            } else {
-              const now = Date.now();
-              nextState = {
-                ...nextState,
-                turnStartedAt: now - nextState.turnDurationMs,
-                lastEventAt: now,
-                idleWaitMs: 0,
-              };
-            }
+            nextState = replayHistoryIntoState(
+              nextState,
+              message.history,
+              message.session?.turnActive
+            );
           }
 
           return nextState;
@@ -883,6 +1040,8 @@ export function stageReducer(
           const nextCharId =
             message.settings.activeCharacterId || state.characterId;
           const charChanged = nextCharId !== state.characterId;
+          const brainModel =
+            message.settings.characterBrains?.[nextCharId]?.model;
           const shouldResetLine =
             charChanged &&
             !state.turnActive &&
@@ -903,7 +1062,7 @@ export function stageReducer(
             currentEmotion: shouldResetLine ? 'idle' : state.currentEmotion,
             currentLine: shouldResetLine ? null : state.currentLine,
             modelName: !state.turnActive
-              ? message.settings.worker.model || state.modelName
+              ? brainModel || message.settings.worker.model || state.modelName
               : state.modelName,
             cwd:
               !state.turnActive && message.settings.projectDir
@@ -914,21 +1073,44 @@ export function stageReducer(
 
         case 'session': {
           if (!message.session) {
-            return {
+            const clearedBase: StageState = {
               ...state,
               sessionInfo: null,
               turnActive: false,
               hudStatus: 'idle',
             };
+            return Array.isArray(message.history)
+              ? replayHistoryIntoState(clearedBase, message.history, false)
+              : clearedBase;
           }
-          return {
+
+          const sessionCharId =
+            message.session.characterId || state.characterId;
+          const charChanged = sessionCharId !== state.characterId;
+          const updatedBase: StageState = {
             ...state,
+            characterId: sessionCharId,
+            characterSwitchKey: charChanged
+              ? state.characterSwitchKey + 1
+              : state.characterSwitchKey,
             sessionInfo: message.session,
             sessionId: message.session.sessionId,
-            modelName: message.session.model || state.modelName,
+            modelName:
+              message.session.model ||
+              state.serverSettings.characterBrains?.[sessionCharId]?.model ||
+              state.modelName,
             cwd: message.session.cwd || state.cwd,
             turnActive: message.session.turnActive,
           };
+
+          if (Array.isArray(message.history)) {
+            return replayHistoryIntoState(
+              updatedBase,
+              message.history,
+              message.session.turnActive
+            );
+          }
+          return updatedBase;
         }
 
         case 'models': {
@@ -964,6 +1146,17 @@ export function stageReducer(
               },
             };
           }
+          if (message.target === 'tts') {
+            return {
+              ...state,
+              ttsConnTest: {
+                testing: false,
+                ok: message.ok,
+                message: message.message,
+                latencyMs: message.latencyMs,
+              },
+            };
+          }
           return {
             ...state,
             voiceConnTest: {
@@ -975,7 +1168,48 @@ export function stageReducer(
           };
         }
 
+        case 'git_status_result': {
+          return {
+            ...state,
+            gitStatus: {
+              loading: false,
+              loaded: true,
+              isRepo: message.isRepo,
+              branch: message.branch,
+              files: message.files ?? [],
+              diff: message.diff ?? '',
+              error: message.error,
+            },
+          };
+        }
+
+        case 'git_op_result': {
+          return {
+            ...state,
+            gitOpNotice: {
+              op: message.op,
+              ok: message.ok,
+              message: message.message,
+              at: Date.now(),
+            },
+          };
+        }
+
         case 'command_error': {
+          if (message.commandType === 'interact_character') {
+            return state;
+          }
+          if (message.commandType === 'git_status') {
+            return {
+              ...state,
+              gitStatus: {
+                ...state.gitStatus,
+                loading: false,
+                loaded: true,
+                error: message.message,
+              },
+            };
+          }
           return {
             ...state,
             lastError: {
