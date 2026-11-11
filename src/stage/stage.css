@@ -4055,3 +4055,106 @@ body,
   color: #ffffff;
   border-color: #ffffff;
 }
+
+/* ── Reasoning effort chip & popover row ── */
+.p5-effort-chip {
+  flex-shrink: 0;
+  background: #090910;
+  color: #fde047;
+  border: 1.5px solid #fde047;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  font-weight: 900;
+  cursor: pointer;
+  clip-path: polygon(8% 0%, 100% 8%, 92% 100%, 0% 92%);
+}
+.p5-effort-chip:hover { background: #fde047; color: #090910; }
+.p5-effort-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.p5-effort-row-label { font-size: 11px; font-weight: 900; color: #f87171; margin-right: 2px; }
+.p5-effort-opt {
+  background: #121523; color: #cbd5e1;
+  border: 1.2px solid rgba(255,255,255,0.3);
+  padding: 2px 9px; font-size: 11px; font-weight: 900; cursor: pointer;
+  transform: skewX(-9deg);
+}
+.p5-effort-opt:hover { border-color: #fff; color: #fff; }
+.p5-effort-opt.is-active { background: #e60012; color: #fff; border-color: #fff; }
+
+/* Dialogue box grows with the reply; scrolls inside past ~58vh */
+.p5-dialogue-box {
+  max-height: min(58vh, 560px) !important;
+  overflow: hidden !important;
+}
+.p5-dialogue-box .p5-dialogue-text {
+  max-height: calc(min(58vh, 560px) - 72px) !important;
+  overflow-y: auto !important;
+}
+
+/* ── 图片附件（多模态输入） ── */
+.p5-attach-btn {
+  flex-shrink: 0;
+  margin-right: 10px;
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  border: 2px solid var(--p5-black);
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 7px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--p5-red);
+}
+.p5-attach-btn:hover:not(:disabled) {
+  background: var(--p5-white);
+}
+.p5-attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.p5-image-tray {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.p5-image-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border: 3px solid var(--p5-white);
+  background: var(--p5-black);
+  transform: rotate(-3deg);
+  box-shadow: 4px 4px 0 var(--p5-red);
+}
+.p5-image-thumb:nth-child(even) {
+  transform: rotate(3deg);
+}
+.p5-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.p5-image-thumb-x {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--p5-white);
+  background: var(--p5-red);
+  color: var(--p5-white);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+.p5-image-error {
+  background: var(--p5-red);
+  color: var(--p5-white);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 8px;
+  transform: skewX(-8deg);
+}

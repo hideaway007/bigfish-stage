@@ -14,7 +14,23 @@ import type {
   ConnectionStatus,
   StageDataSource,
   StageDataSourceCallbacks,
+  StageImageAttachment,
 } from '../../../../src/stage/sources/types';
+
+function buildPromptParts(text: string, images: readonly StageImageAttachment[] | undefined) {
+  const parts: any[] = [{ type: 'text', text }];
+  for (const img of images ?? []) {
+    parts.push({ type: 'image', mediaType: img.mediaType, data: img.data, ...(img.name ? { name: img.name } : {}) });
+  }
+  return parts;
+}
+
+function echoAttachments(images: readonly StageImageAttachment[] | undefined) {
+  return (images ?? []).map((img) => ({
+    type: 'image' as const,
+    value: { previewUrl: img.previewUrl, ...(img.name ? { name: img.name } : {}) },
+  }));
+}
 
 const ACTIVE_CHAR_STORAGE_KEY = 'bigfish.activeCharacterId';
 const ACTIVE_PRESET_STORAGE_KEY = 'bigfish.activeAgentPreset';
@@ -186,7 +202,120 @@ function extractContentText(content: unknown): string {
       parts.push(b.text);
     }
   }
-  return parts.join('\n').trim();
+  return stripThinking(parts.join('\n'));
+}
+
+/** Remove model reasoning (<thinking>…</thinking>, incl. an unclosed trailing block while streaming). */
+export function stripThinking(text: string): string {
+  return text
+    .replace(/<(thinking|think|reasoning)>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(thinking|think|reasoning)>[\s\S]*$/i, '')
+    .trim();
+}
+
+function hasToolCallBlock(content: unknown): boolean {
+  return Array.isArray(content) && content.some((b: any) =>
+    b && typeof b === 'object' && (b.type === 'tool-call' || b.type === 'tool_use' || b.kind === 'tool-call'));
+}
+
+export interface ReasoningEffortOption { id: string; name: string }
+const REASONING_LISTENERS = new Set<() => void>();
+const reasoningByModel = new Map<string, { efforts: ReasoningEffortOption[]; defaultEffort?: string }>();
+let currentReasoningEffort: string | null = null;
+
+/** Live bridge for the stage UI: efforts the current model supports + selected effort. */
+export const reasoningBridge = {
+  efforts(model: string) { return reasoningByModel.get(model)?.efforts ?? []; },
+  defaultEffort(model: string) { return reasoningByModel.get(model)?.defaultEffort; },
+  current() { return currentReasoningEffort; },
+  subscribe(fn: () => void) { REASONING_LISTENERS.add(fn); return () => { REASONING_LISTENERS.delete(fn); }; },
+};
+function notifyReasoning() { for (const fn of REASONING_LISTENERS) fn(); }
+
+/**
+ * 每个模型能接收哪些输入（与 DSH 原生「模型设置」里的 文本/图片 勾选同源：
+ * 设置文档里 providers.<id>.models[].input）。宿主据此拒绝不支持图片的模型，
+ * 舞台据此禁用上传。
+ */
+interface ModelInputLocation { ns: string; provider: string; field: 'input' | 'inputModalities'; revision: number; models: any[] }
+const modelInputByModel = new Map<string, { input: string[] | undefined; loc: ModelInputLocation }>();
+let modalityLoader: (() => Promise<void>) | null = null;
+let modalityRemote: any = null;
+
+async function loadModelModalities(): Promise<void> {
+  const res = await modalityRemote?.settings?.describe?.();
+  const desc = res?.ok === false ? undefined : (res?.value ?? res);
+  if (!desc || !Array.isArray(desc.namespaces)) return;
+  modelInputByModel.clear();
+  for (const view of desc.namespaces) {
+    const providers = view?.value?.providers;
+    if (!providers || typeof providers !== 'object') continue;
+    for (const [provider, prof] of Object.entries<any>(providers)) {
+      const models = Array.isArray(prof?.models) ? prof.models : null;
+      if (!models) continue;
+      for (const m of models) {
+        const id = typeof m?.id === 'string' ? m.id : '';
+        if (!id || modelInputByModel.has(id)) continue;
+        const field: 'input' | 'inputModalities' = Array.isArray(m.inputModalities) ? 'inputModalities' : 'input';
+        const raw = m[field];
+        modelInputByModel.set(id, {
+          input: Array.isArray(raw) && raw.length > 0 ? raw.map(String) : Array.isArray(prof?.defaultInput) ? prof.defaultInput.map(String) : undefined,
+          loc: { ns: String(view.ns), provider, field, revision: Number(view.revision), models },
+        });
+      }
+    }
+  }
+  notifyReasoning();
+}
+
+/** Stage-facing bridge: 当前模型是否支持看图，以及在设置里切换它。 */
+export const modalityBridge = {
+  /** true / false；undefined = 该模型不在可编辑的模型配置里（按不支持处理）。 */
+  supportsImages(model: string): boolean | undefined {
+    const entry = modelInputByModel.get(model);
+    if (!entry) return undefined;
+    return (entry.input ?? ['text']).includes('image');
+  },
+  editable(model: string): boolean { return modelInputByModel.has(model); },
+  async setSupportsImages(model: string, on: boolean): Promise<void> {
+    const entry = modelInputByModel.get(model);
+    if (!entry || !modalityRemote?.settings?.mutate) throw new Error('该模型不在可编辑的模型配置中');
+    const { ns, provider, field, revision, models } = entry.loc;
+    const next = models.map((m: any) => {
+      if (m?.id !== model) return m;
+      const cur: string[] = Array.isArray(m[field]) && m[field].length ? m[field] : ['text'];
+      const set = new Set(cur.filter((x) => x !== 'image'));
+      set.add('text');
+      if (on) set.add('image');
+      return { ...m, [field]: ['text', 'image'].filter((x) => set.has(x)) };
+    });
+    const res = await modalityRemote.settings.mutate(ns, [{ op: 'set', path: ['providers', provider, 'models'], value: next }], revision);
+    if (res && res.ok === false) throw new Error(String(res.error?.message ?? '保存失败'));
+    await loadModelModalities();
+  },
+  refresh(): Promise<void> { return modalityLoader ? modalityLoader() : Promise.resolve(); },
+};
+
+const PERSONA_TAG_RE = /<stage-persona>[\s\S]*?<\/stage-persona>\s*/g;
+
+const PERSONA_STYLE: Record<string, { self: string; call: string; tone: string }> = {
+  'deepseek-v4-pro': { self: '本鱼', call: '店长', tone: '元气活泼、爱用「咕噜」等鱼系语气词，干活冲劲十足' },
+  'gemini-4-argon': { self: '本喵', call: '主人', tone: '傲娇猫娘口吻，句尾偶尔带「喵」，对界面美感非常挑剔' },
+  'claude-opus-5-5': { self: '我', call: '老师', tone: '知性温柔的文学少女，措辞优雅、条理分明' },
+  'codex-dragon': { self: '我', call: '搭档', tone: '清冷高洁的白龙娘，从容自信、简洁可靠，偶尔带一丝神秘微笑' },
+};
+
+/** Hidden persona preamble so the worker answers as the active character, never as a generic "AI 助手". */
+export function buildPersonaPreamble(characterId: string): string {
+  const pack = getCachedCharacterPack(characterId);
+  const name = pack.name.split('（')[0];
+  const style = PERSONA_STYLE[characterId] ?? { self: '我', call: '搭档', tone: '保持角色口吻' };
+  const role = DEFAULT_SETTINGS.characterBrains?.[characterId]?.rolePrompt ?? '';
+  return `<stage-persona>你现在是「${name}」。${role}自称「${style.self}」，称呼用户为「${style.call}」；语气：${style.tone}。全程用简体中文、以该角色身份回复，自我介绍时只说自己是「${name}」，不要提及任何模型名、厂商或版本号（如 DeepSeek、V4 Pro、GPT、Claude），绝不自称"AI 助手"或"编程助手"；角色口吻只体现在措辞上，技术内容必须准确完整，不编造执行结果。用户没有问起时，不要主动提及工作目录、文件路径、当前环境或自身状态，直接回应用户的话。此段为舞台设定，无需复述。</stage-persona>\n\n`;
+}
+
+export function stripPersona(text: string): string {
+  return text.replace(PERSONA_TAG_RE, '').trim();
 }
 
 function isHumanUserMessageEvent(rawEv: any, evData: Record<string, any>): boolean {
@@ -213,6 +342,7 @@ export class DshStageSource implements StageDataSource {
   private activeCharacterId: string = getStoredCharacterId();
   private activeAgentPreset: string = getStoredAgentPreset();
   private reactionSeed = 0;
+  private replyShownInTurn = false;
   private openTools = new Map<string, { tool: ToolKind; summary: string; file?: string }>();
   private pendingApprovals = new Map<string, PendingStageApproval>();
   private modelProviderMap = new Map<string, string>();
@@ -256,6 +386,16 @@ export class DshStageSource implements StageDataSource {
       return projPreset.trim();
     }
     return this.activeAgentPreset || getStoredAgentPreset();
+  }
+
+  private syncReasoningFromProjection(): void {
+    const binding = this.ctx.sessions?.binding?.(this.sessionId);
+    const sel = binding?.session?.projections?.faceOf?.('modelSelection')?.getSnapshot?.() as any;
+    const active = sel?.next ?? sel?.pending ?? sel?.lastUsed;
+    const eff = typeof active?.reasoningEffort === 'string' ? active.reasoningEffort : null;
+    const model = this.resolveModelName();
+    const next = eff ?? reasoningBridge.defaultEffort(model) ?? null;
+    if (next !== currentReasoningEffort) { currentReasoningEffort = next; notifyReasoning(); }
   }
 
   private resolveModelName(): string {
@@ -345,6 +485,7 @@ export class DshStageSource implements StageDataSource {
   }
 
   private maybeCharacterReaction(ev: StageEvent): StageEvent | null {
+    if (this.replyShownInTurn && ev.type !== 'error' && ev.type !== 'interrupted') return null;
     const pack = getCachedCharacterPack(this.activeCharacterId);
     const picked = pickReactionForEvent(pack, ev, this.reactionSeed++);
     if (!picked) return null;
@@ -419,6 +560,17 @@ export class DshStageSource implements StageDataSource {
   }
 
   private async refreshModelCatalog(emitModels = false): Promise<void> {
+    if (!modalityRemote && this.ctx.remote) {
+      modalityRemote = this.ctx.remote;
+      modalityLoader = loadModelModalities;
+      try {
+        const off = this.ctx.remote.$on?.('settings/document-updated', () => { void loadModelModalities().catch(() => {}); });
+        if (typeof off === 'function') this.disposers.push(() => { off(); modalityRemote = null; modalityLoader = null; });
+      } catch {
+        // ignore
+      }
+    }
+    void loadModelModalities().catch(() => {});
     try {
       const res = await this.ctx.remote?.session?.modelCatalog?.();
       if (res?.ok && res.value) {
@@ -438,6 +590,12 @@ export class DshStageSource implements StageDataSource {
             for (const m of g.models) {
               const modelId = String(m?.id ?? '');
               if (!modelId) continue;
+              if (Array.isArray(m?.reasoning?.efforts) && m.reasoning.efforts.length > 0) {
+                reasoningByModel.set(modelId, {
+                  efforts: m.reasoning.efforts.map((e: any) => ({ id: String(e.id), name: String(e.name ?? e.id) })),
+                  defaultEffort: m.reasoning.defaultEffort,
+                });
+              }
               if (!this.modelProviderMap.has(modelId)) {
                 this.modelProviderMap.set(modelId, provId);
                 found.push(modelId);
@@ -446,6 +604,8 @@ export class DshStageSource implements StageDataSource {
           }
         }
         this.catalogModels = found;
+        this.syncReasoningFromProjection();
+        notifyReasoning();
         this.emitMessage({ type: 'session', session: this.buildSessionInfo() });
         this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
       }
@@ -482,7 +642,7 @@ export class DshStageSource implements StageDataSource {
         return out;
       }
       const content = data.message?.content ?? data.content;
-      const text = extractContentText(content);
+      const text = stripPersona(extractContentText(content));
       if (text) {
         pushWithReaction({
           at,
@@ -495,6 +655,7 @@ export class DshStageSource implements StageDataSource {
     }
 
     if (type === 'turn/start') {
+      this.replyShownInTurn = false;
       this.turnStartAt = at;
       this.liveStreamingText = '';
       this.lastEmittedLiveLen = 0;
@@ -507,7 +668,9 @@ export class DshStageSource implements StageDataSource {
       this.lastEmittedLiveLen = 0;
       const content = data.message?.content ?? data.content ?? [];
       const text = extractContentText(content);
-      if (text) {
+      // Intermediate narration attached to tool calls stays in the background (Trajectory / Backlog only).
+      if (text && !hasToolCallBlock(content)) {
+        this.replyShownInTurn = true;
         out.push({
           at,
           type: 'worker_text',
@@ -687,13 +850,13 @@ export class DshStageSource implements StageDataSource {
       }
     }
 
-    if (streamingBuf.trim()) {
+    if (false) {
       this.liveStreamingText = streamingBuf;
       this.lastEmittedLiveLen = streamingBuf.length;
       history.push({
         at: Date.now(),
         type: 'worker_text',
-        text: streamingBuf,
+        text: stripThinking(streamingBuf),
         final: false,
       });
     }
@@ -749,14 +912,14 @@ export class DshStageSource implements StageDataSource {
           const chunk = item.event.data?.chunk;
           if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
             this.liveStreamingText += chunk.text;
-            if (this.liveStreamingText.length - this.lastEmittedLiveLen >= 12) {
+            if (false) {
               this.lastEmittedLiveLen = this.liveStreamingText.length;
               this.emitMessage({
                 type: 'event',
                 event: {
                   at: Date.now(),
                   type: 'worker_text',
-                  text: this.liveStreamingText,
+                  text: stripThinking(this.liveStreamingText),
                   final: false,
                 },
               });
@@ -826,6 +989,7 @@ export class DshStageSource implements StageDataSource {
     if (modelProj?.subscribe) {
       this.disposers.push(
         modelProj.subscribe(() => {
+          this.syncReasoningFromProjection();
           this.emitMessage({ type: 'session', session: this.buildSessionInfo() });
           this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
         })
@@ -874,14 +1038,15 @@ export class DshStageSource implements StageDataSource {
     this.sessionListeners.clear();
   }
 
-  public send(text: string): void {
-    const trimmed = text.trim();
+  public send(text: string, images?: readonly StageImageAttachment[]): void {
+    const hasImages = !!images && images.length > 0;
+    const trimmed = text.trim() || (hasImages ? '请看这张图。' : '');
     if (!trimmed) return;
     const binding = this.ctx.sessions?.binding?.(this.sessionId);
     const session = binding?.session;
     if (!session) return;
 
-    if (trimmed.startsWith('/')) {
+    if (!hasImages && trimmed.startsWith('/')) {
       void session.command(trimmed);
       return;
     }
@@ -889,10 +1054,10 @@ export class DshStageSource implements StageDataSource {
     const sub = session.beginSubmission?.({
       mode: 'queue',
       text: trimmed,
-      attachments: [],
+      attachments: echoAttachments(images),
     });
     void session
-      .prompt([{ type: 'text', text: trimmed }], 'queue', undefined, sub?.requestId)
+      .prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), 'queue', undefined, sub?.requestId)
       .then((res: any) => {
         if (res && res.ok === false) {
           sub?.abandon?.();
@@ -915,8 +1080,9 @@ export class DshStageSource implements StageDataSource {
       });
   }
 
-  public steer(text: string): void {
-    const trimmed = text.trim();
+  public steer(text: string, images?: readonly StageImageAttachment[]): void {
+    const hasImages = !!images && images.length > 0;
+    const trimmed = text.trim() || (hasImages ? '请看这张图。' : '');
     if (!trimmed) return;
     const binding = this.ctx.sessions?.binding?.(this.sessionId);
     const session = binding?.session;
@@ -925,7 +1091,7 @@ export class DshStageSource implements StageDataSource {
     const sub = session.beginSubmission?.({
       mode: 'steer',
       text: trimmed,
-      attachments: [],
+      attachments: echoAttachments(images),
     });
     this.emitMessage({
       type: 'event',
@@ -937,7 +1103,7 @@ export class DshStageSource implements StageDataSource {
       },
     });
     void session
-      .prompt([{ type: 'text', text: trimmed }], 'steer', undefined, sub?.requestId)
+      .prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), 'steer', undefined, sub?.requestId)
       .then((res: any) => {
         if (res && res.ok === false) {
           sub?.abandon?.();
@@ -1098,8 +1264,22 @@ export class DshStageSource implements StageDataSource {
       ? Object.values(patch.characterBrains).find((b) => typeof b?.model === 'string' && b.model.trim())?.model
       : undefined;
     const requestedModel = patch.worker?.model ?? brainModel;
+    const requestedEffort = patch.worker?.reasoningEffort;
+    if (typeof requestedEffort === 'string' && !requestedModel) {
+      this.selectModelAndEffort(this.resolveModelName(), requestedEffort);
+      return;
+    }
     if (typeof requestedModel === 'string' && requestedModel.trim()) {
       const model = requestedModel.trim();
+      const supported = reasoningBridge.efforts(model).map((e) => e.id);
+      const keep = currentReasoningEffort && supported.includes(currentReasoningEffort) ? currentReasoningEffort : undefined;
+      this.selectModelAndEffort(model, requestedEffort ?? keep);
+      return;
+    }
+  }
+
+  private selectModelAndEffort(model: string, effort?: string): void {
+    {
       const provider =
         this.modelProviderMap.get(model) ??
         this.defaultModelSelection?.provider ??
@@ -1110,8 +1290,10 @@ export class DshStageSource implements StageDataSource {
             sessionId: this.sessionId,
             provider,
             model,
+            ...(effort ? { reasoningEffort: effort } : {}),
           })
           .then(() => {
+            if (effort) { currentReasoningEffort = effort; notifyReasoning(); }
             this.emitMessage({ type: 'session', session: this.buildSessionInfo() });
             this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
           })

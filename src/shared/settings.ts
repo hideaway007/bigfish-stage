@@ -25,6 +25,8 @@ export interface WorkerSettings {
   sandbox: 'read-only' | 'workspace-write';
   /** Agent 潜入预设模式（standard | ptc | minimal | cordis 或自定义预设 ID） */
   agentPreset?: string;
+  /** 思考强度（low / medium / high / max …，取决于模型支持的档位） */
+  reasoningEffort?: string;
   /** 适配器专属的额外选项 */
   extra?: Record<string, string>;
 }

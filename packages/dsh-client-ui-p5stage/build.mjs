@@ -94,11 +94,28 @@ header[class$="_header"] {
   border-bottom: 2px solid #e60012 !important;
   color: #f8fafc !important;
 }
+header[class$="_header"] [class$="_titleRow"] { gap: 10px !important; }
 header[class$="_header"] [class$="_crumbCurrent"] {
-  color: #ffffff !important;
+  display: inline-block;
+  background: #ffffff !important;
+  color: #090910 !important;
   font-weight: 900 !important;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  padding: 2px 14px !important;
+  clip-path: polygon(5% 0%, 100% 10%, 95% 100%, 0% 90%);
+  filter: drop-shadow(3px 3px 0 #e60012);
 }
+header[class$="_header"] [class$="_headerActions"] button,
+header[class$="_header"] [class$="_headerActions"] > * {
+  background: #090910 !important;
+  color: #fde047 !important;
+  border: 1.5px solid #fde047 !important;
+  border-radius: 0 !important;
+  font-weight: 900 !important;
+  clip-path: polygon(6% 0%, 100% 8%, 94% 100%, 0% 92%);
+  padding: 1px 10px !important;
+}
+header[class$="_header"] [class$="_headerActions"] svg { color: #fde047 !important; }
 header[class$="_header"] [role="tab"] {
   background: #121522 !important;
   color: #cbd5e1 !important;

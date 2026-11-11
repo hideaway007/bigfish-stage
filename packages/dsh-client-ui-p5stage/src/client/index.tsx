@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, type ComponentType } from 'react';
 import { StageApp } from '../../../../src/stage/StageApp';
 import { preloadCharacterPacks } from '../../../../src/stage/characterLoader';
-import { DshStageSource, getActiveStageSource, setStoredAgentPreset } from './DshStageSource';
+import { DshStageSource, getActiveStageSource, setStoredAgentPreset, reasoningBridge, modalityBridge } from './DshStageSource';
 import { createP5SidebarComponents } from './P5PhantomSidebar';
 
 export const inject = [
@@ -157,6 +157,13 @@ export function apply(ctx: any): () => void {
 
   // Register custom Persona-5 irregular quadrilateral Sidebar & Collapsed Leading Expand Toggle
   const { P5PhantomSidebar, P5HeaderLeadingToggle } = createP5SidebarComponents(ctx);
+
+  if (typeof window !== 'undefined') {
+    (window as any).__BIGFISH_REASONING__ = reasoningBridge;
+    disposers.push(() => { delete (window as any).__BIGFISH_REASONING__; });
+    (window as any).__BIGFISH_MODALITY__ = modalityBridge;
+    disposers.push(() => { delete (window as any).__BIGFISH_MODALITY__; });
+  }
 
   // Expose real DSH Agent Presets bridge to P5 SystemMenuModal
   if (typeof window !== 'undefined') {

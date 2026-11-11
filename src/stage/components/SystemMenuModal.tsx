@@ -157,6 +157,20 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     settings.performance.typingCharsPerSec
   );
   const [showWorkerAdvanced, setShowWorkerAdvanced] = useState(false);
+  const [, setReasoningTick] = useState(0);
+  useEffect(() => {
+    const bridge = (window as any).__BIGFISH_REASONING__;
+    return bridge?.subscribe ? bridge.subscribe(() => setReasoningTick((v: number) => v + 1)) : undefined;
+  }, []);
+  const reasoningBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_REASONING__ : undefined;
+  const effortOptions: Array<{ id: string; name: string; description?: string }> =
+    reasoningBridge?.efforts?.(settings.worker.model || '') ?? [];
+  const currentEffort: string = reasoningBridge?.current?.() ?? settings.worker.reasoningEffort ?? '';
+  const modalityBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_MODALITY__ : undefined;
+  const imageEditable: boolean = !!modalityBridge?.editable?.(settings.worker.model || '');
+  const imageSupported: boolean = modalityBridge?.supportsImages?.(settings.worker.model || '') === true;
+  const [imageSaving, setImageSaving] = useState(false);
+  const [imageSaveError, setImageSaveError] = useState<string | null>(null);
   const [showVoiceAdvanced, setShowVoiceAdvanced] = useState(false);
   const [showTtsAdvanced, setShowTtsAdvanced] = useState(false);
   const [dirPickError, setDirPickError] = useState<string | null>(null);
@@ -715,6 +729,69 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       onUpdateSettings({ worker: { model } })
                     }
                   />
+
+                  <div className="p5-form-group" data-testid="worker-effort-group">
+                    <label className="p5-form-label" htmlFor="worker-effort-select">
+                      思考强度
+                    </label>
+                    {effortOptions.length > 0 ? (
+                      <select
+                        id="worker-effort-select"
+                        className="p5-form-select"
+                        value={currentEffort}
+                        onChange={(e) =>
+                          onUpdateSettings({ worker: { reasoningEffort: e.target.value } })
+                        }
+                      >
+                        {!currentEffort && <option value="">模型默认</option>}
+                        {effortOptions.map((eff) => (
+                          <option key={eff.id} value={eff.id}>
+                            {eff.name}
+                            {eff.description ? ` — ${eff.description}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="p5-model-error-hint">当前模型不支持调节思考强度。</p>
+                    )}
+                  </div>
+
+                  <div className="p5-form-group" data-testid="worker-image-group">
+                    <span className="p5-form-label">输入类型</span>
+                    {imageEditable ? (
+                      <div className="p5-modality-row">
+                        <label className="p5-modality-chip is-locked" title="文本输入始终开启">
+                          <input type="checkbox" checked disabled /> 文本
+                        </label>
+                        <label className={`p5-modality-chip${imageSupported ? ' is-on' : ''}`}>
+                          <input
+                            type="checkbox"
+                            data-testid="worker-image-toggle"
+                            checked={imageSupported}
+                            disabled={imageSaving}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setImageSaving(true);
+                              setImageSaveError(null);
+                              modalityBridge
+                                .setSupportsImages(settings.worker.model, on)
+                                .catch((err: unknown) =>
+                                  setImageSaveError(err instanceof Error ? err.message : '保存失败')
+                                )
+                                .finally(() => setImageSaving(false));
+                            }}
+                          />{' '}
+                          图片（看图）
+                        </label>
+                        {imageSaving && <span className="p5-model-error-hint">保存中…</span>}
+                      </div>
+                    ) : (
+                      <p className="p5-model-error-hint">
+                        该模型不在可编辑的模型配置中，按仅文本处理，舞台不允许上传图片。
+                      </p>
+                    )}
+                    {imageSaveError && <p className="p5-pond-dir-error">{imageSaveError}</p>}
+                  </div>
 
                   {/* Test Connection */}
                   <div className="p5-form-group p5-conn-test-row">

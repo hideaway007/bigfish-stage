@@ -1048,3 +1048,37 @@
 .p5-preset-creator-cta:hover .p5-preset-creator-tag {
   background: #090910;
 }
+
+/* ── 模型输入类型（文本 / 图片） ── */
+.p5-modality-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.p5-modality-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+  background: #161b2a;
+  color: #cbd5e1;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  font-weight: 900;
+  transform: skewX(-8deg);
+  cursor: pointer;
+}
+.p5-modality-chip.is-on {
+  background: var(--p5-yellow);
+  color: var(--p5-black);
+  border-color: var(--p5-white);
+  box-shadow: 3px 3px 0 var(--p5-red);
+}
+.p5-modality-chip.is-locked {
+  opacity: 0.6;
+  cursor: default;
+}
+.p5-modality-chip input {
+  accent-color: var(--p5-red);
+}

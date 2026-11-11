@@ -21,6 +21,7 @@ import type {
   DataSourceMode,
   StageDataSource,
   StageDataSourceCallbacks,
+  StageImageAttachment,
 } from './sources/types';
 import { CharacterRenderer } from './components/CharacterRenderer';
 import { ArchiveModal } from './components/ArchiveModal';
@@ -312,12 +313,63 @@ export const StageApp: React.FC<StageAppProps> = ({
   const [inputValue, setInputValue] = useState<string>(
     sourceMode === 'demo' ? DEFAULT_FIRST_USER_PROMPT : ''
   );
+  const [pendingImages, setPendingImages] = useState<StageImageAttachment[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const imagePickerRef = useRef<HTMLInputElement | null>(null);
+  const addImageFiles = (files: Iterable<File>) => {
+    const accepted = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+    for (const file of Array.from(files)) {
+      if (!accepted.includes(file.type)) {
+        setImageError(`不支持的图片格式：${file.type || file.name}（支持 PNG / JPEG / WebP / GIF）`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setImageError(`图片太大：${file.name}（上限 10MB）`);
+        continue;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const url = String(reader.result ?? '');
+        const comma = url.indexOf(',');
+        if (comma < 0) return;
+        setImageError(null);
+        setPendingImages((prev) =>
+          prev.length >= 8
+            ? prev
+            : [
+                ...prev,
+                {
+                  mediaType: file.type as StageImageAttachment['mediaType'],
+                  data: url.slice(comma + 1),
+                  name: file.name || undefined,
+                  previewUrl: url,
+                },
+              ]
+        );
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   const [typedLength, setTypedLength] = useState<number>(0);
   const [fadeReplaceKey, setFadeReplaceKey] = useState<number>(0);
   const [inlinePreviewId, setInlinePreviewId] = useState<string | null>(null);
   const [stageModelPickerOpen, setStageModelPickerOpen] = useState(false);
   const [stageModelQuery, setStageModelQuery] = useState('');
   const stageModelPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [, setReasoningTick] = useState(0);
+  useEffect(() => {
+    const bridge = (window as any).__BIGFISH_REASONING__;
+    return bridge?.subscribe ? bridge.subscribe(() => setReasoningTick((v: number) => v + 1)) : undefined;
+  }, []);
+  const reasoningBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_REASONING__ : undefined;
+  const activeModelForEffort = state.serverSettings.worker.model || state.modelName || '';
+  const effortOptions: Array<{ id: string; name: string }> = reasoningBridge?.efforts?.(activeModelForEffort) ?? [];
+  const currentEffort: string | null = reasoningBridge?.current?.() ?? null;
+  const modalityBridge = typeof window !== 'undefined' ? (window as any).__BIGFISH_MODALITY__ : undefined;
+  const imagesAllowed: boolean =
+    sourceMode === 'demo' || modalityBridge?.supportsImages?.(activeModelForEffort) === true;
+  const IMAGE_BLOCKED_MSG = '当前模型不支持图片：请到 设置 → AI 引擎 勾选「图片（看图）」，或切换支持图片的模型';
+  const EFFORT_LABELS: Record<string, string> = { off: '关', none: '关', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '超高', max: 'MAX' };
   const [contextTokens, setContextTokens] = useState<{
     used: number;
     max: number;
@@ -1153,7 +1205,12 @@ export const StageApp: React.FC<StageAppProps> = ({
     if (needsOnboarding) return;
     const trimmed = inputValue.trim();
 
-    if (sourceMode !== 'demo' && !trimmed) {
+    const images = pendingImages;
+    if (images.length > 0 && !imagesAllowed) {
+      setImageError(IMAGE_BLOCKED_MSG);
+      return;
+    }
+    if (sourceMode !== 'demo' && !trimmed && images.length === 0) {
       inputRef.current?.focus();
       return;
     }
@@ -1161,8 +1218,9 @@ export const StageApp: React.FC<StageAppProps> = ({
     if (state.turnActive) {
       const steerText =
         trimmed || '顺便确认按钮带上 data-variant="theme-primary" 属性！';
-      sourceRef.current?.steer(steerText);
+      sourceRef.current?.steer(steerText, images);
       setInputValue('');
+      setPendingImages([]);
       return;
     }
 
@@ -1172,8 +1230,9 @@ export const StageApp: React.FC<StageAppProps> = ({
     collapseTimersRef.current.clear();
 
     const promptToSend = trimmed || DEFAULT_FIRST_USER_PROMPT;
-    sourceRef.current?.send(promptToSend);
+    sourceRef.current?.send(images.length && !trimmed ? '' : promptToSend, images);
     setInputValue('');
+    setPendingImages([]);
     inputRef.current?.blur();
   };
 
@@ -1497,6 +1556,24 @@ export const StageApp: React.FC<StageAppProps> = ({
                 </span>
               </button>
 
+              {effortOptions.length > 0 && (
+                <button
+                  type="button"
+                  className="p5-effort-chip"
+                  data-testid="reasoning-effort-chip"
+                  title="思考强度（点击切换下一档）"
+                  onClick={() => {
+                    playSfx('select');
+                    const ids = effortOptions.map((e) => e.id);
+                    const idx = currentEffort ? ids.indexOf(currentEffort) : -1;
+                    const next = ids[(idx + 1) % ids.length];
+                    handleUpdateSettings({ worker: { reasoningEffort: next } });
+                  }}
+                >
+                  ⚡ {EFFORT_LABELS[currentEffort ?? ''] ?? currentEffort ?? '默认'}
+                </button>
+              )}
+
               <span
                 className="p5-speaker-codename-sr"
                 data-testid="hud-model-name"
@@ -1587,6 +1664,26 @@ export const StageApp: React.FC<StageAppProps> = ({
                         data-testid="stage-model-search-input"
                       />
                     </form>
+
+                    {effortOptions.length > 0 && (
+                      <div className="p5-effort-row" data-testid="reasoning-effort-row">
+                        <span className="p5-effort-row-label">思考强度</span>
+                        {effortOptions.map((e) => (
+                          <button
+                            key={e.id}
+                            type="button"
+                            className={`p5-effort-opt ${currentEffort === e.id ? 'is-active' : ''}`}
+                            title={e.name}
+                            onClick={() => {
+                              playSfx('select');
+                              handleUpdateSettings({ worker: { reasoningEffort: e.id } });
+                            }}
+                          >
+                            {EFFORT_LABELS[e.id] ?? e.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="p5-stage-model-list" role="listbox">
                       {state.workerModels.loading && mergedModels.length === 0 && (
@@ -2425,8 +2522,62 @@ export const StageApp: React.FC<StageAppProps> = ({
               </button>
             )}
 
-            <form className="p5-input-bar-slash" onSubmit={handleSubmitInput}>
+            {(pendingImages.length > 0 || imageError) && (
+              <div className="p5-image-tray" data-testid="stage-image-tray">
+                {pendingImages.map((img, i) => (
+                  <div className="p5-image-thumb" key={`${i}-${img.name ?? ''}`}>
+                    <img src={img.previewUrl} alt={img.name ?? `图片 ${i + 1}`} />
+                    <button
+                      type="button"
+                      className="p5-image-thumb-x"
+                      title="移除"
+                      onClick={() => setPendingImages((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {imageError && <span className="p5-image-error">{imageError}</span>}
+              </div>
+            )}
+            <form
+              className="p5-input-bar-slash"
+              onSubmit={handleSubmitInput}
+              onDragOver={(e) => {
+                if (Array.from(e.dataTransfer.types).includes('Files')) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                if (e.dataTransfer.files.length === 0) return;
+                e.preventDefault();
+                if (!imagesAllowed) {
+                  setImageError(IMAGE_BLOCKED_MSG);
+                  return;
+                }
+                addImageFiles(e.dataTransfer.files);
+              }}
+            >
               <div className="p5-input-field-box">
+                <button
+                  type="button"
+                  className="p5-attach-btn"
+                  data-testid="stage-attach-btn"
+                  title={imagesAllowed ? '附加图片（也可以直接粘贴或拖入）' : IMAGE_BLOCKED_MSG}
+                  disabled={needsOnboarding || !imagesAllowed}
+                  onClick={() => imagePickerRef.current?.click()}
+                >
+                  📎
+                </button>
+                <input
+                  ref={imagePickerRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    if (e.target.files) addImageFiles(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
                 <input
                   ref={inputRef}
                   type="text"
@@ -2435,6 +2586,16 @@ export const StageApp: React.FC<StageAppProps> = ({
                   disabled={needsOnboarding}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
+                  onPaste={(e) => {
+                    const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'));
+                    if (files.length === 0) return;
+                    e.preventDefault();
+                    if (!imagesAllowed) {
+                      setImageError(IMAGE_BLOCKED_MSG);
+                      return;
+                    }
+                    addImageFiles(files);
+                  }}
                   placeholder={
                     needsOnboarding
                       ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
@@ -2450,7 +2611,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                 data-testid="stage-send-btn"
                 disabled={
                   needsOnboarding ||
-                  (sourceMode !== 'demo' && !inputValue.trim())
+                  (sourceMode !== 'demo' && !inputValue.trim() && pendingImages.length === 0)
                 }
               >
                 {state.turnActive ? '插话 ▶' : '投喂 ▶'}
