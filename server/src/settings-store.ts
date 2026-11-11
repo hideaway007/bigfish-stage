@@ -78,13 +78,14 @@ export class SettingsStore {
       }
     }
     if (!this.value.projectDir || !dirValid) {
-      const cwd = process.cwd();
-      const defaultDir = process.env.BIGFISH_PROJECT_DIR || (cwd.endsWith('/server') ? dirname(cwd) : cwd);
-      this.value.projectDir = defaultDir;
-      this.value.recentProjects = [
-        defaultDir,
-        ...this.value.recentProjects.filter(p => p !== defaultDir && !p.startsWith('/private/tmp/')),
-      ].slice(0, 20);
+      const envDir = process.env.BIGFISH_PROJECT_DIR || null;
+      this.value.projectDir = envDir;
+      if (envDir) {
+        this.value.recentProjects = [
+          envDir,
+          ...this.value.recentProjects.filter(p => p !== envDir && !p.startsWith('/private/tmp/')),
+        ].slice(0, 20);
+      }
     }
   }
   async update(patch: SettingsPatch): Promise<AppSettings> {

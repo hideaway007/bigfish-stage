@@ -259,8 +259,11 @@
   margin-top: 0;
   gap: 5px;
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
+.p5-model-chip-btn,
 .p5-model-picker .p5-model-chip-btn {
   display: inline-flex;
   align-items: center;
@@ -268,7 +271,17 @@
   padding: 2px 8px;
   font-size: 11px;
   border-width: 1px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: left;
   transition: border-color 80ms ease, background 80ms ease;
+}
+
+.p5-model-picker .p5-form-label code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .p5-model-picker .p5-model-chip-btn:hover,
@@ -502,6 +515,7 @@
 .p5-rec-chip-wrap {
   position: relative;
   display: inline-flex;
+  max-width: 100%;
 }
 
 .p5-rec-chip-btn {
@@ -515,8 +529,16 @@
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
   cursor: pointer;
   transition: border-color 90ms ease, background 90ms ease, transform 90ms ease;
+}
+
+.p5-rec-chip-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .p5-rec-chip-btn:hover,
@@ -636,3 +658,26 @@
   color: var(--p5-yellow);
   flex-shrink: 0;
 }
+
+.p5-apply-btn--danger {
+  background: #334155;
+  border-color: #f87171;
+  color: #fecaca;
+}
+
+.p5-apply-btn--danger:hover {
+  background: var(--p5-red);
+  border-color: var(--p5-white);
+  color: var(--p5-white);
+}
+
+.p5-pond-dir-error {
+  margin: 4px 0 0;
+  padding: 5px 10px;
+  background: rgba(239, 68, 68, 0.14);
+  border-left: 3px solid var(--p5-red);
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 700;
+}
+

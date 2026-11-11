@@ -234,7 +234,7 @@
   ],
   "art": {
     "renderer": "sprites",
-    "portrait": "art/portrait.svg",
+    "portrait": "art/portrait.png",
     "emotions": {
       "idle": "art/idle.png",
       "thinking": "art/thinking.png",

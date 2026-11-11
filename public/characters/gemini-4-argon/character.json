@@ -228,13 +228,13 @@
     }
   },
   "recommendedModels": [
-    "remote-magpie/antigravity/gemini-4-argon",
-    "remote-magpie/antigravity/gemini-3.8-flash",
+    "gemini-4-argon",
+    "gemini-3.8-flash",
     "gpt-6.1-sol"
   ],
   "art": {
     "renderer": "sprites",
-    "portrait": "art/portrait.svg",
+    "portrait": "art/portrait.png",
     "emotions": {
       "idle": "art/idle.png",
       "thinking": "art/thinking.png",

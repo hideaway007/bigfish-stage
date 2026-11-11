@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { StageEvent } from '../../shared/stage-events';
-import type { SkillCardItem } from '../stageReducer';
+import { getCachedCharacterPack } from '../characterLoader';
+import { computeDiffStats, type SkillCardItem } from '../stageReducer';
 import '../backlog.css';
 
 interface BacklogModalProps {
@@ -30,7 +31,10 @@ function createEntry(ev: StageEvent, id: number, characterName: string,
   switch (ev.type) {
     case 'user_message': return { ...base, type: '用户', style: 'user', badge: '玩家指令', text: ev.text };
     case 'steer_queued': return { ...base, type: '用户', style: 'steer', badge: '场外插话', text: ev.text };
-    case 'character_line': return { ...base, type: '台词', style: 'char', badge: `${characterName} · [${ev.emotion.toUpperCase()}]`, text: ev.text };
+    case 'character_line': {
+      const speaker = (ev.characterId && getCachedCharacterPack(ev.characterId).name.split('（')[0]) || characterName;
+      return { ...base, type: '台词', style: 'char', badge: `${speaker} · [${ev.emotion.toUpperCase()}]`, text: ev.text };
+    }
     case 'worker_text': return { ...base, type: '原文', style: 'worker', badge: `WORKER RAW${ev.final ? ' // FINAL' : ''}`, text: ev.text };
     case 'tool_start': {
       const card = skills.get(ev.toolUseId);
@@ -57,7 +61,41 @@ export const BacklogModal: React.FC<BacklogModalProps> = ({ open, events, skillC
   const [activeMatch, setActiveMatch] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const entries = useMemo(() => {
-    const skills = new Map(skillCards.map(card => [card.toolUseId, card]));
+    const skills = new Map<string, SkillCardItem>();
+    for (const ev of events) {
+      if (ev.type === 'tool_end') {
+        skills.set(ev.toolUseId, {
+          toolUseId: ev.toolUseId,
+          tool: ev.diff ? 'edit' : 'other',
+          rawName: '',
+          summary: ev.summary ?? '',
+          startedAt: ev.at,
+          endedAt: ev.at,
+          status: ev.ok ? 'success' : 'error',
+          endSummary: ev.summary,
+          diff: ev.diff,
+          output: ev.output,
+          diffStats: computeDiffStats(ev.diff),
+          collapsedToLog: true,
+        });
+      }
+    }
+    for (const card of skillCards) {
+      const fallback = skills.get(card.toolUseId);
+      if (fallback && card.status === 'running') {
+        skills.set(card.toolUseId, {
+          ...card,
+          endedAt: fallback.endedAt,
+          status: fallback.status,
+          endSummary: fallback.endSummary,
+          diff: fallback.diff,
+          output: fallback.output,
+          diffStats: fallback.diffStats,
+        });
+      } else {
+        skills.set(card.toolUseId, card);
+      }
+    }
     return events.map((ev, id) => createEntry(ev, id, characterName, skills))
       .filter((entry): entry is BacklogEntry => entry !== null);
   }, [events, skillCards, characterName]);

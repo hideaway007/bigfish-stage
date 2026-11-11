@@ -2,23 +2,51 @@
  * 舞台音效模块 (`src/stage/sfx.ts`)
  *
  * 真实音频由 `public/sfx/manifest.json` 声明：首次播放时只请求一次清单，
- * 清单里列出的文件才会被加载（`{ "files": { "hover": "hover.mp3" } }`），
- * 没列出的音效一律使用 WebAudio 合成音，因此不会产生任何 404。
- * 名称与格式详见 `public/sfx/README.md`。
- *
- * 遵循浏览器自动播放策略：仅在首次用户手势之后才创建 / 恢复 AudioContext。
- * 静音状态持久化在 localStorage。
+ * 清单里列出的文件会被加载并缓存到 WebAudio AudioBuffer 中，
+ * 若未加载完成则使用 WebAudio 合成器即时发声。
  */
 
-export type SfxName = 'hover' | 'select' | 'allow' | 'deny' | 'switch';
+export type SfxName =
+  | 'hover'
+  | 'select'
+  | 'allow'
+  | 'deny'
+  | 'switch'
+  | 'send'
+  | 'type'
+  | 'complete'
+  | 'compaction';
 
-export const SFX_NAMES: SfxName[] = ['hover', 'select', 'allow', 'deny', 'switch'];
+export const SFX_NAMES: SfxName[] = [
+  'hover',
+  'select',
+  'allow',
+  'deny',
+  'switch',
+  'send',
+  'type',
+  'complete',
+  'compaction',
+];
 
 const SFX_BASE = '/sfx/';
-const SFX_MANIFEST_URL = '/sfx/manifest.json';
+const SFX_MANIFEST_URL = '/sfx/manifest.json?v=3';
+const SFX_CACHE_BUSTER = '?v=3';
 
 const MUTE_STORAGE_KEY = 'p5_stage_sfx_muted';
 const DEDUPE_WINDOW_MS = 38;
+
+const GAIN_BY_SFX: Record<SfxName, number> = {
+  hover: 0.28,
+  select: 0.52,
+  allow: 0.58,
+  deny: 0.52,
+  switch: 0.62,
+  send: 0.62,
+  type: 0.26,
+  complete: 0.6,
+  compaction: 0.62,
+};
 
 type MuteListener = (muted: boolean) => void;
 
@@ -27,6 +55,7 @@ const muteListeners = new Set<MuteListener>();
 
 let userGestureUnlocked = false;
 let audioCtx: AudioContext | null = null;
+let preloadedAll = false;
 
 const decodedBufferCache = new Map<SfxName, AudioBuffer>();
 const missingFileSet = new Set<SfxName>();
@@ -39,6 +68,10 @@ const playCounts: Record<SfxName, number> = {
   allow: 0,
   deny: 0,
   switch: 0,
+  send: 0,
+  type: 0,
+  complete: 0,
+  compaction: 0,
 };
 
 export interface SfxDebugSnapshot {
@@ -105,12 +138,19 @@ export function subscribeSfxMuted(listener: MuteListener): () => void {
   };
 }
 
+function preloadAllBuffers(ctx: AudioContext): void {
+  if (preloadedAll) return;
+  preloadedAll = true;
+  for (const name of SFX_NAMES) {
+    void tryLoadMp3Buffer(name, ctx);
+  }
+}
+
 export function notifyUserGesture(): void {
   userGestureUnlocked = true;
-  if (audioCtx && audioCtx.state === 'suspended') {
-    void audioCtx.resume().catch(() => {
-      // ignore resume errors in headless environments
-    });
+  const ctx = getOrCreateAudioContext();
+  if (ctx) {
+    preloadAllBuffers(ctx);
   }
 }
 
@@ -119,8 +159,9 @@ function attachGlobalGestureUnlock(): void {
 
   const unlock = () => {
     userGestureUnlocked = true;
-    if (audioCtx && audioCtx.state === 'suspended') {
-      void audioCtx.resume().catch(() => {});
+    const ctx = getOrCreateAudioContext();
+    if (ctx) {
+      preloadAllBuffers(ctx);
     }
   };
 
@@ -140,6 +181,31 @@ function attachGlobalGestureUnlock(): void {
     capture: true,
     passive: true,
   });
+
+  // Global automatic UI button click & hover SFX
+  window.addEventListener(
+    'click',
+    (e) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target?.closest('button, a');
+      if (!btn || (btn as HTMLButtonElement).disabled) return;
+      const testId = btn.getAttribute('data-testid') || '';
+      if (testId === 'sfx-mute-btn') return;
+      if (testId === 'stage-send-btn') {
+        playSfx('send');
+        return;
+      }
+      if (testId === 'trigger-compaction-btn') {
+        playSfx('compaction');
+        return;
+      }
+      if (testId.startsWith('party-member-') || testId.startsWith('char-card-')) {
+        return; // SwitchTransition plays 'switch'
+      }
+      playSfx('select');
+    },
+    { capture: true, passive: true }
+  );
 
   window.__P5_SFX_DEBUG__ = (): SfxDebugSnapshot => ({
     muted: mutedState,
@@ -195,13 +261,12 @@ function loadManifest(): Promise<Partial<Record<SfxName, string>>> {
       if (!files || typeof files !== 'object') return result;
       for (const name of SFX_NAMES) {
         const f = files[name];
-        // 只接受 /sfx/ 目录下的纯文件名
         if (typeof f === 'string' && /^[\w.-]+\.(mp3|ogg|wav|m4a)$/i.test(f)) {
           result[name] = f;
         }
       }
     } catch {
-      // 缺失或损坏的清单视为空
+      // ignore
     }
     return result;
   })();
@@ -231,7 +296,7 @@ async function tryLoadMp3Buffer(
         missingFileSet.add(name);
         return null;
       }
-      const res = await fetch(SFX_BASE + file);
+      const res = await fetch(SFX_BASE + file + SFX_CACHE_BUSTER);
       if (!res.ok) {
         missingFileSet.add(name);
         return null;
@@ -252,11 +317,21 @@ async function tryLoadMp3Buffer(
   return loadPromise;
 }
 
-function playDecodedBuffer(ctx: AudioContext, buffer: AudioBuffer): void {
+function playDecodedBuffer(
+  ctx: AudioContext,
+  buffer: AudioBuffer,
+  name: SfxName
+): void {
   try {
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
-    gain.gain.value = 0.45;
+    gain.gain.value = GAIN_BY_SFX[name] ?? 0.5;
+    if (name === 'type') {
+      // Subtle JRPG dialogue pitch variation so speech blips sound lively and organic
+      source.playbackRate.value = 0.94 + Math.random() * 0.14;
+    } else if (name === 'hover') {
+      source.playbackRate.value = 0.98 + Math.random() * 0.05;
+    }
     source.buffer = buffer;
     source.connect(gain);
     gain.connect(ctx.destination);
@@ -266,54 +341,58 @@ function playDecodedBuffer(ctx: AudioContext, buffer: AudioBuffer): void {
   }
 }
 
-/**
- * WebAudio 合成器回退音效：短促、干净、无外部音频文件依赖
- */
 function playSynthesizedSfx(ctx: AudioContext, name: SfxName): void {
   try {
     const now = ctx.currentTime;
 
     switch (name) {
-      case 'hover': {
-        // 轻巧高音滴声 (880Hz -> 1320Hz, 35ms)
+      case 'hover':
+      case 'type': {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(880, now);
-        osc.frequency.exponentialRampToValueAtTime(1320, now + 0.035);
+        osc.frequency.setValueAtTime(name === 'type' ? 660 : 880, now);
+        osc.frequency.exponentialRampToValueAtTime(
+          name === 'type' ? 920 : 1320,
+          now + 0.028
+        );
 
         gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(0.055, now + 0.006);
-        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.038);
+        gain.gain.linearRampToValueAtTime(
+          name === 'type' ? 0.04 : 0.055,
+          now + 0.005
+        );
+        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.032);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.04);
+        osc.stop(now + 0.035);
         break;
       }
 
-      case 'select': {
-        // 利落的刀片游标切换双音 (540Hz -> 810Hz, 55ms)
+      case 'select':
+      case 'send': {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(540, now);
-        osc.frequency.setValueAtTime(810, now + 0.022);
+        osc.frequency.setValueAtTime(860, now + 0.022);
 
         gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(0.075, now + 0.006);
-        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.058);
+        gain.gain.linearRampToValueAtTime(0.11, now + 0.006);
+        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.065);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.06);
+        osc.stop(now + 0.07);
         break;
       }
 
-      case 'allow': {
-        // MAX 允许：明亮上扬双音确认 (C6 1046.5Hz -> G6 1568Hz, 145ms)
+      case 'allow':
+      case 'complete':
+      case 'compaction': {
         const osc1 = ctx.createOscillator();
         const osc2 = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -328,8 +407,8 @@ function playSynthesizedSfx(ctx: AudioContext, name: SfxName): void {
         osc2.frequency.setValueAtTime(783.99, now + 0.055);
 
         gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(0.095, now + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.145);
+        gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.16);
 
         osc1.connect(gain);
         osc2.connect(gain);
@@ -337,13 +416,12 @@ function playSynthesizedSfx(ctx: AudioContext, name: SfxName): void {
 
         osc1.start(now);
         osc2.start(now);
-        osc1.stop(now + 0.15);
-        osc2.stop(now + 0.15);
+        osc1.stop(now + 0.165);
+        osc2.stop(now + 0.165);
         break;
       }
 
       case 'deny': {
-        // LOW 拒绝：克制下行双音 (440Hz -> 293.66Hz, 135ms)
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sawtooth';
@@ -351,7 +429,7 @@ function playSynthesizedSfx(ctx: AudioContext, name: SfxName): void {
         osc.frequency.setValueAtTime(293.66, now + 0.05);
 
         gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(0.065, now + 0.008);
+        gain.gain.linearRampToValueAtTime(0.085, now + 0.008);
         gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.135);
 
         osc.connect(gain);
@@ -362,7 +440,6 @@ function playSynthesizedSfx(ctx: AudioContext, name: SfxName): void {
       }
 
       case 'switch': {
-        // 队伍换人：柔和清透水花滑音 (D5 587Hz -> A5 880Hz, 115ms)
         const osc = ctx.createOscillator();
         const sub = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -377,8 +454,8 @@ function playSynthesizedSfx(ctx: AudioContext, name: SfxName): void {
         sub.frequency.exponentialRampToValueAtTime(440, now + 0.095);
 
         gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(0.07, now + 0.012);
-        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.115);
+        gain.gain.linearRampToValueAtTime(0.11, now + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.125);
 
         osc.connect(gain);
         sub.connect(gain);
@@ -386,8 +463,8 @@ function playSynthesizedSfx(ctx: AudioContext, name: SfxName): void {
 
         osc.start(now);
         sub.start(now);
-        osc.stop(now + 0.12);
-        sub.stop(now + 0.12);
+        osc.stop(now + 0.13);
+        sub.stop(now + 0.13);
         break;
       }
     }
@@ -403,18 +480,19 @@ export function playSfx(name: SfxName): void {
   const nowMs =
     typeof performance !== 'undefined' ? performance.now() : Date.now();
   const prevMs = lastPlayedAtMap.get(name) ?? -Infinity;
-  if (nowMs - prevMs < DEDUPE_WINDOW_MS) {
+  const dedupeMs = name === 'type' ? 55 : DEDUPE_WINDOW_MS;
+  if (nowMs - prevMs < dedupeMs) {
     return;
   }
   lastPlayedAtMap.set(name, nowMs);
-  playCounts[name] += 1;
+  playCounts[name] = (playCounts[name] ?? 0) + 1;
 
   const ctx = getOrCreateAudioContext();
   if (!ctx) return;
 
   const cached = decodedBufferCache.get(name);
   if (cached) {
-    playDecodedBuffer(ctx, cached);
+    playDecodedBuffer(ctx, cached, name);
     return;
   }
 
@@ -423,12 +501,7 @@ export function playSfx(name: SfxName): void {
     return;
   }
 
-  void tryLoadMp3Buffer(name, ctx).then((buffer) => {
-    if (mutedState) return;
-    if (buffer) {
-      playDecodedBuffer(ctx, buffer);
-    } else {
-      playSynthesizedSfx(ctx, name);
-    }
-  });
+  // Play synth immediately on first hit while MP3 decodes into cache
+  playSynthesizedSfx(ctx, name);
+  void tryLoadMp3Buffer(name, ctx);
 }

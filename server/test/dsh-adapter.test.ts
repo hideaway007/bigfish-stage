@@ -91,7 +91,66 @@ test('DshEventMapper：事件流式翻译（思考、文字、工具调用、完
     },
   });
 
-  // 3. tool/call -> tool_start
+  // 3. tool/call -> tool_start (read should NOT pollute structuredDiffFiles)
+  mapper.translate({
+    method: 'session.event',
+    params: {
+      event: {
+        type: 'tool/call',
+        data: {
+          callId: 'call-read',
+          name: 'fs_read',
+          arguments: JSON.stringify({ path: '/workspace/src/app.ts' }),
+        },
+      },
+    },
+  });
+  assert.equal(mapper.structuredDiffFiles.size, 0);
+  mapper.translate({
+    method: 'session.event',
+    params: {
+      event: {
+        type: 'tool/result',
+        data: {
+          callId: 'call-read',
+          message: { content: [{ type: 'text', text: 'content' }], isError: false },
+        },
+      },
+    },
+  });
+  assert.equal(mapper.structuredDiffFiles.size, 0);
+
+  // 3b. tool/call + tool/result with diff -> records fileKey in structuredDiffFiles
+  mapper.translate({
+    method: 'session.event',
+    params: {
+      event: {
+        type: 'tool/call',
+        data: {
+          callId: 'call-edit',
+          name: 'str_replace_editor',
+          arguments: JSON.stringify({ path: '/workspace/src/app.ts' }),
+        },
+      },
+    },
+  });
+  assert.equal(mapper.structuredDiffFiles.size, 0);
+  mapper.translate({
+    method: 'session.event',
+    params: {
+      event: {
+        type: 'tool/result',
+        data: {
+          callId: 'call-edit',
+          meta: { diff: '--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-old\n+new\n' },
+          message: { content: [{ type: 'text', text: 'edited' }], isError: false },
+        },
+      },
+    },
+  });
+  assert.equal(mapper.structuredDiffFiles.size, 1);
+
+  // 3c. bash tool/call -> tool_start
   mapper.translate({
     method: 'session.event',
     params: {
@@ -106,7 +165,7 @@ test('DshEventMapper：事件流式翻译（思考、文字、工具调用、完
     },
   });
 
-  const toolStart = events.find((e) => e.type === 'tool_start');
+  const toolStart = events.find((e): e is Extract<StageEvent, { type: 'tool_start' }> => e.type === 'tool_start' && e.tool === 'bash');
   assert.ok(toolStart);
   assert.equal(toolStart.tool, 'bash');
   assert.ok(toolStart.summary.includes('git status'));
@@ -128,7 +187,7 @@ test('DshEventMapper：事件流式翻译（思考、文字、工具调用、完
     },
   });
 
-  const toolEnd = events.find((e) => e.type === 'tool_end');
+  const toolEnd = events.find((e): e is Extract<StageEvent, { type: 'tool_end' }> => e.type === 'tool_end' && e.toolUseId === 'call-1');
   assert.ok(toolEnd);
   assert.equal(toolEnd.ok, true);
   assert.ok(toolEnd.output?.includes('On branch main'));
@@ -285,6 +344,83 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   assert.ok(events.some((e) => e.type === 'turn_done'));
 
   await session.close();
+  await rm(root, { recursive: true, force: true }).catch(() => {});
+});
+
+test('DSH 会话：interrupt 终止子进程后再次 send 自动拉起同 sessionId 子进程继续对话', async () => {
+  const root = await mkdtemp('/tmp/bigfish-dsh-interrupt-');
+  const fakeDshScript = join(root, 'fake-dsh-interrupt.mjs');
+
+  await writeFile(
+    fakeDshScript,
+    `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+if (process.argv.includes('--version')) {
+  console.log('0.2.2-rc.1');
+  process.exit(0);
+}
+const send = (v) => process.stdout.write(JSON.stringify(v) + '\\n');
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const q = JSON.parse(line);
+  if (q.method === 'initialize') {
+    send({ jsonrpc: '2.0', id: q.id, result: { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } } });
+  }
+  if (q.method === 'session/prompt') {
+    const text = q.params?.contentBlocks?.[0]?.text || '';
+    send({ jsonrpc: '2.0', id: q.id, result: { messageId: 'msg-int' } });
+    send({ jsonrpc: '2.0', method: 'session.event', params: { event: { type: 'turn/start', data: { turn: 1 } } } });
+    if (text === 'slow-task') {
+      // Simulate long-running task waiting to be interrupted
+    } else {
+      send({ jsonrpc: '2.0', method: 'session.event', params: { event: { type: 'assistant/message', data: { stream: [{ type: 'chunk', chunk: { type: 'text', text: '中断后恢复成功：' + q.params.sessionId } }] } } } });
+      send({ jsonrpc: '2.0', method: 'session.event', params: { event: { type: 'turn/end', data: { reason: 'completed' } } } });
+    }
+  }
+  if (q.method === 'shutdown') {
+    send({ jsonrpc: '2.0', id: q.id, result: {} });
+    process.exit(0);
+  }
+});
+`,
+    { mode: 0o755 }
+  );
+
+  const adapter = new DshAdapter(join(root, 'home'));
+  const events: StageEvent[] = [];
+  const session = await adapter.startSession({
+    ...DEFAULT_SETTINGS.worker,
+    cwd: root,
+    extra: { executable: fakeDshScript },
+    onEvent: (e) => events.push(e),
+  });
+
+  const initialSessionId = session.sessionId;
+  await session.send('turn-1', 'slow-task');
+  let attempts = 0;
+  while (!events.some((e) => e.type === 'thinking') && attempts++ < 50) {
+    await delay(20);
+  }
+  await session.interrupt();
+  assert.equal(session.turnActive, false);
+  assert.ok(events.some((e) => e.type === 'interrupted'));
+
+  // Wait briefly for killed child process exit event
+  await delay(50);
+
+  // Send a second message in the same session after interrupt
+  events.length = 0;
+  await session.send('turn-2', 'after-interrupt');
+  attempts = 0;
+  while (!events.some((e) => e.type === 'turn_done') && attempts++ < 50) {
+    await delay(20);
+  }
+
+  assert.equal(session.sessionId, initialSessionId);
+  assert.ok(events.some((e) => e.type === 'worker_text' && e.text.includes(initialSessionId)));
+  assert.ok(events.some((e) => e.type === 'turn_done' && e.ok));
+
+  await session.close();
+  await assert.rejects(session.send('turn-3', 'after-close'), /DSH 连接已关闭/);
   await rm(root, { recursive: true, force: true }).catch(() => {});
 });
 

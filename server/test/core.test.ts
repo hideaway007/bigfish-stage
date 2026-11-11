@@ -114,6 +114,10 @@ test('命令验证拒绝无效输入', () => {
   assert.throws(() => parseCommand({ type: 'permission_decision', requestId: '1', allowed: 'yes' }));
   assert.throws(() => parseCommand({ type: 'send', id: '1', text: '' }));
   assert.throws(() => parseCommand({ type: 'list_models', target: 'other' }));
+  assert.throws(() => parseCommand({ type: 'list_sessions', limit: 0 }));
+  assert.throws(() => parseCommand({ type: 'list_sessions', limit: 501 }));
+  assert.equal(parseCommand({ type: 'list_sessions', limit: 50 }).type as string, 'list_sessions');
+  assert.equal(parseCommand({ type: 'list_sessions' }).type as string, 'list_sessions');
   assert.equal(parseCommand({ type: 'stop' }).type, 'stop');
 });
 test('台词：即时 preset、模型替换、限流、账本无原始输出、禁用与切角作废', async () => {

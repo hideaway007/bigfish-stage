@@ -33,8 +33,6 @@ export function buildCodexLaunch(settings: Pick<WorkerSettings, 'connection' | '
     if (settings.endpoint.apiKey) {
       env.BIGFISH_WORKER_API_KEY = settings.endpoint.apiKey;
       args.push('-c', 'model_providers.bigfish.env_key="BIGFISH_WORKER_API_KEY"');
-    } else {
-      args.push('-c', 'model_providers.bigfish.experimental_bearer_token="magpie"');
     }
   }
   return { args: [...args, 'app-server', '--stdio'], env };
@@ -238,13 +236,7 @@ class CodexSession implements WorkerSession {
   }
   async initialize() {
     await this.initializeTransport();
-    const effectiveModel =
-      this.options.connection === 'endpoint' &&
-      this.options.endpoint.baseUrl.includes('3425') &&
-      /^gpt-/.test(this.options.model)
-        ? `codex/${this.options.model}`
-        : this.options.model;
-    const params = { cwd: this.options.cwd, model: effectiveModel, sandbox: this.options.sandbox, approvalPolicy: 'on-request', approvalsReviewer: 'user' };
+    const params = { cwd: this.options.cwd, model: this.options.model, sandbox: this.options.sandbox, approvalPolicy: 'on-request', approvalsReviewer: 'user' };
     const result = await this.request(this.options.resumeId ? 'thread/resume' : 'thread/start', { ...params, ...(this.options.resumeId ? { threadId: this.options.resumeId } : {}) });
     verifyEffectivePolicy(result, this.options.sandbox, this.options.cwd);
     this.sessionId = result.thread.id;
@@ -299,37 +291,42 @@ class CodexSession implements WorkerSession {
   }
 }
 
-class DirectEndpointSession implements WorkerSession {
-  sessionId = `ses_${randomUUID().slice(0, 8)}`;
+export class DirectEndpointSession implements WorkerSession {
+  sessionId: string;
   turnActive = false;
   private closed = false;
   private controller?: AbortController;
+  private readonly emit: (event: StageEvent) => void;
   private history: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     {
       role: 'system',
       content:
-        '你是 P5 舞台上的 AI 编程搭档（大肥鱼 / 哈基米 / Claude 娘 / Codex 娘）。请直接、自然、快速地用中文回答店长（用户）的问题或完成任务，语气活泼自然，每次回答简洁清晰（控制在 1～3 句话以内）。',
+        '你是 P5 舞台上的 AI 编程搭档（大肥鱼 / 哈基米 / Claude 娘 / Codex 娘）。请直接、自然、专业地用中文回答店长（用户）的问题或完成任务。',
     },
   ];
 
-  constructor(private options: StartSessionOptions) {}
+  constructor(private options: StartSessionOptions) {
+    this.sessionId = options.resumeId || `ses_${randomUUID().slice(0, 8)}`;
+    const key = options.connection === 'endpoint' ? options.endpoint.apiKey : undefined;
+    const redact = (value: unknown): unknown =>
+      typeof value === 'string' && key
+        ? value.split(key).join('[REDACTED]')
+        : Array.isArray(value)
+          ? value.map(redact)
+          : value && typeof value === 'object'
+            ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redact(v)]))
+            : value;
+    this.emit = key ? (event) => options.onEvent(redact(event) as StageEvent) : options.onEvent;
+  }
 
   async initialize() {
-    this.options.onEvent({
+    this.emit({
       type: 'session_started',
       at: Date.now(),
       sessionId: this.sessionId,
       model: this.options.model,
       cwd: this.options.cwd,
     });
-  }
-
-  private resolveFastModel(): string {
-    const m = this.options.model || '';
-    if (!m || m.startsWith('codex/') || m.startsWith('gpt-')) {
-      return 'remote-magpie/antigravity/gemini-3.8-flash';
-    }
-    return m;
   }
 
   async send(id: string, text: string) {
@@ -339,25 +336,23 @@ class DirectEndpointSession implements WorkerSession {
     const startedAt = Date.now();
     this.controller = new AbortController();
 
-    this.options.onEvent({ type: 'user_message', at: startedAt, id, text });
-    this.options.onEvent({ type: 'thinking', at: Date.now() });
+    this.emit({ type: 'user_message', at: startedAt, id, text });
+    this.emit({ type: 'thinking', at: Date.now() });
     this.history.push({ role: 'user', content: text });
 
     try {
       const baseUrl = this.options.endpoint.baseUrl.replace(/\/+$/, '');
-      const token = this.options.endpoint.apiKey || 'magpie';
-      const modelToUse = this.resolveFastModel();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.options.endpoint.apiKey) {
+        headers.Authorization = `Bearer ${this.options.endpoint.apiKey}`;
+      }
 
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
         body: JSON.stringify({
-          model: modelToUse,
+          model: this.options.model,
           stream: false,
-          max_tokens: 400,
           messages: this.history.slice(-14),
         }),
         signal: this.controller.signal,
@@ -375,22 +370,22 @@ class DirectEndpointSession implements WorkerSession {
       this.history.push({ role: 'assistant', content: replyText });
 
       if (data?.usage?.total_tokens) {
-        this.options.onEvent({
+        this.emit({
           type: 'context_usage',
           at: Date.now(),
-          usedTokens: 45000 + Number(data.usage.total_tokens) * 10,
+          usedTokens: Number(data.usage.total_tokens),
           maxTokens: 1000000,
         });
       }
 
-      this.options.onEvent({
+      this.emit({
         type: 'worker_text',
         at: Date.now(),
         text: replyText,
         final: true,
       });
       this.turnActive = false;
-      this.options.onEvent({
+      this.emit({
         type: 'turn_done',
         at: Date.now(),
         ok: true,
@@ -400,12 +395,12 @@ class DirectEndpointSession implements WorkerSession {
     } catch (error) {
       this.turnActive = false;
       if ((error as Error).name === 'AbortError') {
-        this.options.onEvent({
+        this.emit({
           type: 'interrupted',
           at: Date.now(),
           reason: '已停止当前对话',
         });
-        this.options.onEvent({
+        this.emit({
           type: 'turn_done',
           at: Date.now(),
           ok: false,
@@ -414,12 +409,12 @@ class DirectEndpointSession implements WorkerSession {
         });
         return;
       }
-      this.options.onEvent({
+      this.emit({
         type: 'error',
         at: Date.now(),
         message: (error as Error).message,
       });
-      this.options.onEvent({
+      this.emit({
         type: 'turn_done',
         at: Date.now(),
         ok: false,
@@ -432,8 +427,8 @@ class DirectEndpointSession implements WorkerSession {
   }
 
   async steer(id: string, text: string) {
-    this.options.onEvent({ type: 'steer_queued', at: Date.now(), id, text });
-    this.options.onEvent({ type: 'steer_acked', at: Date.now(), id });
+    this.emit({ type: 'steer_queued', at: Date.now(), id, text });
+    this.emit({ type: 'steer_acked', at: Date.now(), id });
     this.history.push({ role: 'user', content: `补充要求：${text}` });
   }
 
@@ -442,7 +437,7 @@ class DirectEndpointSession implements WorkerSession {
   }
 
   async decidePermission(requestId: string, allowed: boolean) {
-    this.options.onEvent({
+    this.emit({
       type: 'permission_resolved',
       at: Date.now(),
       requestId,
@@ -453,6 +448,25 @@ class DirectEndpointSession implements WorkerSession {
   async close() {
     this.closed = true;
     this.controller?.abort();
+  }
+}
+
+export class DirectChatAdapter implements WorkerAdapter {
+  readonly id = 'direct-chat';
+  async info() {
+    return { id: this.id, name: 'OpenAI 兼容直连对话 (无工具)', available: true };
+  }
+  async listModels(settings: WorkerSettings = DEFAULT_SETTINGS.worker): Promise<ModelList> {
+    return listEndpointModels({ ...settings.endpoint, model: settings.model });
+  }
+  async testConnection(settings: WorkerSettings) {
+    return testEndpoint({ ...settings.endpoint, model: settings.model });
+  }
+  async startSession(options: StartSessionOptions): Promise<WorkerSession> {
+    const cwd = await realpath(options.cwd);
+    const session = new DirectEndpointSession({ ...options, cwd });
+    await session.initialize();
+    return session;
   }
 }
 
@@ -482,11 +496,6 @@ export class CodexAdapter implements WorkerAdapter {
   }
   async startSession(options: StartSessionOptions): Promise<WorkerSession> {
     const cwd = await realpath(options.cwd);
-    if (options.connection === 'endpoint' && options.endpoint.baseUrl.includes('3425')) {
-      const fastSession = new DirectEndpointSession({ ...options, cwd });
-      await fastSession.initialize();
-      return fastSession;
-    }
     if (options.connection === 'endpoint') await mkdir(this.home, { recursive: true, mode: 0o700 });
     const session = new CodexSession({ ...options, cwd }, this.home);
     try { await session.initialize(); return session; }

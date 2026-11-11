@@ -14,6 +14,10 @@ export default defineConfig({
         ws: true,
         changeOrigin: false,
       },
+      '/api': {
+        target: `http://127.0.0.1:${serverPort}`,
+        changeOrigin: false,
+      },
     },
   },
 });

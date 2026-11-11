@@ -42,7 +42,7 @@ async function runRealDshTest() {
               projectDir: process.cwd(),
               worker: {
                 adapter: 'dsh',
-                model: 'remote-magpie/auto/deepseek-v4.1-flash',
+                model: 'deepseek-v4.1-flash',
                 connection: 'agent-default',
               },
             },

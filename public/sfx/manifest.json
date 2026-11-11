@@ -1,3 +1,13 @@
 {
-  "files": {}
+  "files": {
+    "hover": "hover.mp3",
+    "select": "select.mp3",
+    "allow": "allow.mp3",
+    "deny": "deny.mp3",
+    "switch": "switch.mp3",
+    "send": "send.mp3",
+    "type": "type.mp3",
+    "complete": "complete.mp3",
+    "compaction": "compaction.mp3"
+  }
 }

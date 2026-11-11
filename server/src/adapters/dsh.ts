@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalPresentation, displayCommand, displayPath, uncoveredGitDiff } from './presentation';
+import { approvalPresentation, displayCommand, displayPath, fileKey, uncoveredGitDiff } from './presentation';
 import type { StageEvent, ToolKind } from '../../../src/shared/stage-events';
 import { DEFAULT_SETTINGS, type WorkerSettings } from '../../../src/shared/settings';
 import type { ConnectionResult, ModelList, StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
@@ -63,7 +63,7 @@ export function formatToolSummary(toolName: string, args: Record<string, any>, c
 export class DshEventMapper {
   private active = false;
   private started = 0;
-  private openTools = new Map<string, { tool: ToolKind; rawName: string; summary: string; file?: string }>();
+  private openTools = new Map<string, { tool: ToolKind; rawName: string; summary: string; file?: string; rawFile?: string }>();
   private buffer: SentenceBuffer;
   readonly structuredDiffFiles = new Set<string>();
   private steers = new Set<string>();
@@ -139,10 +139,11 @@ export class DshEventMapper {
         const callId = String(data.callId || randomUUID());
         const rawName = String(data.name || 'tool');
         const args = parseToolArgs(data.arguments);
+        const rawFileVal = args.path || args.file_path || args.file || args.target || '';
+        const rawFile = rawFileVal ? String(rawFileVal) : undefined;
         const { summary, file } = formatToolSummary(rawName, args, this.cwd, this.home);
         const tool = mapToolKind(rawName);
-        this.openTools.set(callId, { tool, rawName, summary, file });
-        if (file) this.structuredDiffFiles.add(file);
+        this.openTools.set(callId, { tool, rawName, summary, file, rawFile });
         this.emit({ type: 'tool_start', toolUseId: callId, tool, rawName, summary, file });
       }
 
@@ -158,6 +159,9 @@ export class DshEventMapper {
         }
         const diff = typeof data.meta?.diff === 'string' ? data.meta.diff : undefined;
         this.openTools.delete(callId);
+        if (!isError && info?.rawFile && typeof diff === 'string' && diff.trim()) {
+          this.structuredDiffFiles.add(fileKey(info.rawFile, this.cwd));
+        }
         this.emit({
           type: 'tool_end',
           toolUseId: callId,
@@ -265,6 +269,8 @@ export class DshSession implements WorkerSession {
   private mapper: DshEventMapper;
   private sequence = 0;
   private closed = false;
+  private disposed = false;
+  private interrupting = false;
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private approvals = new Map<string, { rpcId: number | string; params: any }>();
   private approvalPrefix = randomUUID();
@@ -293,7 +299,7 @@ export class DshSession implements WorkerSession {
   }
 
   private sendWire(message: Wire) {
-    if (this.closed || !this.child?.stdin?.writable) throw new Error('DSH 连接已关闭');
+    if (this.closed || this.disposed || !this.child?.stdin?.writable) throw new Error('DSH 连接已关闭');
     this.child.stdin.write(JSON.stringify(message) + '\n');
   }
 
@@ -315,36 +321,50 @@ export class DshSession implements WorkerSession {
     });
   }
 
-  async initialize() {
+  private async spawnAndInitialize(emitSessionStarted: boolean) {
     const { args, env, patchFile } = await buildDshLaunch(this.options, this.home, process.env);
     this.patchFile = patchFile;
     const executable = this.options.extra?.executable || 'dsh';
 
-    this.child = spawn(executable, args, {
+    const child = spawn(executable, args, {
       cwd: this.options.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    this.child = child;
+    this.closed = false;
 
-    createInterface({ input: this.child.stdout! }).on('line', (line) => {
-      if (!line.trim()) return;
+    createInterface({ input: child.stdout! }).on('line', (line) => {
+      if (this.child !== child || !line.trim()) return;
       try {
         this.receive(JSON.parse(line));
       } catch {
         this.fail(new Error('DSH 协议数据无效'));
-        this.child.kill('SIGTERM');
+        child.kill('SIGTERM');
       }
     });
 
-    this.child.stderr!.resume();
-    this.child.stdin!.on('error', () => this.fail(new Error('DSH 输入管道已关闭')));
-    this.child.on('error', (err) => this.fail(new Error(`无法启动 DSH (${err.message})，请检查 dsh 命令`)));
-    this.child.on('exit', () => {
-      this.closed = true;
-      this.fail(new Error('DSH 进程已退出'));
+    child.stderr!.resume();
+    child.stdin!.on('error', () => {
+      if (this.child === child && !this.interrupting && !this.disposed) {
+        this.fail(new Error('DSH 输入管道已关闭'));
+      }
+    });
+    child.on('error', (err) => {
+      if (this.child === child && !this.interrupting && !this.disposed) {
+        this.fail(new Error(`无法启动 DSH (${err.message})，请检查 dsh 命令`));
+      }
+    });
+    child.on('exit', () => {
+      if (this.child === child) {
+        this.closed = true;
+        if (!this.interrupting && !this.disposed) {
+          this.fail(new Error('DSH 进程已退出'));
+        }
+      }
     });
 
-    const provider = this.options.connection === 'endpoint' ? 'bigfish-endpoint' : 'magpie';
+    const provider = this.options.connection === 'endpoint' ? 'bigfish-endpoint' : 'default';
     await this.request('initialize', {
       cwd: this.options.cwd,
       provider,
@@ -353,13 +373,19 @@ export class DshSession implements WorkerSession {
       capabilities: { userQuestions: true },
     });
 
-    this.emit({
-      type: 'session_started',
-      at: Date.now(),
-      sessionId: this.sessionId,
-      model: this.options.model,
-      cwd: this.options.cwd,
-    });
+    if (emitSessionStarted) {
+      this.emit({
+        type: 'session_started',
+        at: Date.now(),
+        sessionId: this.sessionId,
+        model: this.options.model,
+        cwd: this.options.cwd,
+      });
+    }
+  }
+
+  async initialize() {
+    await this.spawnAndInitialize(true);
   }
 
   private receive(message: Wire) {
@@ -403,8 +429,13 @@ export class DshSession implements WorkerSession {
   }
 
   async send(id: string, text: string) {
+    if (this.disposed) throw new Error('DSH 连接已关闭，请新建或恢复会话');
     if (this.turnActive) throw new Error('任务进行中，请使用插话');
+    if (this.closed || !this.child?.stdin?.writable) {
+      await this.spawnAndInitialize(false);
+    }
     this.turnActive = true;
+    this.completing = undefined;
     this.beforeDiff = await this.gitDiff();
     this.mapper.begin();
     this.emit({ type: 'user_message', at: Date.now(), id, text });
@@ -414,6 +445,7 @@ export class DshSession implements WorkerSession {
         contentBlocks: [{ type: 'text', text }],
       });
     } catch (error) {
+      if (this.interrupting || !this.turnActive) return;
       this.completing = this.finish(false, '无法开始任务');
       await this.completing;
       throw error;
@@ -433,12 +465,23 @@ export class DshSession implements WorkerSession {
 
   async interrupt() {
     if (!this.turnActive) return;
+    this.interrupting = true;
+    for (const entry of this.pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error('用户喊停'));
+    }
+    this.pending.clear();
     this.mapper.end(false, '用户喊停', true);
-    try {
-      await this.request('shutdown', {});
-    } catch {}
-    this.child?.kill('SIGINT');
+    const child = this.child;
+    if (child && !this.closed) {
+      try {
+        this.sendWire({ jsonrpc: '2.0', id: ++this.sequence, method: 'shutdown', params: {} });
+      } catch {}
+      child.kill('SIGINT');
+    }
+    this.closed = true;
     await this.finish(false, '用户喊停', true);
+    this.interrupting = false;
   }
 
   async decidePermission(requestId: string, allowed: boolean) {
@@ -475,11 +518,14 @@ export class DshSession implements WorkerSession {
       this.emit({ type: 'tool_end', at: Date.now(), toolUseId: id, ok: true, summary: 'Git diff HEAD', diff });
     }
     for (const [id, item] of this.approvals.entries()) {
-      this.sendWire({ jsonrpc: '2.0', id: item.rpcId, result: { outcome: 'cancelled' } });
+      try {
+        this.sendWire({ jsonrpc: '2.0', id: item.rpcId, result: { outcome: 'cancelled' } });
+      } catch {}
       this.emit({ type: 'permission_resolved', at: Date.now(), requestId: id, allowed: false });
     }
     this.approvals.clear();
     this.turnActive = false;
+    this.mapper.end(ok, summary, interrupted);
   }
 
   private fail(error: Error) {
@@ -495,12 +541,13 @@ export class DshSession implements WorkerSession {
   }
 
   async close() {
+    this.disposed = true;
     if (this.turnActive && !this.completing) this.completing = this.finish(false, '会话已关闭', true);
     await this.completing;
     this.mapper.dispose();
     if (this.child) {
       try {
-        await this.request('shutdown', {});
+        this.sendWire({ jsonrpc: '2.0', id: ++this.sequence, method: 'shutdown', params: {} });
       } catch {}
       this.child.stdin?.end();
       this.child.kill('SIGTERM');
@@ -537,7 +584,6 @@ export class DshAdapter implements WorkerAdapter {
     }
     return {
       models: [
-        'remote-magpie/auto/deepseek-v4.1-flash',
         'deepseek-chat',
         'deepseek-reasoner',
         'deepseek-coder',

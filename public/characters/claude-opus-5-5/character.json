@@ -229,12 +229,12 @@
   },
   "recommendedModels": [
     "claude-opus-5-5",
-    "gpt-6.1-sol",
-    "remote-magpie/antigravity/gemini-3.8-flash"
+    "claude-sonnet-5-5",
+    "gpt-6.1-sol"
   ],
   "art": {
     "renderer": "sprites",
-    "portrait": "art/portrait.svg",
+    "portrait": "art/portrait.png",
     "emotions": {
       "idle": "art/idle.png",
       "thinking": "art/thinking.png",

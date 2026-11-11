@@ -70,8 +70,8 @@ const DEMO_ADAPTERS: WorkerAdapterInfo[] = [
 const DEMO_MODELS = [
   'codex/gpt-6.1-sol',
   'codex/codex-mini-latest',
-  'remote-magpie/antigravity/gemini-3.8-flash',
-  'remote-magpie/antigravity/gemini-4-argon',
+  'gemini-3.8-flash',
+  'gemini-4-argon',
   'gpt-6.1-sol',
   'gpt-6-luna',
   'deepseek-v4-pro',

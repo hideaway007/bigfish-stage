@@ -7,12 +7,13 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 const SHORTCUTS = [
-  ['? / Shift+/', '打开或关闭快捷键帮助', '未输入文字时'],
-  ['L', '打开或关闭演出回看', '舞台界面'],
-  ['A', '打开最近一条工具档案', '舞台界面，无其他弹窗时'],
-  ['`', '切换舞台 / 工程视图', '未输入文字时'],
-  ['Esc', '关闭当前弹窗；无弹窗时打开系统菜单', '舞台界面'],
-  ['Space', '立即显示当前台词', '舞台界面'],
+  ['? / Shift+/', '快捷键速查', '未输入文字时'],
+  ['H', '历史会话列表', '舞台界面，无其他弹窗时'],
+  ['L', '对话与行动回看', '舞台界面'],
+  ['O / A', '打开最近工具档案', '舞台界面，无其他弹窗时'],
+  ['`', '切换朴素工程视图', '未输入文字时'],
+  ['Esc', '关闭弹窗 / 打开设置', '舞台界面'],
+  ['Space', '跳过打字机立即显示整句', '舞台界面'],
   ['按住 Ctrl', '加速台词播放', '未输入文字时'],
   ['← / ↑ · → / ↓', '选择允许 / 拒绝', '审批弹窗中'],
   ['Enter', '确认当前审批选项', '审批弹窗中，未输入文字时'],
@@ -20,9 +21,14 @@ const SHORTCUTS = [
   ['Enter', '发送指令或插话', '舞台 / 工程视图输入框中'],
 ];
 
-export function ShortcutHelp({ onOpenArchive, archiveAvailable = false }: {
+export function ShortcutHelp({
+  onOpenArchive,
+  archiveAvailable = false,
+  showTrigger = false,
+}: {
   onOpenArchive?: () => void;
   archiveAvailable?: boolean;
+  showTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -52,7 +58,7 @@ export function ShortcutHelp({ onOpenArchive, archiveAvailable = false }: {
         event.preventDefault();
         event.stopImmediatePropagation();
         setOpen(true);
-      } else if (event.key.toLowerCase() === 'a' && archiveAvailable) {
+      } else if ((event.key.toLowerCase() === 'a' || event.key.toLowerCase() === 'o') && archiveAvailable) {
         event.preventDefault();
         event.stopImmediatePropagation();
         onOpenArchive?.();
@@ -63,7 +69,7 @@ export function ShortcutHelp({ onOpenArchive, archiveAvailable = false }: {
   }, [open, onOpenArchive, archiveAvailable]);
 
   return createPortal(<>
-    <button type="button" className="p5-shortcut-trigger" data-testid="shortcut-help-btn" aria-label="快捷键帮助"
+    <button type="button" className={`p5-shortcut-trigger${showTrigger ? '' : ' is-sr-only'}`} data-testid="shortcut-help-btn" aria-label="快捷键帮助"
       onClick={() => setOpen(true)}>? 快捷键</button>
     {open && <div className="p5-modal-backdrop p5-shortcut-backdrop" data-testid="shortcut-help" role="dialog"
       aria-modal="true" aria-label="快捷键帮助" onClick={() => setOpen(false)}>

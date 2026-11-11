@@ -19,6 +19,10 @@ const mime = {
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
 };
 
 async function startInternalStaticServer(projectRoot) {
@@ -28,28 +32,61 @@ async function startInternalStaticServer(projectRoot) {
   staticServer = http.createServer((req, res) => {
     try {
       const urlPath = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
-      let targetFile = null;
-
-      if (urlPath.startsWith('/characters/')) {
-        targetFile = path.join(charactersDir, urlPath.slice('/characters/'.length));
-      } else if (urlPath === '/' || !path.extname(urlPath)) {
-        targetFile = path.join(distDir, 'index.html');
-      } else {
-        targetFile = path.join(distDir, urlPath);
+      if (urlPath.includes('\0') || urlPath.includes('\\')) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('403 Forbidden');
+        return;
       }
 
-      if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
-        const ext = path.extname(targetFile);
-        res.writeHead(200, {
-          'Content-Type': mime[ext] || 'application/octet-stream',
-          'Cache-Control': 'no-cache',
-        });
-        fs.createReadStream(targetFile).pipe(res);
-      } else {
-        // Fallback to index.html for SPA
-        const fallback = path.join(distDir, 'index.html');
+      const isCharacter = urlPath.startsWith('/characters/');
+      const baseDir = isCharacter ? charactersDir : distDir;
+      const relPath = isCharacter
+        ? urlPath.slice('/characters'.length)
+        : urlPath === '/' || !path.extname(urlPath)
+          ? '/index.html'
+          : urlPath;
+
+      const resolvedBase = fs.existsSync(baseDir) ? fs.realpathSync(baseDir) : path.resolve(baseDir);
+      const candidate = path.resolve(baseDir, `.${relPath}`);
+      const lexRel = path.relative(path.resolve(baseDir), candidate);
+      if (lexRel.startsWith('..') || path.isAbsolute(lexRel)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('403 Forbidden');
+        return;
+      }
+
+      if (fs.existsSync(candidate)) {
+        const realTarget = fs.realpathSync(candidate);
+        const realRel = path.relative(resolvedBase, realTarget);
+        if (realRel.startsWith('..') || path.isAbsolute(realRel)) {
+          res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('403 Forbidden');
+          return;
+        }
+        if (fs.statSync(realTarget).isFile()) {
+          const ext = path.extname(realTarget);
+          res.writeHead(200, {
+            'Content-Type': mime[ext] || 'application/octet-stream',
+            'Cache-Control': 'no-cache',
+          });
+          fs.createReadStream(realTarget).pipe(res);
+          return;
+        }
+      }
+
+      if (path.extname(urlPath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('404 Not Found');
+        return;
+      }
+
+      const fallback = path.join(distDir, 'index.html');
+      if (fs.existsSync(fallback) && fs.statSync(fallback).isFile()) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         fs.createReadStream(fallback).pipe(res);
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('404 Not Found');
       }
     } catch {
       res.writeHead(500);
@@ -93,11 +130,11 @@ function createMainWindow(port) {
     title: '大肥鱼工作台 // BIG FISH AGENT STAGE',
     width: 1440,
     height: 900,
-    minWidth: 1024,
-    minHeight: 680,
+    minWidth: 1080,
+    minHeight: 700,
     backgroundColor: '#090910',
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -239,15 +276,18 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (staticServer) {
-    staticServer.close();
-  }
   if (process.platform !== 'darwin') {
+    if (staticServer) {
+      staticServer.close();
+    }
     app.quit();
   }
 });
 
 app.on('before-quit', () => {
+  if (sessionController) {
+    void sessionController.close();
+  }
   if (staticServer) {
     staticServer.close();
   }
