@@ -319,15 +319,6 @@ export function createP5SidebarComponents(ctx: any) {
       void ctx.uiWorkspace?.archiveSession?.(sid, { stopActivity: true });
     };
 
-    const handleOpenDshEngineSettings = () => {
-      playSfx('select');
-      window.dispatchEvent(
-        new CustomEvent('bigfish:open-system-menu', {
-          detail: { tab: 'presets' },
-        })
-      );
-    };
-
     if (collapsed) {
       return (
         <aside
@@ -385,26 +376,6 @@ export function createP5SidebarComponents(ctx: any) {
               </P5PolyBox>
             </button>
           </div>
-
-
-
-          <button
-            type="button"
-            onClick={handleOpenDshEngineSettings}
-            title="打开工作台设置"
-            style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
-          >
-            <P5PolyBox
-              points="10,0 100,10 90,100 0,90"
-              fill="#141724"
-              stroke="rgba(255,255,255,0.65)"
-              strokeWidth={1.5}
-              shadow="2px 2px 0 #000000"
-              style={{ width: 34, height: 34, display: 'grid', placeItems: 'center' }}
-            >
-              <span style={{ color: '#fff', fontSize: 13, fontWeight: 900 }}>⚙</span>
-            </P5PolyBox>
-          </button>
         </aside>
       );
     }
@@ -1097,36 +1068,34 @@ export function createP5SidebarComponents(ctx: any) {
           style={{
             position: 'relative',
             zIndex: 2,
-            padding: '8px 14px 10px 12px',
+            padding: '8px 14px 12px 12px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
           }}
         >
           <P5PolyBox
-            points="0,10 98,0 100,90 2,100"
+            points="0,9 98.5,0 100,91 1.5,100"
             fill="#0c0e17"
-            stroke="rgba(255, 255, 255, 0.42)"
-            strokeWidth={1.5}
-            shadow="3px 3px 0 #000000"
+            stroke="rgba(255, 255, 255, 0.62)"
+            strokeWidth={2}
+            shadow="4px 4px 0 #000000"
             accentSlashColor="#22c55e"
-            style={{ padding: '5px 10px 5px 12px', flex: 1, minWidth: 0 }}
+            style={{ padding: '9px 14px 9px 16px', flex: 1, minWidth: 0 }}
           >
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: 6,
+                gap: 8,
               }}
             >
               <span
                 style={{
                   fontFamily: 'Anton, "JetBrains Mono", sans-serif',
-                  fontSize: 11,
-                  letterSpacing: '0.08em',
-                  color: '#e2e8f0',
+                  fontSize: 14.5,
+                  letterSpacing: '0.09em',
+                  color: '#f8fafc',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -1136,10 +1105,12 @@ export function createP5SidebarComponents(ctx: any) {
               </span>
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: 12.5,
                   fontWeight: 900,
                   color: '#4ade80',
                   fontFamily: '"JetBrains Mono", monospace',
+                  letterSpacing: '0.04em',
+                  textShadow: '0 0 8px rgba(74, 222, 128, 0.35)',
                   flexShrink: 0,
                 }}
               >
@@ -1147,40 +1118,6 @@ export function createP5SidebarComponents(ctx: any) {
               </span>
             </div>
           </P5PolyBox>
-
-          <button
-            type="button"
-            onClick={handleOpenDshEngineSettings}
-            onMouseEnter={() => playSfx('hover')}
-            title="打开工作台设置与 Agent 预设模式"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <P5PolyBox
-              points="10,0 100,10 90,100 0,90"
-              fill="#171a28"
-              stroke="#ffffff"
-              strokeWidth={1.6}
-              shadow="3px 3px 0 #000000"
-              style={{ padding: '5px 9px' }}
-            >
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 900,
-                  color: '#ffffff',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                ⚙ 设置
-              </span>
-            </P5PolyBox>
-          </button>
         </div>
       </aside>
     );
