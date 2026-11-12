@@ -19,6 +19,7 @@
     "cordis.patch.yml",
     "public/characters/**/*",
     "public/sfx/**/*",
+    "docs/screenshots/*.webp",
     "README.md"
   ],
   "dsh": {
