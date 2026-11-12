@@ -2,7 +2,7 @@
   "name": "p5-agent-stage",
   "version": "0.2.0",
   "private": true,
-  "description": "Big Fish Stage: a Persona 5 styled stage for DeepSeek Harness & AI character agents",
+  "description": "BigFish Stage · 肥鱼舞台 — High-contrast pop-art comic stage for DeepSeek Harness & AI character agents",
   "type": "module",
   "main": "electron/main.cjs",
   "icon": "./dsh-bundle/icon.svg",
@@ -70,8 +70,8 @@
     "dsh:web": "npm run build:stage && dsh --profile bigfish --no-open --port 62000"
   },
   "build": {
-    "appId": "com.bigfish.p5agentstage",
-    "productName": "P5 Agent Stage",
+    "appId": "com.bigfish.stage",
+    "productName": "BigFish Stage",
     "files": [
       "dist/**/*",
       "electron/**/*",

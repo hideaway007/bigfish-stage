@@ -1469,7 +1469,7 @@ export class DshStageSource implements StageDataSource {
         ? `\n前序步骤涉及文件：${Array.from(touchedFiles).slice(-8).join(', ')}`
         : '';
     const handoffPrompt = [
-      `【怪盗团 Baton Pass 换手接力】上一棒队友「${fromShort}」已将接力棒交给你（${toShort}）。${filesHint}`,
+      `【角色换手接力 · Agent Relay】上一棒队友「${fromShort}」已将接力棒交给你（${toShort}）。${filesHint}`,
       `本棒交接指令：${cleanInst || '请基于上方对话与代码改动上下文，复核上一棒的结论，指出潜在问题或继续推进下一步实现。'}`,
     ].join('\n');
 

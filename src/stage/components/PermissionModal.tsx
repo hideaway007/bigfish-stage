@@ -61,7 +61,7 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
           </div>
           <div className="p5-holdup-badge-cluster">
             <div className="p5-holdup-kicker">
-              <em>HOLD UP!</em> // 权限决断
+              <em>ACTION CHECK</em> // 权限决断
             </div>
             <span className="p5-permission-kbd-hint">
               键盘 [← / →] 切换 · [ENTER] 决断
@@ -110,7 +110,7 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
                 {selectedChoice === 'allow' ? '▶' : ' '}
               </span>
               <div className="p5-choice-text-wrap">
-                <span className="p5-choice-en">ALL-IN // 批准突入！</span>
+                <span className="p5-choice-en">APPROVE // 批准放行！</span>
                 <span className="p5-choice-zh">允许执行</span>
               </div>
               <span className="p5-choice-sub">放行本次操作并继续推进</span>
@@ -132,7 +132,7 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
                 {selectedChoice === 'reject' ? '▶' : ' '}
               </span>
               <div className="p5-choice-text-wrap">
-                <span className="p5-choice-en">STAND DOWN // 暂缓行动</span>
+                <span className="p5-choice-en">INTERCEPT // 拦截暂缓</span>
                 <span className="p5-choice-zh">拒绝执行</span>
               </div>
               <span className="p5-choice-sub">拦截该命令并交回你处理</span>

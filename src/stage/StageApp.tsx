@@ -1482,7 +1482,7 @@ export const StageApp: React.FC<StageAppProps> = ({
         <aside className="p5-left-column" data-testid="hud-layer">
           {/* Top Brand & Live Connection Pill */}
           <div className="p5-brand-strip">
-            <div className="p5-brand-tag">P5 AGENT STAGE</div>
+            <div className="p5-brand-tag">BIGFISH STAGE</div>
             <div
               className={`p5-live-pill mode-${sourceMode}`}
               data-testid="data-source-badge"
@@ -1852,7 +1852,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                 </div>
 
                 <div className="p5-radar-info">
-                  <span className="p5-radar-kicker">PALACE GAUGE</span>
+                  <span className="p5-radar-kicker">CONTEXT GAUGE</span>
                   <span
                     className="p5-radar-tokens"
                     data-testid="context-meter-value"
@@ -1949,7 +1949,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                 data-testid="git-trophy-btn"
                 title="查看工作区全量 Git 变更、单文件撤回与一键提交"
               >
-                🗂 战利品变更
+                🗂 代码变更
                 {state.gitStatus.loaded && state.gitStatus.files.length > 0 && (
                   <span className="p5-trophy-count">
                     {state.gitStatus.files.length}
@@ -2613,7 +2613,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                     title={
                       canBatonPass
                         ? '将当前会话摘要与代码改动交接给另一位角色接力推进'
-                        : '先完成至少一轮对话或修改后即可发起怪盗团换手接力'
+                        : '先完成至少一轮对话或修改后即可发起角色换手接力'
                     }
                   >
                     ⚡ 换手接力
@@ -2709,7 +2709,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                   }}
                   placeholder={
                     needsOnboarding
-                      ? '请先在上方「首次潜入引导」卡片中选定项目文件夹并点击「开始」...'
+                      ? '请先在上方「首次启动引导」卡片中选定项目文件夹并点击「开始」...'
                       : state.turnActive
                       ? '任务进行中：输入消息并回车立即插话补充要求…'
                       : `向${shortNickname}下达新任务，或在执行中直接插话补充要求…`

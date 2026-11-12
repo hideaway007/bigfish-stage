@@ -63,7 +63,7 @@ export const AllOutFinishOverlay: React.FC<AllOutFinishOverlayProps> = ({
       className="p5-allout-overlay"
       data-testid="all-out-finish-overlay"
       role="dialog"
-      aria-label="总攻击任务结算演出"
+      aria-label="任务结算演出"
       onClick={onDismiss}
     >
       {/* Shattered red-black geometric star rays */}
@@ -114,10 +114,10 @@ export const AllOutFinishOverlay: React.FC<AllOutFinishOverlayProps> = ({
 
         <div className="p5-allout-copy-zone">
           <span className="p5-allout-kicker">
-            ALL-OUT FINISH // {shortName} · 总攻击决胜结算
+            STAGE CLEAR // {shortName} · 任务决胜结算
           </span>
           <div className="p5-allout-headline-en">MISSION ACCOMPLISHED</div>
-          <div className="p5-allout-headline-zh">ALL-OUT FINISH // 华丽收工</div>
+          <div className="p5-allout-headline-zh">STAGE CLEAR // 华丽收工</div>
 
           {data.summaryText && (
             <div className="p5-allout-summary-strip">{data.summaryText}</div>
@@ -141,7 +141,7 @@ export const AllOutFinishOverlay: React.FC<AllOutFinishOverlayProps> = ({
       </div>
 
       <div className="p5-allout-seal" aria-hidden="true">
-        ★ PHANTOM CLEAR!
+        ★ BIGFISH CLEAR!
       </div>
       <div className="p5-allout-dismiss-hint">
         点击屏幕任意处或按 ESC 立即关闭
@@ -209,13 +209,13 @@ export const BatonPassModal: React.FC<BatonPassModalProps> = ({
       data-testid="baton-pass-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="怪盗团换手接力选择"
+      aria-label="角色换手接力选择"
       onClick={onClose}
     >
       <div className="p5-baton-modal" onClick={(e) => e.stopPropagation()}>
         <header className="p5-baton-header">
           <div>
-            <span className="p5-baton-kicker">BATON PASS // 换手接力</span>
+            <span className="p5-baton-kicker">AGENT RELAY // 换手接力</span>
             <h2 className="p5-baton-title">
               从「{fromShortName}」击掌交接给哪位队友？
             </h2>
@@ -236,7 +236,7 @@ export const BatonPassModal: React.FC<BatonPassModalProps> = ({
               const isSelected = mate.id === selectedId;
               const roleMeta = CHARACTER_ROLE_META[mate.id] ?? {
                 shortTitle: mate.name.split('（')[0],
-                specialtyTag: '怪盗支援',
+                specialtyTag: '接力支援',
                 specialtyDesc: '接手当前改动上下文继续推进',
               };
               const brainModel =
@@ -380,7 +380,7 @@ export const BatonPassCutin: React.FC<{
 
           <div className="p5-baton-lightning-hub">
             <div className="p5-baton-lightning-bolt">
-              ⚡ BATON PASS // 换手接力! ★
+              ⚡ AGENT RELAY // 换手接力! ★
             </div>
           </div>
 
