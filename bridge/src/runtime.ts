@@ -11,8 +11,8 @@ export function runtime() {
   mkdirSync(home, { recursive: true });
   return { cwd, env: { ...process.env, CODEX_HOME: home }, args: [
     '-c', 'model_provider="local"',
-    '-c', 'model_providers.local.name="Local magpie"',
-    '-c', 'model_providers.local.base_url="http://127.0.0.1:3425/v1"',
+    '-c', 'model_providers.local.name="Local Gateway"',
+    '-c', 'model_providers.local.base_url="http://127.0.0.1:8080/v1"',
     '-c', 'model_providers.local.wire_api="responses"',
     '-c', 'model_providers.local.requires_openai_auth=false',
     '-c', 'sandbox_mode="workspace-write"',

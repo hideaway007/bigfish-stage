@@ -7,11 +7,6 @@ import {
 } from '../characterLoader';
 import { notifyUserGesture, playSfx } from '../sfx';
 import { getTouchZoneHint, pickTouchStamp } from '../touchReactions';
-import {
-  getTtsAmplitudeState,
-  subscribeTtsAmplitude,
-  type TtsAmplitudeState,
-} from '../ttsPlayer';
 
 interface EmotionPosePreset {
   turn: number;
@@ -228,7 +223,6 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   const [fallbackToIdle, setFallbackToIdle] = useState(false);
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dError, setLive2dError] = useState<string | null>(null);
-  const [ttsSpeaking, setTtsSpeaking] = useState<boolean>(false);
   const [hoverZone, setHoverZone] = useState<CharacterTouchZone | null>(null);
   const [joltActive, setJoltActive] = useState<boolean>(false);
   const [stamps, setStamps] = useState<TouchStampItem[]>([]);
@@ -238,7 +232,6 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   const emotionRef = useRef<Emotion>(emotion);
   const breathingRef = useRef<boolean>(breathing);
   const talkingRef = useRef<boolean>(talking);
-  const ttsStateRef = useRef<TtsAmplitudeState>(getTtsAmplitudeState());
   const joltTimerRef = useRef<number | null>(null);
   const stampTimersRef = useRef<Set<number>>(new Set());
 
@@ -250,29 +243,10 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
     setFallbackToIdle(false);
   }, [characterId, emotion, art]);
 
-  // Subscribe to Web Audio real-time TTS amplitude & drive --voice-amp CSS custom property
+  // Procedural syllable --voice-amp pulse when typewriter talking is active
   useEffect(() => {
-    const unsub = subscribeTtsAmplitude((st) => {
-      ttsStateRef.current = st;
-      const activeForChar =
-        st.speaking && (!st.characterId || st.characterId === characterId);
-      setTtsSpeaking((prev) => (prev === activeForChar ? prev : activeForChar));
-      if (activeForChar && stageWrapRef.current) {
-        stageWrapRef.current.style.setProperty(
-          '--voice-amp',
-          st.amplitude.toFixed(3)
-        );
-      } else if (!talkingRef.current && stageWrapRef.current) {
-        stageWrapRef.current.style.setProperty('--voice-amp', '0');
-      }
-    });
-    return unsub;
-  }, [characterId]);
-
-  // Fallback procedural syllable --voice-amp when typewriter talking is active without live TTS audio
-  useEffect(() => {
-    if (!talking || ttsSpeaking) {
-      if (!ttsSpeaking && stageWrapRef.current) {
+    if (!talking) {
+      if (stageWrapRef.current) {
         stageWrapRef.current.style.setProperty('--voice-amp', '0');
       }
       return;
@@ -293,11 +267,11 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
     raf = window.requestAnimationFrame(tick);
     return () => {
       window.cancelAnimationFrame(raf);
-      if (!ttsStateRef.current.speaking && stageWrapRef.current) {
+      if (stageWrapRef.current) {
         stageWrapRef.current.style.setProperty('--voice-amp', '0');
       }
     };
-  }, [talking, ttsSpeaking]);
+  }, [talking]);
 
   useEffect(() => {
     return () => {
@@ -551,13 +525,7 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
           }
 
           let mouthVal = preset.mouth;
-          const ttsNow = ttsStateRef.current;
-          const realTtsSpeaking =
-            ttsNow.speaking &&
-            (!ttsNow.characterId || ttsNow.characterId === characterId);
-          if (realTtsSpeaking) {
-            mouthVal = Math.max(0.04, Math.min(1.0, ttsNow.amplitude * 1.2));
-          } else if (talkingRef.current) {
+          if (talkingRef.current) {
             const maxOpen =
               emotionRef.current === 'worried' || emotionRef.current === 'thinking'
                 ? 0.55
@@ -674,7 +642,7 @@ export const CharacterRenderer: React.FC<CharacterRendererProps> = ({
   }, [art, characterId]);
 
   const pack = getCachedCharacterPack(characterId);
-  const isSpeakingNow = ttsSpeaking || talking;
+  const isSpeakingNow = talking;
   const zoneHintText = hoverZone ? getTouchZoneHint(pack, hoverZone) : null;
 
   const renderStageOverlays = () => (

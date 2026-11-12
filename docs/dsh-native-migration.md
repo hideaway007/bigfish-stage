@@ -2,7 +2,7 @@
 
 > 目标：P5 舞台作为 DSH 的客户端皮肤运行（"坐在 DSH 上"），取代现有的"独立 Stage 服务器 + 桥接 DSH 子进程"架构。
 >
-> 依据：`@deepseek-ai/dsh@0.2.2-rc.1` 本机安装（`~/.local/lib/node-v24.21.0-darwin-arm64/`）。
+> 依据：`@deepseek-ai/dsh@0.2.2-rc.1`（本机全局安装的 DSH CLI）。
 
 ## 1. DSH 的真实架构（已核实）
 
@@ -58,7 +58,7 @@ dsh-web-app/cordis.patch.yml 组合出浏览器表层：
 
 ### 第 0 步：跑通官方 web profile（0.5 天）
 
-`dsh --profile web --port 3080 --no-open`，配 `~/.dsh/profiles/bigfish/` 复制 web 模板，把我们已有的 magpie 网关写进 `llm-pi-ai` provider。目的：拿到官方前端的"什么能用"基线。
+`dsh --profile web --port 3080 --no-open`，配 `~/.dsh/profiles/bigfish/` 复制 web 模板，把我们已有的自定义 OpenAI 兼容模型接口写进 `llm-pi-ai` provider。目的：拿到官方前端的"什么能用"基线。
 
 ### 第 1 步：最小客户端插件 hello-world（1 天）
 

@@ -1082,3 +1082,169 @@
 .p5-modality-chip input {
   accent-color: var(--p5-red);
 }
+
+/* ── DSH 外部大模型服务商接入面板（OpenAI GPT / Claude / 自定义网关） ── */
+.p5-provider-hub-card {
+  background: linear-gradient(135deg, #0d101b 0%, #090b12 100%);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-left: 5px solid var(--p5-red);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.65);
+}
+
+.p5-provider-hub-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.p5-provider-saved-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.p5-provider-saved-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #080a11;
+  border: 1.5px solid #334155;
+  border-left: 4px solid var(--p5-cyan);
+  padding: 7px 11px;
+  flex-wrap: wrap;
+}
+
+.p5-provider-saved-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.p5-provider-saved-name {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--p5-white);
+}
+
+.p5-provider-key-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  padding: 1px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.p5-provider-key-pill.is-ok {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border-color: #10b981;
+}
+
+.p5-provider-key-pill.is-warn {
+  background: rgba(250, 204, 21, 0.15);
+  color: var(--p5-yellow);
+  border-color: var(--p5-yellow);
+}
+
+.p5-provider-model-count {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.p5-provider-saved-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.p5-provider-template-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.p5-provider-tpl-btn {
+  background: #141826;
+  color: #cbd5e1;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 900;
+  cursor: pointer;
+  transform: skewX(-8deg);
+  transition: all 0.12s ease;
+}
+
+.p5-provider-tpl-btn:hover {
+  border-color: var(--p5-white);
+  color: var(--p5-white);
+}
+
+.p5-provider-tpl-btn.is-active {
+  background: var(--p5-red);
+  color: var(--p5-white);
+  border-color: var(--p5-white);
+  box-shadow: 3px 3px 0 #000000;
+}
+
+.p5-provider-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.p5-provider-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.p5-provider-field--full {
+  grid-column: 1 / -1;
+}
+
+.p5-provider-opt-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-left: 6px;
+}
+
+.p5-provider-opt-hint.is-green {
+  color: #6ee7b7;
+}
+
+.p5-provider-notice {
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 800;
+  border-left: 4px solid var(--p5-white);
+}
+
+.p5-provider-notice.is-ok {
+  background: rgba(16, 185, 129, 0.16);
+  border-left-color: var(--p5-green);
+  color: #a7f3d0;
+}
+
+.p5-provider-notice.is-err {
+  background: rgba(239, 68, 68, 0.18);
+  border-left-color: var(--p5-red);
+  color: #fecaca;
+}
+
+.p5-provider-submit-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+

@@ -115,28 +115,6 @@ export async function startServer(options: ServerOptions = {}) {
         }
         return;
       }
-      if (path === '/api/tts') {
-        if (request.method !== 'POST') {
-          response.writeHead(405, { 'Content-Type': 'application/json' });
-          response.end(JSON.stringify({ ok: false, error: 'Method Not Allowed' }));
-          return;
-        }
-        if (!validOrigin(request.headers.origin)) {
-          response.writeHead(403, { 'Content-Type': 'application/json' });
-          response.end(JSON.stringify({ ok: false, error: 'Forbidden origin' }));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          if (chunks.reduce((n, b) => n + b.length, 0) > 16_384) break;
-        }
-        const payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { characterId?: string; text?: string };
-        const audio = await session.synthesizeDirect(String(payload.characterId || 'deepseek-v4-pro'), String(payload.text || ''));
-        response.writeHead(200, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify(audio ? { ok: true, ...audio } : { ok: false, error: 'Empty speech' }));
-        return;
-      }
       const character = path.startsWith('/characters/');
       let file = await staticFile(character ? charactersRoot : distRoot, character ? path.slice('/characters'.length) : path === '/' ? '/index.html' : path);
       if (!file && !character && !extname(path)) file = await staticFile(distRoot, '/index.html');

@@ -3,7 +3,6 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
-  DEFAULT_CHARACTER_VOICES,
   DEFAULT_SETTINGS,
   type AppSettings,
   type CharacterBrainSettings,
@@ -85,21 +84,6 @@ export function validateSettings(value: unknown): AppSettings {
     }
   }
 
-  // Validate TTS settings
-  const rawTts = object(s.tts) ? s.tts : DEFAULT_SETTINGS.tts;
-  assert(typeof rawTts.enabled === 'boolean', 'TTS 开关无效');
-  assert(['google-cloud', 'openai-tts'].includes(rawTts.provider), 'TTS 服务商无效');
-  const cleanTtsEp = validateHttpEndpoint(rawTts.endpoint ?? DEFAULT_SETTINGS.tts.endpoint, 'TTS 接口');
-  const speakingRate = num(rawTts.speakingRate, 0.5, 2.0) ? rawTts.speakingRate : 1.04;
-  const cleanVoices: Record<string, string> = { ...DEFAULT_CHARACTER_VOICES };
-  if (object(rawTts.characterVoices)) {
-    for (const [charId, vName] of Object.entries(rawTts.characterVoices)) {
-      if (/^[\w-]+$/.test(charId) && str(vName) && vName.trim()) {
-        cleanVoices[charId] = vName.trim();
-      }
-    }
-  }
-
   return {
     version: 1,
     activeCharacterId: s.activeCharacterId,
@@ -119,14 +103,6 @@ export function validateSettings(value: unknown): AppSettings {
       maxLinesPerMinute: s.voice.maxLinesPerMinute,
       endpoint: { ...cleanVoiceBase, model: ep.model },
     },
-    tts: {
-      enabled: rawTts.enabled,
-      provider: rawTts.provider,
-      characterVoices: cleanVoices,
-      endpoint: cleanTtsEp,
-      ...(str(rawTts.gcpProject) && rawTts.gcpProject.trim() ? { gcpProject: rawTts.gcpProject.trim() } : {}),
-      speakingRate,
-    },
     performance: { typingCharsPerSec: s.performance.typingCharsPerSec },
   };
 }
@@ -135,7 +111,6 @@ export function publicSettings(settings: AppSettings): PublicSettings {
   const clean = structuredClone(settings);
   const { apiKey: voiceKey, ...voiceEndpoint } = clean.voice.endpoint;
   const { apiKey: workerKey, ...workerEndpoint } = clean.worker.endpoint;
-  const { apiKey: ttsKey, ...ttsEndpoint } = clean.tts.endpoint;
 
   const publicBrains: Record<string, PublicizeCharacterBrain> = {};
   for (const [charId, brain] of Object.entries(clean.characterBrains ?? {})) {
@@ -151,7 +126,6 @@ export function publicSettings(settings: AppSettings): PublicSettings {
     worker: { ...clean.worker, endpoint: { ...workerEndpoint, apiKeySet: !!workerKey } },
     characterBrains: publicBrains,
     voice: { ...clean.voice, endpoint: { ...voiceEndpoint, apiKeySet: !!voiceKey } },
-    tts: { ...clean.tts, endpoint: { ...ttsEndpoint, apiKeySet: !!ttsKey } },
   };
 }
 

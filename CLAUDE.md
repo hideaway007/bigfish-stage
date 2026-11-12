@@ -2,9 +2,9 @@
 
 ## 1. 目录与生成文件路径铁律（强制执行）
 
-所有与 P5 项目相关的代码、分支工作树（Git worktree）、生成图片/音频、对比图、截图、测试脚本与临时产物，**必须 100% 保持在本项目文件夹（`/Users/d2/project/P5/` 及 `/Users/d2/project/P5/p5-agent-stage/`）内部**：
+所有与 P5 项目相关的代码、分支工作树（Git worktree）、生成图片/音频、对比图、截图、测试脚本与临时产物，**必须 100% 保持在本仓库根目录（`p5-agent-stage/`）内部**：
 
-- **严禁污染桌面**：严禁在 `/Users/d2/Desktop/` 下创建任何文件夹、Git worktree 或临时文件。
+- **严禁污染桌面**：严禁在系统桌面目录（`~/Desktop/`）下创建任何文件夹、Git worktree 或临时文件。
 - **Git Worktree 统一路径**：如需创建独立 worktree 并行开发，一律放在仓库内部的 `.worktrees/<名称>` 目录下（已被 `.gitignore` 忽略）：
   ```bash
   git worktree add .worktrees/<worktree-name> -b <branch-name>

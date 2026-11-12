@@ -102,31 +102,59 @@ function formatRelativeTime(updatedAt?: number | string): string {
 
 export function createP5SidebarComponents(ctx: any) {
   const P5HeaderLeadingToggle: React.FC<any> = () => {
+    const [hovered, setHovered] = useState(false);
     return (
       <button
         type="button"
+        className="p5-leading-archive-btn"
+        data-testid="p5-leading-archive-btn"
         onClick={() => {
           playSfx('select');
           ctx.layout?.toggleSidebar?.();
         }}
-        onMouseEnter={() => playSfx('hover')}
-        title="展开潜入档案栏"
+        onMouseEnter={() => {
+          setHovered(true);
+          playSfx('hover');
+        }}
+        onMouseLeave={() => setHovered(false)}
+        title="展开潜入档案栏 (Cmd/Ctrl+B)"
         style={{
           background: 'transparent',
           border: 'none',
           padding: 0,
           cursor: 'pointer',
           WebkitAppRegion: 'no-drag',
+          transform: hovered ? 'translate(-1px, -1px) scale(1.03)' : 'none',
+          transition: 'transform 100ms ease',
         } as React.CSSProperties}
       >
-        <P5PolyBox
-          points="8,8 100,0 92,94 0,100"
-          fill="#e60012"
-          stroke="#ffffff"
-          strokeWidth={2}
-          shadow="3px 3px 0 #000000"
-          style={{ padding: '4px 11px' }}
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: hovered ? '#1b070d' : '#090910',
+            border: '2px solid #ffffff',
+            padding: '3px 10px 3px 6px',
+            transform: 'skewX(-12deg)',
+            boxShadow: hovered ? '4px 4px 0 #fde047' : '3px 3px 0 #e60012',
+            transition: 'background 110ms ease, box-shadow 110ms ease',
+          }}
         >
+          <span
+            style={{
+              background: '#e60012',
+              color: '#ffffff',
+              fontFamily: 'Anton, sans-serif',
+              fontSize: 10.5,
+              fontWeight: 900,
+              letterSpacing: '0.08em',
+              padding: '1px 5px',
+              lineHeight: 1.15,
+            }}
+          >
+            ▶
+          </span>
           <span
             style={{
               color: '#ffffff',
@@ -134,14 +162,13 @@ export function createP5SidebarComponents(ctx: any) {
               fontSize: 12,
               fontWeight: 900,
               letterSpacing: '0.06em',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
+              lineHeight: 1.15,
+              whiteSpace: 'nowrap',
             }}
           >
-            ▶ 档案
+            档案
           </span>
-        </P5PolyBox>
+        </div>
       </button>
     );
   };
@@ -157,6 +184,16 @@ export function createP5SidebarComponents(ctx: any) {
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const [expandedAllInGroup, setExpandedAllInGroup] = useState<Record<string, boolean>>({});
     const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
+    const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+    const [editingDraft, setEditingDraft] = useState<string>('');
+    const [localTitleOverrides, setLocalTitleOverrides] = useState<Record<string, string>>(() => {
+      try {
+        const raw = window.localStorage.getItem('bigfish.sessionCustomTitles');
+        return raw ? JSON.parse(raw) : {};
+      } catch {
+        return {};
+      }
+    });
     const hiddenSettingsRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
@@ -174,10 +211,76 @@ export function createP5SidebarComponents(ctx: any) {
       if (ctx.layout?.panelInfo?.subscribe) {
         disposers.push(ctx.layout.panelInfo.subscribe(() => setTick((v) => v + 1)));
       }
+      if (ctx.slots?.subscribe) {
+        disposers.push(ctx.slots.subscribe('sidebar.panellist', () => setTick((v) => v + 1)));
+        disposers.push(ctx.slots.subscribe('main', () => setTick((v) => v + 1)));
+      }
+      if (ctx.locale?.subscribe) {
+        disposers.push(ctx.locale.subscribe(() => setTick((v) => v + 1)));
+      }
       return () => {
         for (const d of disposers) d();
       };
     }, []);
+
+    const activePanelId: string | null =
+      ctx.layout?.panelInfo?.getSnapshot?.()?.activePanelId ?? null;
+
+    const globalPanels = useMemo(() => {
+      const rawEntries: any[] = ctx.slots?.entriesOfSlot?.('sidebar.panellist') ?? [];
+      const seen = new Set<string>();
+      const items: Array<{ id: string; order: number; label: string }> = [];
+      for (const entry of rawEntries) {
+        const id = entry?.options?.id ? String(entry.options.id) : '';
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const rawLabel = entry?.options?.label;
+        let resolved = '';
+        try {
+          resolved = typeof rawLabel === 'function' ? String(rawLabel() ?? '') : String(rawLabel ?? '');
+        } catch {
+          resolved = '';
+        }
+        items.push({
+          id,
+          order: Number(entry?.options?.order ?? 0),
+          label: resolved.trim() || (id === 'plugins' ? '插件' : id),
+        });
+      }
+      items.sort((a, b) => a.order - b.order);
+      // Fallback: if 'plugins' main panel exists in DSH host, always expose it so user can manage plugins
+      const hasPluginsMain = (ctx.slots?.entries?.('main') ?? []).some(
+        (e: any) => e?.options?.key === 'plugins'
+      );
+      if (!seen.has('plugins') && hasPluginsMain) {
+        items.unshift({ id: 'plugins', order: -1, label: '插件' });
+      }
+      return items;
+    }, [activePanelId, ctx.slots]);
+
+    const handleOpenPanel = (panelId: string) => {
+      playSfx('select');
+      if (activePanelId === panelId) {
+        ctx.layout?.selectPanel?.(null);
+      } else {
+        ctx.layout?.selectPanel?.(panelId);
+      }
+    };
+
+    const handleOpenNativeSettings = () => {
+      playSfx('select');
+      const trigger = hiddenSettingsRef.current?.querySelector<HTMLElement>(
+        'button, [role="button"], a, [tabindex="0"]'
+      );
+      if (trigger) {
+        trigger.click();
+        return;
+      }
+      // Fallback if plugins panel exists
+      if (globalPanels.some((p) => p.id === 'plugins')) {
+        ctx.layout?.selectPanel?.('plugins');
+      }
+    };
 
     const activePack = getCachedCharacterPack(charId);
     const portraitUrl =
@@ -239,11 +342,12 @@ export function createP5SidebarComponents(ctx: any) {
             if (sid !== selectedSessionId || blankAdded) continue;
             blankAdded = true;
           }
-          const label = String(s.displayTitle || s.title || (s.blank ? '新潜入行动' : sid));
+          const customTitle = localTitleOverrides[sid];
+          const label = String(customTitle || s.displayTitle || s.title || (s.blank ? '新潜入行动' : sid));
           if (needle && !label.toLowerCase().includes(needle) && !String(ws.title).toLowerCase().includes(needle)) {
             continue;
           }
-          wsSessions.push({ ...s, _label: s.blank ? '新潜入行动 · 待命' : label });
+          wsSessions.push({ ...s, _label: customTitle || (s.blank ? '新潜入行动 · 待命' : label) });
         }
         out.push({
           id: ws.workspaceId,
@@ -260,7 +364,8 @@ export function createP5SidebarComponents(ctx: any) {
         const s = sessionsSnap.byId?.[sid];
         if (!s || s.origin === 'subagent') continue;
         if (s.blank && sid !== selectedSessionId) continue;
-        const label = String(s.displayTitle || s.title || (s.blank ? '新潜入行动 · 待命' : sid));
+        const customTitle = localTitleOverrides[sid];
+        const label = String(customTitle || s.displayTitle || s.title || (s.blank ? '新潜入行动 · 待命' : sid));
         if (needle && !label.toLowerCase().includes(needle)) continue;
         ungrouped.push({ ...s, _label: label });
       }
@@ -272,7 +377,7 @@ export function createP5SidebarComponents(ctx: any) {
         });
       }
       return out;
-    }, [workspacesSnap, sessionsSnap, archivedSet, selectedSessionId, query]);
+    }, [workspacesSnap, sessionsSnap, archivedSet, selectedSessionId, query, localTitleOverrides]);
 
     const currentWorkspaceId = useMemo(() => {
       if (selectedSessionId) {
@@ -317,6 +422,34 @@ export function createP5SidebarComponents(ctx: any) {
       e.stopPropagation();
       playSfx('deny');
       void ctx.uiWorkspace?.archiveSession?.(sid, { stopActivity: true });
+    };
+
+    const handleStartRenameSession = (e: React.MouseEvent, sid: string, currentLabel: string) => {
+      e.stopPropagation();
+      playSfx('select');
+      setEditingSessionId(sid);
+      setEditingDraft(currentLabel === '新潜入行动 · 待命' ? '' : currentLabel);
+    };
+
+    const handleCommitRenameSession = (sid: string, rawDraft: string) => {
+      const trimmed = rawDraft.trim();
+      setEditingSessionId((prev) => (prev === sid ? null : prev));
+      if (!trimmed) return;
+      playSfx('allow');
+      setLocalTitleOverrides((prev) => {
+        const next = { ...prev, [sid]: trimmed };
+        try {
+          window.localStorage.setItem('bigfish.sessionCustomTitles', JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+      if (typeof ctx.sessions?.rename === 'function') {
+        void Promise.resolve(ctx.sessions.rename(sid, trimmed)).catch(() => {});
+      } else if (typeof ctx.remote?.session?.rename === 'function') {
+        void Promise.resolve(ctx.remote.session.rename({ sessionId: sid, title: trimmed })).catch(() => {});
+      }
     };
 
     if (collapsed) {
@@ -375,6 +508,74 @@ export function createP5SidebarComponents(ctx: any) {
                 <span style={{ color: '#e60012', fontSize: 18, fontWeight: 900 }}>＋</span>
               </P5PolyBox>
             </button>
+
+            {globalPanels.map((panel) => {
+              const isActive = activePanelId === panel.id;
+              const shortGlyph =
+                panel.id === 'plugins'
+                  ? '🧩'
+                  : panel.id.includes('schedule') || panel.id.includes('cron')
+                  ? '⏱'
+                  : '◈';
+              return (
+                <button
+                  key={panel.id}
+                  type="button"
+                  onClick={() => handleOpenPanel(panel.id)}
+                  title={panel.label}
+                  style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+                >
+                  <P5PolyBox
+                    points="8,0 100,8 92,100 0,92"
+                    fill={isActive ? '#e60012' : '#141724'}
+                    stroke={isActive ? '#fde047' : 'rgba(255,255,255,0.75)'}
+                    strokeWidth={isActive ? 2 : 1.6}
+                    shadow="3px 3px 0 #000000"
+                    style={{ width: 36, height: 36, display: 'grid', placeItems: 'center' }}
+                  >
+                    <span style={{ color: '#ffffff', fontSize: 14, fontWeight: 900 }}>
+                      {shortGlyph}
+                    </span>
+                  </P5PolyBox>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={handleOpenNativeSettings}
+              title="打开 DSH 原生设置与账号"
+              style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+            >
+              <P5PolyBox
+                points="0,8 94,0 100,92 6,100"
+                fill="#10131f"
+                stroke="rgba(255,255,255,0.62)"
+                strokeWidth={1.6}
+                shadow="3px 3px 0 #000000"
+                style={{ width: 36, height: 36, display: 'grid', placeItems: 'center' }}
+              >
+                <span style={{ color: '#fde047', fontSize: 14, fontWeight: 900 }}>⚙</span>
+              </P5PolyBox>
+            </button>
+            <div
+              ref={hiddenSettingsRef}
+              aria-hidden="true"
+              style={{
+                position: 'fixed',
+                left: -9999,
+                top: -9999,
+                width: 1,
+                height: 1,
+                overflow: 'hidden',
+                opacity: 0,
+                pointerEvents: 'none',
+              }}
+            >
+              {typeof renderSlot === 'function' ? renderSlot('sidebar.settings') : null}
+            </div>
           </div>
         </aside>
       );
@@ -462,6 +663,7 @@ export function createP5SidebarComponents(ctx: any) {
         {/* ── 1. TOP HEADER PLAQUE (Irregular Quadrilateral) ── */}
         <div
           className="p5-sb-header-zone"
+          data-window-drag=""
           style={{
             position: 'relative',
             zIndex: 2,
@@ -641,6 +843,126 @@ export function createP5SidebarComponents(ctx: any) {
             </P5PolyBox>
           </button>
         </div>
+
+        {/* ── 2B. GLOBAL DSH PANELS BAR (插件管理 / 自动化任务 等原生面板一键切换) ── */}
+        {globalPanels.length > 0 && (
+          <div
+            data-testid="p5-sb-global-panels"
+            style={{
+              position: 'relative',
+              zIndex: 2,
+              padding: '0 14px 10px 12px',
+              display: 'grid',
+              gridTemplateColumns:
+                globalPanels.length === 1 ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+              gap: 8,
+            }}
+          >
+            {globalPanels.map((panel, pIdx) => {
+              const isActive = activePanelId === panel.id;
+              const badge =
+                panel.id === 'plugins'
+                  ? 'MOD'
+                  : panel.id.includes('schedule') || panel.id.includes('cron')
+                  ? 'JOB'
+                  : 'SYS';
+              const poly =
+                pIdx % 2 === 0
+                  ? '3,10 100,0 97,90 0,100'
+                  : '0,0 97,10 100,100 3,90';
+              return (
+                <button
+                  key={panel.id}
+                  type="button"
+                  data-testid={`p5-sb-panel-${panel.id}`}
+                  onClick={() => handleOpenPanel(panel.id)}
+                  onMouseEnter={() => playSfx('hover')}
+                  title={isActive ? `返回潜入舞台` : `打开 ${panel.label}`}
+                  style={{
+                    width: '100%',
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <P5PolyBox
+                    points={poly}
+                    fill={isActive ? '#e60012' : '#121523'}
+                    stroke={isActive ? '#fde047' : 'rgba(255, 255, 255, 0.72)'}
+                    strokeWidth={isActive ? 2.1 : 1.5}
+                    shadow="3px 3px 0 #000000"
+                    accentSlashColor={isActive ? '#090910' : '#e60012'}
+                    style={{ padding: '6px 9px 6px 11px' }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 5,
+                        minWidth: 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          minWidth: 0,
+                          color: '#ffffff',
+                          fontSize: 12,
+                          fontWeight: 900,
+                          letterSpacing: '0.04em',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        <span
+                          style={{
+                            background: isActive ? '#090910' : 'rgba(230, 0, 18, 0.9)',
+                            color: isActive ? '#fde047' : '#ffffff',
+                            fontFamily: 'Anton, sans-serif',
+                            fontSize: 9.5,
+                            letterSpacing: '0.08em',
+                            padding: '0 4px',
+                            clipPath: 'polygon(8% 0%, 100% 0%, 92% 100%, 0% 100%)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {badge}
+                        </span>
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {panel.label}
+                        </span>
+                      </span>
+                      {isActive && (
+                        <span
+                          style={{
+                            fontSize: 9.5,
+                            fontWeight: 900,
+                            color: '#fde047',
+                            fontFamily: '"JetBrains Mono", monospace',
+                            flexShrink: 0,
+                          }}
+                        >
+                          ON
+                        </span>
+                      )}
+                    </div>
+                  </P5PolyBox>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── 3. IRREGULAR QUAD SEARCH BOX + PICK FOLDER BUTTON ── */}
         <div
@@ -867,7 +1189,7 @@ export function createP5SidebarComponents(ctx: any) {
                 {!isGroupCollapsed &&
                   visibleSessions.map((s: any) => {
                     const idx = globalCardIdx++;
-                    const isSelected = s.id === selectedSessionId;
+                    const isSelected = activePanelId === null && s.id === selectedSessionId;
                     const isHovered = s.id === hoveredSessionId;
                     const isPinned = pinnedSet.has(s.id);
                     // Alternating hand-cut Persona-5 irregular quadrilateral vertices
@@ -881,8 +1203,17 @@ export function createP5SidebarComponents(ctx: any) {
                         key={s.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => handleSelectSession(s.id)}
+                        onClick={() => {
+                          if (editingSessionId === s.id) return;
+                          handleSelectSession(s.id);
+                        }}
+                        onDoubleClick={(e) => {
+                          if (!s.blank) {
+                            handleStartRenameSession(e, s.id, s._label);
+                          }
+                        }}
                         onKeyDown={(e) => {
+                          if (editingSessionId === s.id) return;
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
                             handleSelectSession(s.id);
@@ -969,40 +1300,95 @@ export function createP5SidebarComponents(ctx: any) {
                                   ★
                                 </span>
                               )}
-                              <span
-                                style={{
-                                  fontSize: 12.5,
-                                  fontWeight: isSelected ? 900 : 700,
-                                  color: isSelected || isHovered ? '#ffffff' : '#dbe2ef',
-                                  textShadow: isSelected ? '1px 1px 0 rgba(0,0,0,0.75)' : undefined,
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                }}
-                              >
-                                {s._label}
-                              </span>
+                              {editingSessionId === s.id ? (
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={editingDraft}
+                                  placeholder="输入会话名称…"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onDoubleClick={(e) => e.stopPropagation()}
+                                  onFocus={(e) => e.currentTarget.select()}
+                                  onChange={(e) => setEditingDraft(e.target.value)}
+                                  onBlur={() => handleCommitRenameSession(s.id, editingDraft)}
+                                  onKeyDown={(e) => {
+                                    e.stopPropagation();
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleCommitRenameSession(s.id, editingDraft);
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      setEditingSessionId(null);
+                                    }
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    minWidth: 0,
+                                    background: '#090910',
+                                    color: '#fde047',
+                                    border: '1.5px solid #fde047',
+                                    padding: '1px 6px',
+                                    fontSize: 12,
+                                    fontWeight: 800,
+                                    fontFamily: 'inherit',
+                                    outline: 'none',
+                                  }}
+                                />
+                              ) : (
+                                <span
+                                  title="双击或点击右侧 ✎ 重命名会话"
+                                  style={{
+                                    fontSize: 12.5,
+                                    fontWeight: isSelected ? 900 : 700,
+                                    color: isSelected || isHovered ? '#ffffff' : '#dbe2ef',
+                                    textShadow: isSelected ? '1px 1px 0 rgba(0,0,0,0.75)' : undefined,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                  }}
+                                >
+                                  {s._label}
+                                </span>
+                              )}
                             </div>
 
-                            {isHovered && !s.blank ? (
-                              <button
-                                type="button"
-                                onClick={(e) => handleArchiveSession(e, s.id)}
-                                title="归档此记录"
-                                style={{
-                                  background: '#090910',
-                                  color: '#ffffff',
-                                  border: '1px solid #ffffff',
-                                  clipPath: 'polygon(12% 0%, 100% 8%, 88% 100%, 0% 92%)',
-                                  fontSize: 10,
-                                  fontWeight: 900,
-                                  padding: '1px 5px',
-                                  cursor: 'pointer',
-                                  flexShrink: 0,
-                                }}
-                              >
-                                ✕
-                              </button>
+                            {editingSessionId === s.id ? null : isHovered && !s.blank ? (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleStartRenameSession(e, s.id, s._label)}
+                                  title="重命名此会话"
+                                  style={{
+                                    background: '#090910',
+                                    color: '#fde047',
+                                    border: '1px solid #fde047',
+                                    clipPath: 'polygon(10% 0%, 100% 8%, 90% 100%, 0% 92%)',
+                                    fontSize: 10,
+                                    fontWeight: 900,
+                                    padding: '1px 5px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleArchiveSession(e, s.id)}
+                                  title="归档此记录"
+                                  style={{
+                                    background: '#090910',
+                                    color: '#ffffff',
+                                    border: '1px solid #ffffff',
+                                    clipPath: 'polygon(12% 0%, 100% 8%, 88% 100%, 0% 92%)',
+                                    fontSize: 10,
+                                    fontWeight: 900,
+                                    padding: '1px 5px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
                             ) : (
                               <span
                                 style={{
@@ -1063,7 +1449,7 @@ export function createP5SidebarComponents(ctx: any) {
           })}
         </div>
 
-        {/* ── 5. STANDALONE BOTTOM ENGINE BAR (ZERO OFFICIAL LOGIN!) ── */}
+        {/* ── 5. STANDALONE BOTTOM ENGINE BAR (CLICK TO OPEN NATIVE DSH SETTINGS) ── */}
         <div
           style={{
             position: 'relative',
@@ -1073,51 +1459,86 @@ export function createP5SidebarComponents(ctx: any) {
             alignItems: 'center',
           }}
         >
-          <P5PolyBox
-            points="0,9 98.5,0 100,91 1.5,100"
-            fill="#0c0e17"
-            stroke="rgba(255, 255, 255, 0.62)"
-            strokeWidth={2}
-            shadow="4px 4px 0 #000000"
-            accentSlashColor="#22c55e"
-            style={{ padding: '9px 14px 9px 16px', flex: 1, minWidth: 0 }}
+          <button
+            type="button"
+            onClick={handleOpenNativeSettings}
+            onMouseEnter={() => playSfx('hover')}
+            title="打开 DeepSeek Harness 原生设置与账号配置"
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-              }}
+            <P5PolyBox
+              points="0,9 98.5,0 100,91 1.5,100"
+              fill="#0c0e17"
+              stroke="rgba(255, 255, 255, 0.62)"
+              strokeWidth={2}
+              shadow="4px 4px 0 #000000"
+              accentSlashColor="#22c55e"
+              style={{ padding: '8px 11px 8px 13px', flex: 1, minWidth: 0 }}
             >
-              <span
+              <div
                 style={{
-                  fontFamily: 'Anton, "JetBrains Mono", sans-serif',
-                  fontSize: 14.5,
-                  letterSpacing: '0.09em',
-                  color: '#f8fafc',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 6,
                 }}
               >
-                BIG FISH × DSH CORE
-              </span>
-              <span
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 900,
-                  color: '#4ade80',
-                  fontFamily: '"JetBrains Mono", monospace',
-                  letterSpacing: '0.04em',
-                  textShadow: '0 0 8px rgba(74, 222, 128, 0.35)',
-                  flexShrink: 0,
-                }}
-              >
-                ● LOCAL
-              </span>
-            </div>
-          </P5PolyBox>
+                <span
+                  style={{
+                    fontFamily: 'Anton, "JetBrains Mono", sans-serif',
+                    fontSize: 12.5,
+                    letterSpacing: '0.05em',
+                    color: '#f8fafc',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  BIG FISH × DSH CORE
+                </span>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    fontSize: 11,
+                    fontWeight: 900,
+                    color: '#4ade80',
+                    fontFamily: '"JetBrains Mono", monospace',
+                    letterSpacing: '0.02em',
+                    textShadow: '0 0 8px rgba(74, 222, 128, 0.35)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <span>● LOCAL</span>
+                  <span style={{ color: '#fde047', fontSize: 13 }}>⚙</span>
+                </span>
+              </div>
+            </P5PolyBox>
+          </button>
+          <div
+            ref={hiddenSettingsRef}
+            aria-hidden="true"
+            style={{
+              position: 'fixed',
+              left: -9999,
+              top: -9999,
+              width: 1,
+              height: 1,
+              overflow: 'hidden',
+              opacity: 0,
+              pointerEvents: 'none',
+            }}
+          >
+            {typeof renderSlot === 'function' ? renderSlot('sidebar.settings') : null}
+          </div>
         </div>
       </aside>
     );

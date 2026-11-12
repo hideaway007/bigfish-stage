@@ -26,7 +26,7 @@
 
 ## 模型从哪来（不要问用户）
 
-本机所有模型都走 **magpie 网关** `http://127.0.0.1:3425`（本机免 key）：OpenAI 格式 `/v1/chat/completions`，Anthropic 格式 `/v1/messages`，模型列表 `GET /v1/models`。GPT、Claude、Gemini 都在里面，查看用 `/Applications/magpie.app/Contents/MacOS/magpie models`。Codex CLI 也走这个网关，`codex -m <模型>` 可以跑其中任何一个。**不要另配 API key，不要改 magpie 或 Codex 的配置。**
+本机所有模型都走 **本地兼容网关** `http://127.0.0.1:8080`（本机免 key）：OpenAI 格式 `/v1/chat/completions`，Anthropic 格式 `/v1/messages`，模型列表 `GET /v1/models`。GPT、Claude、Gemini 都在里面，可用模型列表通过 `GET /v1/models` 查看。Codex CLI 也走这个网关，`codex -m <模型>` 可以跑其中任何一个。**不要另配 API key，不要改本地兼容网关或 Codex 的配置。**
 
 ## 协作规则（所有 Agent 必须遵守）
 

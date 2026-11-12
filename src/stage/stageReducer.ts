@@ -160,7 +160,6 @@ export interface StageState {
   voiceModels: ModelListState;
   workerConnTest: ConnectionTestState;
   voiceConnTest: ConnectionTestState;
-  ttsConnTest: ConnectionTestState;
 
   gitStatus: GitStatusState;
   gitOpNotice: GitOpNotice | null;
@@ -182,7 +181,7 @@ export type StageAction =
   | { type: 'SET_FAST_FORWARD'; fast: boolean }
   | { type: 'SET_CHARACTER'; characterId: string }
   | { type: 'MARK_MODELS_LOADING'; target: 'worker' | 'voice' }
-  | { type: 'MARK_CONN_TESTING'; target: 'worker' | 'voice' | 'tts' }
+  | { type: 'MARK_CONN_TESTING'; target: 'worker' | 'voice' }
   | { type: 'DISMISS_ERROR' }
   | { type: 'TICK_TIMER'; now: number }
   | { type: 'RESET_STAGE' };
@@ -238,17 +237,6 @@ export function createDefaultPublicSettings(
         apiKeySet: false,
       },
       maxLinesPerMinute: DEFAULT_SETTINGS.voice.maxLinesPerMinute,
-    },
-    tts: {
-      enabled: DEFAULT_SETTINGS.tts.enabled,
-      provider: DEFAULT_SETTINGS.tts.provider,
-      characterVoices: { ...DEFAULT_SETTINGS.tts.characterVoices },
-      endpoint: {
-        baseUrl: DEFAULT_SETTINGS.tts.endpoint.baseUrl,
-        apiKeySet: false,
-      },
-      gcpProject: DEFAULT_SETTINGS.tts.gcpProject,
-      speakingRate: DEFAULT_SETTINGS.tts.speakingRate,
     },
     performance: { ...DEFAULT_SETTINGS.performance },
   };
@@ -324,7 +312,6 @@ export function createInitialStageState(
     voiceModels: { models: [], loading: false },
     workerConnTest: { testing: false },
     voiceConnTest: { testing: false },
-    ttsConnTest: { testing: false },
 
     gitStatus: {
       loading: false,
@@ -942,9 +929,6 @@ export function stageReducer(
       if (action.target === 'worker') {
         return { ...state, workerConnTest: { testing: true } };
       }
-      if (action.target === 'tts') {
-        return { ...state, ttsConnTest: { testing: true } };
-      }
       return { ...state, voiceConnTest: { testing: true } };
     }
 
@@ -1139,17 +1123,6 @@ export function stageReducer(
             return {
               ...state,
               workerConnTest: {
-                testing: false,
-                ok: message.ok,
-                message: message.message,
-                latencyMs: message.latencyMs,
-              },
-            };
-          }
-          if (message.target === 'tts') {
-            return {
-              ...state,
-              ttsConnTest: {
                 testing: false,
                 ok: message.ok,
                 message: message.message,

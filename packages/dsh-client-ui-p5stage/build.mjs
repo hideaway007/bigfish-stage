@@ -13,7 +13,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '../..');
 const pkg = JSON.parse(await readFile(join(here, 'package.json'), 'utf8'));
 
+const rootPkg = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'));
+const rootBundleDir = join(repoRoot, 'dsh-bundle');
+
 await mkdir(join(here, 'lib'), { recursive: true });
+await mkdir(rootBundleDir, { recursive: true });
 
 const cssFiles = [
   'src/stage/stage.css',
@@ -45,15 +49,60 @@ combinedCss += `
   background-color: #07080e !important;
   border-right: none !important;
 }
-html[data-bigfish-mac-app="1"] .p5-phantom-sidebar {
-  padding-top: 36px !important;
+html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) .p5-phantom-sidebar {
+  padding-top: 38px !important;
 }
-html[data-bigfish-mac-app="1"] .p5-phantom-sidebar.is-collapsed {
+html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) .p5-phantom-sidebar.is-collapsed {
   padding-top: 44px !important;
 }
-html[data-bigfish-mac-app="1"] [data-sidebar-collapsed] [data-shell-leading],
-html[data-bigfish-mac-app="1"] [data-sidebar-collapsed] [data-conversation-header-leading] {
-  margin-left: 78px !important;
+
+/* Remove broken double-offset on [data-shell-leading] and align precisely across Windowed vs Fullscreen! */
+[data-shell-leading] {
+  margin-left: 0 !important;
+  z-index: 65 !important;
+}
+
+/* 1) macOS Windowed (traffic lights present at x:16..74px, y:14..28px) when sidebar is collapsed/drawer */
+html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [data-shell-leading] {
+  top: 10px !important;
+  left: 82px !important;
+}
+/* Give left stage column clean top clearance below traffic lights + [▶ 档案] when no active-session header sits above */
+html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded .p5-left-column {
+  padding-top: 44px !important;
+}
+/* Preserve top window-drag strip on macOS windowed mode when blank header is hidden */
+html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 34px;
+  -webkit-app-region: drag;
+  z-index: 15;
+  pointer-events: auto;
+}
+.p5-stage-viewport.is-dsh-embedded .p5-workspace-header,
+.p5-stage-viewport.is-dsh-embedded .p5-brand-strip,
+.p5-stage-viewport.is-dsh-embedded button,
+.p5-stage-viewport.is-dsh-embedded input,
+.p5-stage-viewport.is-dsh-embedded textarea,
+.p5-stage-viewport.is-dsh-embedded a {
+  -webkit-app-region: no-drag;
+}
+
+/* 2) Fullscreen mode OR non-macOS Web (no traffic lights!) when sidebar is collapsed/drawer:
+      Place [▶ 档案] flush inline on the exact same horizontal row as [P5 AGENT STAGE]! */
+html:is([data-fullscreen], [data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) ~ [data-shell-leading],
+html:is([data-fullscreen], [data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]):has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) [data-shell-leading],
+html:not([data-platform="darwin"]):not([data-bigfish-mac-app="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]):has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) [data-shell-leading] {
+  top: 20px !important;
+  left: 22px !important;
+}
+html:is([data-fullscreen], [data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded .p5-brand-strip,
+html:not([data-platform="darwin"]):not([data-bigfish-mac-app="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded .p5-brand-strip {
+  padding-left: 84px !important;
 }
 .p5-phantom-sidebar .p5-sb-new-btn:hover {
   transform: rotate(-0.8deg) scale(1.018);
@@ -84,10 +133,13 @@ html[data-bigfish-mac-app="1"] [data-sidebar-collapsed] [data-conversation-heade
   position: relative !important;
   z-index: 900 !important;
 }
-/* Hide empty blank header when sidebar is open so right stage fills 100% top-to-bottom! */
-[data-frame]:not([data-sidebar-collapsed]) header[class$="_headerBlank"],
-div:not([data-sidebar-collapsed]) > [class*="_centerCol"] header[class$="_headerBlank"] {
+/* Always hide empty blank header on P5 stage (both sidebar open AND collapsed) so red/black stage fills 100% top-to-bottom! */
+[class*="_centerCol"]:has(.p5-dsh-host) header[class*="_headerBlank"] {
   display: none !important;
+}
+header[class$="_header"]:not([class*="_headerBlank"]) {
+  min-height: 40px !important;
+  padding: 6px 18px 6px 20px !important;
 }
 header[class$="_header"] {
   background: linear-gradient(90deg, #090910 0%, #16070d 55%, #090910 100%) !important;
@@ -236,29 +288,39 @@ await build({
   outfile: join(here, 'lib/index.js'),
 });
 
-const result = await build({
-  entryPoints: [join(here, 'src/client/index.tsx')],
+await build({
+  entryPoints: [join(here, 'src/index.ts')],
   bundle: true,
-  format: 'cjs',
-  platform: 'browser',
-  target: 'es2022',
-  jsx: 'transform',
-  loader: {
-    '.css': 'empty',
-  },
-  external: ['react', 'react-dom', 'react/jsx-runtime'],
-  define: {
-    __P5_STAGE_CSS__: JSON.stringify(combinedCss),
-  },
-  write: false,
-  minify: false,
-  sourcemap: false,
+  format: 'esm',
+  platform: 'node',
+  target: 'node22',
+  outfile: join(rootBundleDir, 'index.js'),
 });
 
-const body = result.outputFiles[0].text;
+async function buildWrappedClient(packageId, outPath) {
+  const result = await build({
+    entryPoints: [join(here, 'src/client/index.tsx')],
+    bundle: true,
+    format: 'cjs',
+    platform: 'browser',
+    target: 'es2022',
+    jsx: 'transform',
+    loader: {
+      '.css': 'empty',
+    },
+    external: ['react', 'react-dom', 'react/jsx-runtime'],
+    define: {
+      __P5_STAGE_CSS__: JSON.stringify(combinedCss),
+      __P5_PACKAGE_ID__: JSON.stringify(packageId),
+    },
+    write: false,
+    minify: false,
+    sourcemap: false,
+  });
 
-const wrapped = `window.__ModuleLoader__.load({
-\tid: ${JSON.stringify(pkg.name)},
+  const body = result.outputFiles[0].text;
+  const wrapped = `window.__ModuleLoader__.load({
+\tid: ${JSON.stringify(packageId)},
 \tfactory: (require) => {
 \t\tvar module = { exports: {} };
 \t\tvar exports = module.exports;
@@ -267,6 +329,12 @@ ${body.replace(/^/gm, '\t\t')}
 \t}
 });
 `;
+  await writeFile(outPath, wrapped);
+  return wrapped.length;
+}
 
-await writeFile(join(here, 'lib/client.js'), wrapped);
-console.log(`built ${pkg.name} → lib/index.js + lib/client.js (${wrapped.length} bytes)`);
+const subBytes = await buildWrappedClient(pkg.name, join(here, 'lib/client.js'));
+const rootBytes = await buildWrappedClient(rootPkg.name, join(rootBundleDir, 'client.js'));
+
+console.log(`built ${pkg.name} → lib/index.js + lib/client.js (${subBytes} bytes)`);
+console.log(`built ${rootPkg.name} → dsh-bundle/index.js + dsh-bundle/client.js (${rootBytes} bytes)`);

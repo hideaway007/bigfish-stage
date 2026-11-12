@@ -31,7 +31,7 @@ server/
 
 Codex 适配器要求：
 - 用 `codex app-server`，每次启动显式覆盖：沙箱按设置，审批 `on-request`，开启 `exclude_slash_tmp`、`exclude_tmpdir_env_var`；连接后读取服务端回显的实际策略，与预期不符时发 `error` 事件并拒绝开工。
-- 模型 = `settings.worker.model`，用 `-m`/对应参数传入。`listModels()` 可读 `~/.codex/magpie-desktop-models.json` 或 magpie 网关 `/v1/models`，失败时返回空列表 + 原因。
+- 模型 = `settings.worker.model`，用 `-m`/对应参数传入。`listModels()` 可读本地模型清单文件或本地兼容网关 `/v1/models`，失败时返回空列表 + 原因。
 - `worker_text` 增量要**合并成句**再发（按句末标点 / 换行，或 400ms 无新增），最终回答 `final: true`。
 - 拿不到结构化 diff 的文件改动（例如模型通过 shell 改文件）：每轮结束时在 cwd 跑 `git diff`（非 git 仓库则跳过），补发一个 `tool_end`（`tool: 'edit'`，带 diff）。
 - 打断后补齐收尾：未完成的工具补 `tool_end ok:false`，补 `interrupted` 和 `turn_done ok:false`，保证 UI 不会卡在「进行中」。

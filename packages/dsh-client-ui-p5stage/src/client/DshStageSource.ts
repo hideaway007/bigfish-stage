@@ -296,6 +296,238 @@ export const modalityBridge = {
   refresh(): Promise<void> { return modalityLoader ? modalityLoader() : Promise.resolve(); },
 };
 
+export interface DshProviderModelItem {
+  id: string;
+  name?: string;
+  input?: string[];
+  contextWindow?: number;
+  maxTokens?: number;
+}
+
+export interface DshProviderRow {
+  route: string;
+  displayName: string;
+  api?: string;
+  baseURL?: string;
+  apiKeyEnv: string;
+  keyConfigured: boolean;
+  models: DshProviderModelItem[];
+  isBuiltin: boolean;
+}
+
+export interface SaveDshProviderInput {
+  route: string;
+  displayName?: string;
+  api?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+  baseURL?: string;
+  apiKey?: string;
+  models?: DshProviderModelItem[];
+}
+
+function deriveProviderKeyRef(route: string): string {
+  return `${route.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`;
+}
+
+const BUILTIN_PI_AI_ROUTES = new Set(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'groq', 'mistral']);
+
+async function refreshAllActiveCatalogs(): Promise<void> {
+  await loadModelModalities().catch(() => {});
+  for (const src of ACTIVE_STAGE_SOURCES.values()) {
+    await src.reloadCatalogAndBroadcast();
+  }
+}
+
+export const providersBridge = {
+  async listProviders(): Promise<DshProviderRow[]> {
+    if (!modalityRemote?.settings?.describe) return [];
+    const res = await modalityRemote.settings.describe();
+    const desc = res?.ok === false ? undefined : (res?.value ?? res);
+    if (!desc || !Array.isArray(desc.namespaces)) return [];
+    const piView = desc.namespaces.find((n: any) => n?.ns === 'llm-pi-ai');
+    const providersObj = piView?.value?.providers;
+    if (!providersObj || typeof providersObj !== 'object') return [];
+
+    const entries = Object.entries<any>(providersObj);
+    const keyRefs = entries.map(([route, prof]) =>
+      typeof prof?.apiKeyEnv === 'string' && prof.apiKeyEnv.trim()
+        ? prof.apiKeyEnv.trim()
+        : deriveProviderKeyRef(route)
+    );
+
+    const credMap: Record<string, any> = {};
+    if (keyRefs.length > 0 && modalityRemote?.credentials?.describe) {
+      try {
+        const credRes = await modalityRemote.credentials.describe(Array.from(new Set(keyRefs)));
+        if (credRes?.ok && credRes.value) {
+          Object.assign(credMap, credRes.value);
+        }
+      } catch {
+        // ignore credential describe errors
+      }
+    }
+
+    return entries.map(([route, prof]) => {
+      const apiKeyEnv =
+        typeof prof?.apiKeyEnv === 'string' && prof.apiKeyEnv.trim()
+          ? prof.apiKeyEnv.trim()
+          : deriveProviderKeyRef(route);
+      const rawModels = Array.isArray(prof?.models) ? prof.models : [];
+      return {
+        route,
+        displayName:
+          typeof prof?.displayName === 'string' && prof.displayName.trim()
+            ? prof.displayName.trim()
+            : route === 'openai'
+            ? 'OpenAI (GPT)'
+            : route === 'anthropic'
+            ? 'Anthropic (Claude)'
+            : route,
+        api: typeof prof?.api === 'string' ? prof.api : undefined,
+        baseURL: typeof prof?.baseURL === 'string' ? prof.baseURL : undefined,
+        apiKeyEnv,
+        keyConfigured: Boolean(credMap[apiKeyEnv]?.configured),
+        models: rawModels
+          .filter((m: any) => typeof m?.id === 'string' && m.id.trim())
+          .map((m: any) => ({
+            id: String(m.id).trim(),
+            ...(typeof m.name === 'string' ? { name: m.name } : {}),
+            ...(Array.isArray(m.input) ? { input: m.input.map(String) } : {}),
+          })),
+        isBuiltin: BUILTIN_PI_AI_ROUTES.has(route),
+      };
+    });
+  },
+
+  async saveProvider(input: SaveDshProviderInput): Promise<void> {
+    if (!modalityRemote?.settings?.describe || !modalityRemote?.settings?.mutate) {
+      throw new Error('DSH 设置接口尚未就绪');
+    }
+    const route = input.route.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+    if (!route) throw new Error('请填写服务商代号（如 openai / anthropic / my-gateway）');
+
+    const descRes = await modalityRemote.settings.describe();
+    const desc = descRes?.ok === false ? undefined : (descRes?.value ?? descRes);
+    const piView = desc?.namespaces?.find((n: any) => n?.ns === 'llm-pi-ai');
+    if (!piView) throw new Error('未找到 DSH llm-pi-ai 模型配置命名空间');
+
+    const existing = piView?.value?.providers?.[route] ?? {};
+    const keyRef =
+      typeof existing?.apiKeyEnv === 'string' && existing.apiKeyEnv.trim()
+        ? existing.apiKeyEnv.trim()
+        : deriveProviderKeyRef(route);
+
+    const trimmedKey = (input.apiKey ?? '').trim();
+    if (trimmedKey) {
+      if (!modalityRemote?.credentials?.set) {
+        throw new Error('DSH 密钥存储接口不可用');
+      }
+      const keyRes = await modalityRemote.credentials.set(keyRef, trimmedKey);
+      if (keyRes && keyRes.ok === false) {
+        throw new Error(String(keyRes.error?.message ?? '保存 API Key 失败'));
+      }
+    }
+
+    const isBuiltin = BUILTIN_PI_AI_ROUTES.has(route);
+    const cleanBase = (input.baseURL ?? '').trim();
+    const cleanModels = (input.models ?? [])
+      .map((m) => ({
+        id: m.id.trim(),
+        ...(m.name ? { name: m.name } : {}),
+        input: Array.isArray(m.input) && m.input.length > 0 ? m.input : ['text', 'image'],
+        ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+        ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
+      }))
+      .filter((m) => m.id.length > 0);
+
+    if (!isBuiltin && !cleanBase) {
+      throw new Error('自定义网关必须填写接口地址 (Base URL)');
+    }
+    if (!isBuiltin && cleanModels.length === 0) {
+      throw new Error('自定义网关请至少填写或自动探测 1 个模型 ID');
+    }
+
+    const profile: Record<string, any> = {
+      apiKeyEnv: keyRef,
+    };
+    if (!isBuiltin && input.displayName?.trim()) {
+      profile.displayName = input.displayName.trim();
+    }
+    if (!isBuiltin) {
+      profile.api = input.api || 'openai-completions';
+    } else if (input.api && !isBuiltin) {
+      profile.api = input.api;
+    }
+    if (cleanBase) {
+      profile.baseURL = cleanBase;
+    }
+    if (cleanModels.length > 0) {
+      profile.models = cleanModels;
+    }
+
+    const mutRes = await modalityRemote.settings.mutate(
+      'llm-pi-ai',
+      [{ op: 'set', path: ['providers', route], value: profile }],
+      Number(piView.revision ?? 0)
+    );
+    if (mutRes && mutRes.ok === false) {
+      throw new Error(String(mutRes.error?.message ?? '写入模型服务商配置失败'));
+    }
+
+    await refreshAllActiveCatalogs();
+  },
+
+  async removeProvider(route: string): Promise<void> {
+    if (!modalityRemote?.settings?.describe || !modalityRemote?.settings?.mutate) {
+      throw new Error('DSH 设置接口尚未就绪');
+    }
+    const descRes = await modalityRemote.settings.describe();
+    const desc = descRes?.ok === false ? undefined : (descRes?.value ?? descRes);
+    const piView = desc?.namespaces?.find((n: any) => n?.ns === 'llm-pi-ai');
+    if (!piView) return;
+
+    const mutRes = await modalityRemote.settings.mutate(
+      'llm-pi-ai',
+      [{ op: 'unset', path: ['providers', route] }],
+      Number(piView.revision ?? 0)
+    );
+    if (mutRes && mutRes.ok === false) {
+      throw new Error(String(mutRes.error?.message ?? '移除服务商失败'));
+    }
+    await refreshAllActiveCatalogs();
+  },
+
+  async discoverModels(probe: {
+    provider?: string;
+    baseURL?: string;
+    api?: string;
+    apiKey?: string;
+  }): Promise<DshProviderModelItem[]> {
+    if (!modalityRemote?.llm?.discoverModels) {
+      throw new Error('当前运行时不支持自动探测模型，请手动填写模型 ID');
+    }
+    const req: Record<string, any> = {};
+    if (probe.provider?.trim()) req.provider = probe.provider.trim();
+    if (probe.baseURL?.trim()) req.baseURL = probe.baseURL.trim();
+    if (probe.api?.trim()) req.api = probe.api.trim();
+    if (probe.apiKey?.trim()) req.apiKey = probe.apiKey.trim();
+
+    const res = await modalityRemote.llm.discoverModels('llm-pi-ai', req);
+    if (res && res.ok === false) {
+      throw new Error(String(res.error?.message ?? '无法从该接口拉取模型列表'));
+    }
+    const list = Array.isArray(res?.value) ? res.value : [];
+    return list
+      .filter((m: any) => typeof m?.id === 'string' && m.id.trim())
+      .map((m: any) => ({
+        id: String(m.id).trim(),
+        ...(typeof m.name === 'string' ? { name: m.name } : {}),
+        ...(Array.isArray(m.inputModalities)
+          ? { input: m.inputModalities.map(String) }
+          : { input: ['text', 'image'] }),
+      }));
+  },
+};
+
 const PERSONA_TAG_RE = /<stage-persona>[\s\S]*?<\/stage-persona>\s*/g;
 
 const PERSONA_STYLE: Record<string, { self: string; call: string; tone: string }> = {
@@ -438,7 +670,7 @@ export class DshStageSource implements StageDataSource {
         model,
         agentPreset: this.resolveAgentPreset(),
         endpoint: {
-          baseUrl: 'http://127.0.0.1:3425/v1',
+          baseUrl: 'https://api.deepseek.com/v1',
           apiKeySet: true,
         },
       },
@@ -459,16 +691,6 @@ export class DshStageSource implements StageDataSource {
           apiKeySet: false,
         },
         maxLinesPerMinute: DEFAULT_SETTINGS.voice.maxLinesPerMinute,
-      },
-      tts: {
-        enabled: DEFAULT_SETTINGS.tts.enabled,
-        provider: DEFAULT_SETTINGS.tts.provider,
-        characterVoices: { ...DEFAULT_SETTINGS.tts.characterVoices },
-        endpoint: {
-          baseUrl: DEFAULT_SETTINGS.tts.endpoint.baseUrl,
-          apiKeySet: false,
-        },
-        speakingRate: DEFAULT_SETTINGS.tts.speakingRate,
       },
       performance: { ...DEFAULT_SETTINGS.performance },
     };
@@ -1203,6 +1425,57 @@ export class DshStageSource implements StageDataSource {
     this.ctx.uiWorkspace?.openSession?.(targetSessionId);
   }
 
+  public async reloadCatalogAndBroadcast(): Promise<void> {
+    await this.refreshModelCatalog(true);
+  }
+
+  public batonPass(toCharacterId: string, instruction?: string): void {
+    const fromCharacterId = this.activeCharacterId;
+    const fromPack = getCachedCharacterPack(fromCharacterId);
+    const toPack = getCachedCharacterPack(toCharacterId);
+    const fromShort = fromPack.name.split('（')[0];
+    const toShort = toPack.name.split('（')[0];
+
+    this.activeCharacterId = toCharacterId;
+    setStoredCharacterId(toCharacterId);
+
+    // Collect recent touched files from session event snapshot for context continuity
+    const cwd = this.resolveCwd();
+    const touchedFiles = new Set<string>();
+    const entries = this.ctx.sessions?.binding?.(this.sessionId)?.eventSource?.getSnapshot?.()?.entries ?? [];
+    for (const item of entries) {
+      if (item?.type === 'event' && item.event?.type === 'tool/call') {
+        const d = item.event.data ?? {};
+        const args = parseArgsObject(d.args ?? d.input ?? d.arguments);
+        const info = summarizeToolCall(String(d.toolName ?? d.name ?? 'tool'), args, cwd);
+        if (info.file) touchedFiles.add(info.file);
+      }
+    }
+
+    const cleanInst = (instruction ?? '').trim();
+    const summaryText = `${fromShort} ➔ ${toShort}：${cleanInst || '接力推进当前任务与代码审查'}`;
+
+    this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
+    this.emitStageEventWithReaction({
+      at: Date.now(),
+      type: 'baton_pass',
+      fromCharacterId,
+      toCharacterId,
+      summary: summaryText,
+    });
+
+    const filesHint =
+      touchedFiles.size > 0
+        ? `\n前序步骤涉及文件：${Array.from(touchedFiles).slice(-8).join(', ')}`
+        : '';
+    const handoffPrompt = [
+      `【怪盗团 Baton Pass 换手接力】上一棒队友「${fromShort}」已将接力棒交给你（${toShort}）。${filesHint}`,
+      `本棒交接指令：${cleanInst || '请基于上方对话与代码改动上下文，复核上一棒的结论，指出潜在问题或继续推进下一步实现。'}`,
+    ].join('\n');
+
+    this.send(handoffPrompt);
+  }
+
   public switchCharacter(characterId: string): void {
     this.activeCharacterId = characterId;
     setStoredCharacterId(characterId);
@@ -1283,7 +1556,7 @@ export class DshStageSource implements StageDataSource {
       const provider =
         this.modelProviderMap.get(model) ??
         this.defaultModelSelection?.provider ??
-        'magpie';
+        'deepseek-account';
       if (this.ctx.remote?.session?.selectModel) {
         void this.ctx.remote.session
           .selectModel({
@@ -1321,7 +1594,7 @@ export class DshStageSource implements StageDataSource {
     void binding?.session?.command?.('/compact');
   }
 
-  public testConnection(target: 'worker' | 'voice' | 'tts'): void {
+  public testConnection(target: 'worker' | 'voice'): void {
     this.emitMessage({
       type: 'connection_test',
       target,

@@ -51,7 +51,7 @@ try {
       send({ type: 'update_settings', patch: {
         projectDir: project, voice: { enabled: false },
         worker: { adapter: 'codex', model: 'gpt-6-luna', sandbox: 'workspace-write', connection,
-          endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', apiKey: '' } },
+          endpoint: { baseUrl: 'http://127.0.0.1:8080/v1', apiKey: '' } },
       } });
       const updated = await wait(m => m.type === 'settings', split);
       assert.equal(updated.settings.worker.connection, connection);
@@ -77,7 +77,7 @@ try {
     assert.equal(turns, 2);
     console.log(`两种连接模式验收通过，各一轮。临时沙盒：${root}`);
   } else {
-  send({ type: 'update_settings', patch: { projectDir: project, activeCharacterId: 'deepseek-v4-pro', worker: { adapter: 'codex', model: 'gpt-6-luna', sandbox: 'workspace-write' }, voice: { enabled: true, maxLinesPerMinute: 6, endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', model: 'gemini-3.8-flash', apiKey: '' } } } });
+  send({ type: 'update_settings', patch: { projectDir: project, activeCharacterId: 'deepseek-v4-pro', worker: { adapter: 'codex', model: 'gpt-6-luna', sandbox: 'workspace-write' }, voice: { enabled: true, maxLinesPerMinute: 6, endpoint: { baseUrl: 'http://127.0.0.1:8080/v1', model: 'gemini-3.8-flash', apiKey: '' } } } });
   await wait(m => m.type === 'settings');
   for (const target of ['worker', 'voice'] as const) {
     const from = messages.length;

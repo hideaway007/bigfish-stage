@@ -71,17 +71,6 @@ function buildInitialPublicSettings(): PublicSettings {
       },
       maxLinesPerMinute: DEFAULT_SETTINGS.voice.maxLinesPerMinute,
     },
-    tts: {
-      enabled: DEFAULT_SETTINGS.tts.enabled,
-      provider: DEFAULT_SETTINGS.tts.provider,
-      characterVoices: { ...DEFAULT_SETTINGS.tts.characterVoices },
-      endpoint: {
-        baseUrl: DEFAULT_SETTINGS.tts.endpoint.baseUrl,
-        apiKeySet: false,
-      },
-      gcpProject: DEFAULT_SETTINGS.tts.gcpProject,
-      speakingRate: DEFAULT_SETTINGS.tts.speakingRate,
-    },
     performance: { ...DEFAULT_SETTINGS.performance },
   };
 }
@@ -538,40 +527,6 @@ export class ScriptSource implements StageDataSource {
             }
           : {}),
       },
-      tts: {
-        ...this.settings.tts,
-        ...(patch.tts
-          ? {
-              ...(patch.tts.enabled !== undefined
-                ? { enabled: patch.tts.enabled }
-                : {}),
-              ...(patch.tts.provider !== undefined
-                ? { provider: patch.tts.provider }
-                : {}),
-              ...(patch.tts.gcpProject !== undefined
-                ? { gcpProject: patch.tts.gcpProject }
-                : {}),
-              ...(patch.tts.speakingRate !== undefined
-                ? { speakingRate: patch.tts.speakingRate }
-                : {}),
-              characterVoices: patch.tts.characterVoices
-                ? {
-                    ...this.settings.tts.characterVoices,
-                    ...patch.tts.characterVoices,
-                  }
-                : this.settings.tts.characterVoices,
-              endpoint: {
-                ...this.settings.tts.endpoint,
-                ...(patch.tts.endpoint?.baseUrl !== undefined
-                  ? { baseUrl: patch.tts.endpoint.baseUrl }
-                  : {}),
-                ...(patch.tts.endpoint?.apiKey !== undefined
-                  ? { apiKeySet: patch.tts.endpoint.apiKey.length > 0 }
-                  : {}),
-              },
-            }
-          : {}),
-      },
       performance: {
         ...this.settings.performance,
         ...(patch.performance ?? {}),
@@ -613,24 +568,18 @@ export class ScriptSource implements StageDataSource {
     }, 80);
   }
 
-  public testConnection(target: 'worker' | 'voice' | 'tts'): void {
+  public testConnection(target: 'worker' | 'voice'): void {
     this.scheduleDemoTimer(() => {
       const message =
         target === 'worker'
           ? `演示模式：执行引擎 ${this.settings.worker.adapter} (${this.settings.worker.model}) 就绪`
-          : target === 'voice'
-          ? `演示模式：台词服务 (${this.settings.voice.endpoint.model}) 连通正常`
-          : `演示模式：角色语音合成 (${
-              this.settings.tts.provider === 'google-cloud'
-                ? 'Google Cloud Chirp3-HD'
-                : 'OpenAI TTS'
-            }) 连通正常`;
+          : `演示模式：台词服务 (${this.settings.voice.endpoint.model}) 连通正常`;
       this.callbacks.onServerMessage({
         type: 'connection_test',
         target,
         ok: true,
         message,
-        latencyMs: target === 'tts' ? 24 : 18,
+        latencyMs: 18,
       });
     }, 110);
   }
@@ -707,9 +656,6 @@ export class ScriptSource implements StageDataSource {
       this.history.push(reviewEv);
       this.roomHistories[targetId] = [...this.history];
       this.callbacks.onServerMessage({ type: 'event', event: reviewEv });
-      if (this.settings.tts.enabled) {
-        this.synthesizeTts(targetId, reviewText, reviewEv.lineId);
-      }
     }, 780);
   }
 
@@ -734,39 +680,6 @@ export class ScriptSource implements StageDataSource {
     this.history.push(ev);
     this.roomHistories[this.settings.activeCharacterId] = [...this.history];
     this.callbacks.onServerMessage({ type: 'event', event: ev });
-    if (this.settings.tts.enabled) {
-      this.synthesizeTts(targetId, picked.text, lineId);
-    }
-  }
-
-  public synthesizeTts(
-    characterId: string,
-    text: string,
-    lineId?: string
-  ): void {
-    const clean = text?.trim();
-    if (!clean) return;
-    void fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId, text: clean }),
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.ok && data.audioBase64 && !this.disposed) {
-          this.callbacks.onServerMessage({
-            type: 'tts_audio',
-            characterId,
-            lineId,
-            text: clean,
-            audioBase64: data.audioBase64,
-            mimeType: data.mimeType || 'audio/wav',
-          });
-        }
-      })
-      .catch(() => {
-        // Offline demo without local backend: stay silent rather than playing synthetic beeps
-      });
   }
 
   private emitDemoGitStatus(): void {

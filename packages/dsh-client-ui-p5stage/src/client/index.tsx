@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, type ComponentType } from 'react';
 import { StageApp } from '../../../../src/stage/StageApp';
 import { preloadCharacterPacks } from '../../../../src/stage/characterLoader';
-import { DshStageSource, getActiveStageSource, setStoredAgentPreset, reasoningBridge, modalityBridge } from './DshStageSource';
+import { DshStageSource, getActiveStageSource, setStoredAgentPreset, reasoningBridge, modalityBridge, providersBridge } from './DshStageSource';
 import { createP5SidebarComponents } from './P5PhantomSidebar';
 
 export const inject = [
@@ -16,6 +16,8 @@ export const inject = [
   'remote',
   'remote.session',
   'remote.settings',
+  'remote.credentials',
+  'remote.llm',
   'remote.agentPresets',
   'configForms',
   'theme',
@@ -23,8 +25,25 @@ export const inject = [
 ] as const;
 
 declare const __P5_STAGE_CSS__: string;
+declare const __P5_PACKAGE_ID__: string | undefined;
+
+const PLUGIN_OWNER_ID =
+  typeof __P5_PACKAGE_ID__ === 'string' && __P5_PACKAGE_ID__
+    ? __P5_PACKAGE_ID__
+    : '@bigfish/dsh-client-ui-p5stage';
 
 const STANDALONE_PRODUCT_TITLE = '大肥鱼工作台 // P5 AGENT STAGE';
+
+const SIDEBAR_SLOT_CHILDREN = {
+  'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+  'sidebar.brand.name': { kind: 'single', scope: 'root' },
+  'sidebar.toggle.badge': { kind: 'single', scope: 'root' },
+  'sidebar.panellist': { kind: 'list', scope: 'root' },
+  'sidebar.panellist.actions': { kind: 'list', scope: 'root' },
+  'sidebar.workspaces': { kind: 'single', scope: 'root' },
+  'sidebar.settings': { kind: 'single', scope: 'root' },
+  'sidebar.footer.action': { kind: 'list', scope: 'root' },
+} as const;
 
 const P5_THEME_OVERRIDES: Record<string, { light: string; dark: string }> = {
   '--dsw-alias-bg-base': { light: '#090910', dark: '#090910' },
@@ -119,9 +138,47 @@ export function apply(ctx: any): () => void {
   void preloadCharacterPacks();
 
   const disposers: Array<() => void> = [];
+  disposers.push(() => {
+    if (typeof document !== 'undefined') {
+      document.getElementById('p5-agent-stage-dsh-styles')?.remove();
+      document.documentElement.removeAttribute('data-bigfish-mac-app');
+      document.documentElement.removeAttribute('data-bigfish-fullscreen');
+    }
+  });
+
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const syncFullscreenAttr = () => {
+      const isDocFs = Boolean(document.fullscreenElement);
+      const isScreenFs =
+        window.screen &&
+        window.innerWidth >= window.screen.width - 2 &&
+        window.innerHeight >= window.screen.height - 2;
+      if (isDocFs || isScreenFs) {
+        document.documentElement.setAttribute('data-bigfish-fullscreen', '1');
+      } else {
+        document.documentElement.removeAttribute('data-bigfish-fullscreen');
+      }
+    };
+    syncFullscreenAttr();
+    window.addEventListener('resize', syncFullscreenAttr);
+    document.addEventListener('fullscreenchange', syncFullscreenAttr);
+    const offElectronFs = (window as any).electronAPI?.onFullscreenChange?.((fs: boolean) => {
+      if (fs) {
+        document.documentElement.setAttribute('data-bigfish-fullscreen', '1');
+      } else {
+        document.documentElement.removeAttribute('data-bigfish-fullscreen');
+      }
+    });
+    disposers.push(() => {
+      window.removeEventListener('resize', syncFullscreenAttr);
+      document.removeEventListener('fullscreenchange', syncFullscreenAttr);
+      if (typeof offElectronFs === 'function') offElectronFs();
+    });
+  }
 
   // Keep standalone window title ("大肥鱼工作台 // P5 AGENT STAGE", never "DeepSeek Harness")
   if (typeof document !== 'undefined') {
+    const originalTitle = document.title;
     const syncTitle = () => {
       if (document.title.includes('DeepSeek Harness')) {
         const next = document.title.replace(/\s*—?\s*DeepSeek Harness/g, '').trim();
@@ -137,20 +194,33 @@ export function apply(ctx: any): () => void {
     if (titleEl && typeof MutationObserver !== 'undefined') {
       const obs = new MutationObserver(syncTitle);
       obs.observe(titleEl, { childList: true, characterData: true, subtree: true });
-      disposers.push(() => obs.disconnect());
+      disposers.push(() => {
+        obs.disconnect();
+        if (originalTitle) document.title = originalTitle;
+      });
     }
   }
 
   // Activate dark palette + Persona-5 crimson/ink token layer across all DSH surfaces
   if (ctx.theme) {
+    const prevPreference = ctx.theme.getTheme?.()?.preference;
     try {
       ctx.theme.setTheme?.('dark');
+      if (prevPreference && prevPreference !== 'dark') {
+        disposers.push(() => {
+          try {
+            ctx.theme.setTheme?.(prevPreference);
+          } catch {
+            // ignore
+          }
+        });
+      }
     } catch {
       // ignore
     }
     if (typeof ctx.theme.overrideTokens === 'function') {
       disposers.push(
-        ctx.theme.overrideTokens('@bigfish/dsh-client-ui-p5stage', P5_THEME_OVERRIDES)
+        ctx.theme.overrideTokens(PLUGIN_OWNER_ID, P5_THEME_OVERRIDES)
       );
     }
   }
@@ -163,6 +233,8 @@ export function apply(ctx: any): () => void {
     disposers.push(() => { delete (window as any).__BIGFISH_REASONING__; });
     (window as any).__BIGFISH_MODALITY__ = modalityBridge;
     disposers.push(() => { delete (window as any).__BIGFISH_MODALITY__; });
+    (window as any).__BIGFISH_PROVIDERS__ = providersBridge;
+    disposers.push(() => { delete (window as any).__BIGFISH_PROVIDERS__; });
   }
 
   // Expose real DSH Agent Presets bridge to P5 SystemMenuModal
@@ -220,36 +292,42 @@ export function apply(ctx: any): () => void {
     });
   }
 
-  ctx.slots.inject('sidebar', () =>
-    ctx.slots.register(
-      {
-        name: 'sidebar',
-      },
-      P5PhantomSidebar as unknown as ComponentType<any>
-    )
+  const trackInject = (res: unknown) => {
+    if (typeof res === 'function') {
+      disposers.push(res as () => void);
+    }
+  };
+
+  trackInject(
+    ctx.slots.inject('sidebar', () => {
+      const undeclaredChildren: Record<string, { kind: string; scope: string }> = {};
+      for (const [k, v] of Object.entries(SIDEBAR_SLOT_CHILDREN)) {
+        if (!ctx.slots.spec?.(k)) {
+          undeclaredChildren[k] = v;
+        }
+      }
+      return ctx.slots.register(
+        {
+          name: 'sidebar',
+          priority: -100,
+          ...(Object.keys(undeclaredChildren).length > 0
+            ? { children: undeclaredChildren }
+            : {}),
+        },
+        P5PhantomSidebar as unknown as ComponentType<any>
+      );
+    })
   );
 
-  ctx.slots.inject('conversation.header.leading', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.header.leading',
-      },
-      (() => {
-        // Render expand button only when sidebar is collapsed
-        const collapsed =
-          typeof document !== 'undefined' &&
-          Boolean(document.querySelector('[data-sidebar-collapsed]'));
-        return collapsed ? React.createElement(P5HeaderLeadingToggle) : null;
-      }) as unknown as ComponentType<any>
-    )
-  );
-
-  ctx.slots.inject('shell.leading', () =>
-    ctx.slots.register(
-      {
-        name: 'shell.leading',
-      },
-      P5HeaderLeadingToggle as unknown as ComponentType<any>
+  trackInject(
+    ctx.slots.inject('shell.leading', () =>
+      ctx.slots.register(
+        {
+          name: 'shell.leading',
+          priority: -100,
+        },
+        P5HeaderLeadingToggle as unknown as ComponentType<any>
+      )
     )
   );
 
@@ -267,42 +345,52 @@ export function apply(ctx: any): () => void {
   const BoundStageView = createDshStageView(ctx);
   const BlankStageView = createBlankSessionStageView(BoundStageView);
 
-  ctx.slots.inject('conversation.view', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.view',
-        id: 'chat',
-        order: 0,
-        label: () => 'STAGE',
-      },
-      BoundStageView as unknown as ComponentType<any>
-    )
-  );
-
-  ctx.slots.inject('conversation.input.dock', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.input.dock',
-        id: 'p5stage-blank-hero',
-        order: 0,
-      },
-      BlankStageView as unknown as ComponentType<any>
-    )
-  );
-
-  ctx.slots.inject('conversation.hero.brand.mark', () =>
-    ctx.slots.register({ name: 'conversation.hero.brand.mark' }, ({ size = 34 }: any) =>
-      React.createElement('img', {
-        src: '/characters/deepseek-v4-pro/art/portrait.png',
-        alt: '大肥鱼',
-        style: {
-          width: size,
-          height: size,
-          borderRadius: '50%',
-          objectFit: 'cover',
-          border: '2px solid #e60012',
+  trackInject(
+    ctx.slots.inject('conversation.view', () =>
+      ctx.slots.register(
+        {
+          name: 'conversation.view',
+          id: 'chat',
+          order: 0,
+          priority: -100,
+          label: () => 'STAGE',
         },
-      })
+        BoundStageView as unknown as ComponentType<any>
+      )
+    )
+  );
+
+  trackInject(
+    ctx.slots.inject('conversation.input.dock', () =>
+      ctx.slots.register(
+        {
+          name: 'conversation.input.dock',
+          id: 'p5stage-blank-hero',
+          order: 0,
+          priority: -100,
+        },
+        BlankStageView as unknown as ComponentType<any>
+      )
+    )
+  );
+
+  trackInject(
+    ctx.slots.inject('conversation.hero.brand.mark', () =>
+      ctx.slots.register(
+        { name: 'conversation.hero.brand.mark', priority: -100 },
+        ({ size = 34 }: any) =>
+          React.createElement('img', {
+            src: '/characters/deepseek-v4-pro/art/portrait.png',
+            alt: '大肥鱼',
+            style: {
+              width: size,
+              height: size,
+              borderRadius: '50%',
+              objectFit: 'cover',
+              border: '2px solid #e60012',
+            },
+          })
+      )
     )
   );
 

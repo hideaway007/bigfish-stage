@@ -1,6 +1,6 @@
 # Codex 桥接验证脚本
 
-仅在 `/tmp/p5-bridge-sandbox/` 内运行 Codex。依赖 Node.js 22+、npm、`codex-cli 0.167.0` 和已运行的 localhost magpie 网关。
+仅在 `/tmp/p5-bridge-sandbox/` 内运行 Codex。依赖 Node.js 22+、npm、`codex-cli 0.167.0` 和已运行的本地兼容网关。
 
 ```bash
 cd bridge
@@ -30,13 +30,13 @@ Read add.js and add.test.js. Fix add using apply_patch. Run exactly npm test wit
 `on-request` 不会为每条沙箱内命令强制弹出审批；上述提示显式请求提权，才会出现实验所需的审批。允许该审批会按 Codex 的提权语义执行该次命令。
 
 ```bash
-BRIDGE_MODEL=remote-magpie/antigravity/gemini-3.8-flash npx tsx src/appserver-spike.ts
+BRIDGE_MODEL=gemini-flash-preview npx tsx src/appserver-spike.ts
 BRIDGE_RESUME=<thread-id> npx tsx src/appserver-spike.ts
 npx tsx src/exec-spike.ts 'Read add.js and explain it. Do not edit files.'
 BRIDGE_RESUME=<thread-id> npx tsx src/exec-spike.ts 'Continue the conversation.'
 ```
 
-模型默认为 `gpt-6-luna`。所有调用使用本次进程专属的 `local` provider，指向 `http://127.0.0.1:3425/v1`；不设置任何 key。Codex 的 `CODEX_HOME` 也位于测试沙箱内，不读取或改动用户全局配置。启动时设置 workspace-write、on-request，并排除默认对整个 `/tmp` 和 `TMPDIR` 的额外写入授权。沙箱不是读取隔离或容器。
+模型默认为 `gpt-6-luna`。所有调用使用本次进程专属的 `local` provider，指向 `http://127.0.0.1:8080/v1`；不设置任何 key。Codex 的 `CODEX_HOME` 也位于测试沙箱内，不读取或改动用户全局配置。启动时设置 workspace-write、on-request，并排除默认对整个 `/tmp` 和 `TMPDIR` 的额外写入授权。沙箱不是读取隔离或容器。
 
 ## 可重现实验
 
@@ -54,7 +54,7 @@ npm run probe -- exec-full
 npm run probe -- exec-interrupt
 BRIDGE_RESUME=<thread-id> npm run probe -- exec-resume
 npm run fixture -- --reset
-BRIDGE_MODEL=remote-magpie/antigravity/gemini-3.8-flash npm run probe -- gemini-full
+BRIDGE_MODEL=gemini-flash-preview npm run probe -- gemini-full
 npx tsx src/frontstage-spike.ts
 npm run sanitize
 ```

@@ -5,8 +5,52 @@
   "description": "Big Fish Stage: a Persona 5 styled stage for DeepSeek Harness & AI character agents",
   "type": "module",
   "main": "electron/main.cjs",
+  "icon": "./dsh-bundle/icon.svg",
+  "exports": {
+    ".": "./dsh-bundle/index.js",
+    "./client": "./dsh-bundle/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./dsh-bundle/locale/*.json",
+    "./icon": "./dsh-bundle/icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dsh-bundle/**/*",
+    "cordis.patch.yml",
+    "public/characters/**/*",
+    "public/sfx/**/*",
+    "README.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "external": [
+        "react",
+        "react-dom",
+        "react/jsx-runtime"
+      ]
+    }
+  },
   "scripts": {
-    "build:engine": "esbuild server/src/session.ts server/src/settings-store.ts server/src/characters.ts server/src/git-ops.ts server/src/voice/tts.ts server/src/adapters/registry.ts --bundle --platform=node --format=esm --outdir=electron/engine --external:electron --external:ws",
+    "build:engine": "esbuild server/src/session.ts server/src/settings-store.ts server/src/characters.ts server/src/git-ops.ts server/src/adapters/registry.ts --bundle --platform=node --format=esm --outdir=electron/engine --external:electron --external:ws",
     "build:stage": "node packages/dsh-client-ui-p5stage/build.mjs",
     "build:all": "npm run build && npm run build:engine && npm run build:stage",
     "app": "npm run build:stage && electron electron/main.cjs",

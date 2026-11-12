@@ -145,7 +145,7 @@ export class LiveSource implements StageDataSource {
     this.sendRawCommand({ type: 'list_models', target });
   }
 
-  public testConnection(target: 'worker' | 'voice' | 'tts'): void {
+  public testConnection(target: 'worker' | 'voice'): void {
     this.sendRawCommand({ type: 'test_connection', target });
   }
 
@@ -171,19 +171,6 @@ export class LiveSource implements StageDataSource {
       type: 'interact_character',
       characterId,
       zone,
-    });
-  }
-
-  public synthesizeTts(
-    characterId: string,
-    text: string,
-    lineId?: string
-  ): void {
-    this.sendRawCommand({
-      type: 'synthesize_tts',
-      characterId,
-      text,
-      ...(lineId ? { lineId } : {}),
     });
   }
 
