@@ -439,10 +439,11 @@ export class DshSession implements WorkerSession {
     this.beforeDiff = await this.gitDiff();
     this.mapper.begin();
     this.emit({ type: 'user_message', at: Date.now(), id, text });
+    const wireText = this.options.personaPreamble ? `${this.options.personaPreamble}${text}` : text;
     try {
       await this.request('session/prompt', {
         sessionId: this.sessionId,
-        contentBlocks: [{ type: 'text', text }],
+        contentBlocks: [{ type: 'text', text: wireText }],
       });
     } catch (error) {
       if (this.interrupting || !this.turnActive) return;

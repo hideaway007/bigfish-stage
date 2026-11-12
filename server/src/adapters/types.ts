@@ -7,6 +7,7 @@ export interface StartSessionOptions extends Omit<WorkerSettings, 'adapter'> {
   cwd: string;
   resumeId?: string;
   rolePrompt?: string;
+  personaPreamble?: string;
   onEvent: (event: StageEvent) => void;
 }
 export interface WorkerSession {

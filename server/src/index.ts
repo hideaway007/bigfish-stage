@@ -1,4 +1,4 @@
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -9,10 +9,29 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { DEFAULT_SERVER_PORT, WS_PATH, type ServerMessage } from '../../src/shared/wire';
 import { SettingsStore, defaultSettingsPath } from './settings-store';
 import { CharacterCatalog } from './characters';
+import { DiyStore, handleDiyApiAction } from './diy-store';
 import { createRegistry, type AdapterRegistry } from './adapters/registry';
 import { SessionController, parseCommand } from './session';
 
 const runFile = promisify(execFile);
+
+function readRequestBody(req: IncomingMessage, maxBytes = 32 * 1024 * 1024): Promise<string> {
+  return new Promise((resolveBody, rejectBody) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        req.destroy();
+        rejectBody(new Error('请求内容超过体积上限（32MB）'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolveBody(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', rejectBody);
+  });
+}
 
 export async function pickNativeDirectory(): Promise<string | null> {
   if (process.platform === 'darwin') {
@@ -63,6 +82,7 @@ export interface ServerOptions {
   port?: number;
   settingsPath?: string;
   charactersRoot?: string;
+  diyRoot?: string;
   distRoot?: string;
   registry?: AdapterRegistry;
 }
@@ -70,9 +90,13 @@ export async function startServer(options: ServerOptions = {}) {
   const repository = fileURLToPath(new URL('../../', import.meta.url));
   const settingsPath = options.settingsPath ?? process.env.BIGFISH_SETTINGS_PATH ?? defaultSettingsPath();
   const store = new SettingsStore(settingsPath); await store.load();
+  const diyRoot = options.diyRoot ?? join(dirname(settingsPath), 'diy');
+  const diyStore = new DiyStore(diyRoot); await diyStore.load();
   const charactersRoot = options.charactersRoot ?? join(repository, 'public/characters');
   const distRoot = options.distRoot ?? join(repository, 'dist');
-  const characters = new CharacterCatalog(charactersRoot); await characters.load();
+  const characters = new CharacterCatalog(charactersRoot, diyStore.charactersDir);
+  characters.setOverrides(diyStore.getOverrides());
+  await characters.load();
   const registry = options.registry ?? createRegistry(join(dirname(settingsPath), 'codex'));
   const sockets = new Set<WebSocket>();
   const send = (socket: WebSocket, message: ServerMessage) => {
@@ -84,10 +108,29 @@ export async function startServer(options: ServerOptions = {}) {
   const server = createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
-    if (!['GET', 'HEAD', 'POST'].includes(request.method ?? '')) { response.writeHead(405); response.end(); return; }
+    if (!['GET', 'HEAD', 'POST', 'DELETE'].includes(request.method ?? '')) { response.writeHead(405); response.end(); return; }
     try {
-      const path = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+      const reqUrl = new URL(request.url ?? '/', 'http://localhost');
+      const path = decodeURIComponent(reqUrl.pathname);
       if (path === '/health') { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end('{"ok":true}'); return; }
+      if (path === '/api/diy' || path.startsWith('/api/diy/')) {
+        const method = request.method ?? 'GET';
+        if (method !== 'GET' && method !== 'HEAD' && !validOrigin(request.headers.origin)) {
+          response.writeHead(403, { 'Content-Type': 'application/json' });
+          response.end(JSON.stringify({ ok: false, error: 'Forbidden origin' }));
+          return;
+        }
+        const rawBody = method !== 'GET' && method !== 'HEAD' ? await readRequestBody(request) : undefined;
+        const result = await handleDiyApiAction(diyStore, method, path, reqUrl.searchParams, rawBody);
+        if (result.mutated) {
+          characters.setOverrides(diyStore.getOverrides());
+          await characters.load();
+          await session.syncAfterDiyUpdate(result.deletedCharacterId);
+        }
+        response.writeHead(result.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
+        response.end(JSON.stringify(result.body));
+        return;
+      }
       if (path === '/api/default-directory') {
         const defaultDir = process.env.BIGFISH_PROJECT_DIR || repository;
         response.writeHead(200, { 'Content-Type': 'application/json' });
@@ -117,6 +160,10 @@ export async function startServer(options: ServerOptions = {}) {
       }
       const character = path.startsWith('/characters/');
       let file = await staticFile(character ? charactersRoot : distRoot, character ? path.slice('/characters'.length) : path === '/' ? '/index.html' : path);
+      if (!file && character) {
+        const customFile = await diyStore.resolveCustomAssetFile(path.slice('/characters/'.length));
+        if (customFile) file = { target: customFile.target, size: customFile.size };
+      }
       if (!file && !character && !extname(path)) file = await staticFile(distRoot, '/index.html');
       if (!file) { response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); response.end('页面尚未构建或文件不存在。请先运行根目录 npm run build。'); return; }
       response.writeHead(200, { 'Content-Type': mime[extname(file.target)] ?? 'application/octet-stream', 'Content-Length': file.size, 'Cache-Control': 'no-cache' });

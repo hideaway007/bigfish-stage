@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CharacterPack, CharacterSummary, Reaction } from '../../src/shared/character-pack';
+import { mergeCharacterWithOverride, type CharacterPersonaOverride } from '../../src/shared/diy-character';
 import type { CharacterTouchZone, Emotion, StageEvent, ToolKind } from '../../src/shared/stage-events';
 
 const emotions: Emotion[] = ['idle', 'thinking', 'working', 'happy', 'worried', 'shocked'];
@@ -61,14 +62,20 @@ export function validateCharacter(value: unknown, directoryId: string): Characte
 
 export class CharacterCatalog {
   private packs = new Map<string, CharacterPack>();
+  private overrides: Record<string, CharacterPersonaOverride> = {};
   readonly warnings: string[] = [];
-  constructor(readonly root: string) {}
-  async load() {
-    this.packs.clear();
-    this.warnings.length = 0;
+  constructor(readonly root: string, readonly extraRoot?: string) {}
+  setOverrides(overrides: Record<string, CharacterPersonaOverride>) {
+    this.overrides = structuredClone(overrides);
+  }
+  getOverride(id: string): CharacterPersonaOverride | undefined {
+    const found = this.overrides[id];
+    return found ? structuredClone(found) : undefined;
+  }
+  private async loadDirectory(dirRoot: string) {
     let directories;
     try {
-      directories = await readdir(this.root, { withFileTypes: true });
+      directories = await readdir(dirRoot, { withFileTypes: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
       throw error;
@@ -77,7 +84,7 @@ export class CharacterCatalog {
       if (!directory.isDirectory()) continue;
       try {
         const pack = validateCharacter(
-          JSON.parse(await readFile(join(this.root, directory.name, 'character.json'), 'utf8')),
+          JSON.parse(await readFile(join(dirRoot, directory.name, 'character.json'), 'utf8')),
           directory.name
         );
         this.packs.set(pack.id, pack);
@@ -86,10 +93,24 @@ export class CharacterCatalog {
       }
     }
   }
-  get(id: string) { return this.packs.get(id); }
-  all(): CharacterPack[] { return [...this.packs.values()]; }
+  async load() {
+    this.packs.clear();
+    this.warnings.length = 0;
+    await this.loadDirectory(this.root);
+    if (this.extraRoot) {
+      await this.loadDirectory(this.extraRoot);
+    }
+  }
+  get(id: string) {
+    const base = this.packs.get(id);
+    if (!base) return undefined;
+    return mergeCharacterWithOverride(base, this.overrides[id]);
+  }
+  all(): CharacterPack[] {
+    return [...this.packs.values()].map(p => mergeCharacterWithOverride(p, this.overrides[p.id]));
+  }
   summaries(): CharacterSummary[] {
-    return [...this.packs.values()]
+    return this.all()
       .sort((a, b) => {
         const ia = CANONICAL_CHARACTER_ORDER.indexOf(a.id);
         const ib = CANONICAL_CHARACTER_ORDER.indexOf(b.id);

@@ -78,7 +78,7 @@ export function validateSettings(value: unknown): AppSettings {
         entry.activeSessionId = b.activeSessionId ? b.activeSessionId.trim() : null;
       }
       if (str(b.rolePrompt) && b.rolePrompt.trim()) {
-        entry.rolePrompt = b.rolePrompt.trim().slice(0, 500);
+        entry.rolePrompt = b.rolePrompt.trim().slice(0, 8000);
       }
       cleanBrains[charId] = entry;
     }

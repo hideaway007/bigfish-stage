@@ -4,7 +4,8 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CharacterTouchZone, StageEvent } from '../../src/shared/stage-events';
 import { PROTOCOL_VERSION, type ClientCommand, type ServerMessage, type SessionInfo, type SessionSummary } from '../../src/shared/wire';
-import type { AppSettings, SettingsPatch, WorkerSettings } from '../../src/shared/settings';
+import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch, type WorkerSettings } from '../../src/shared/settings';
+import { composeStagePersonaPreamble } from '../../src/shared/diy-character';
 import type { WorkerSession } from './adapters/types';
 import type { AdapterRegistry } from './adapters/registry';
 import { CharacterCatalog, findTouchReaction } from './characters';
@@ -334,6 +335,18 @@ export class SessionController {
     }
   }
 
+  async syncAfterDiyUpdate(deletedCharacterId?: string) {
+    if (deletedCharacterId && this.store.current.activeCharacterId === deletedCharacterId) {
+      await this.switchCharacterRoom(DEFAULT_SETTINGS.activeCharacterId);
+    }
+    this.configureVoice();
+    if (this.worker && !this.worker.turnActive) {
+      await this.worker.close();
+      this.worker = undefined;
+    }
+    this.broadcast(await this.welcome());
+  }
+
   async welcome(): Promise<ServerMessage> {
     const settings = this.store.current;
     if (!this.info && this.history.length === 0) {
@@ -401,6 +414,10 @@ export class SessionController {
     const cwd = await this.project(settings.projectDir);
     const effectiveWorker = resolveEffectiveWorker(settings, charId);
     const adapter = this.registry.get(effectiveWorker.adapter);
+    const pack = this.characters.get(charId);
+    const personaPreamble = pack
+      ? composeStagePersonaPreamble(pack, this.characters.getOverride(charId), effectiveWorker.rolePrompt)
+      : undefined;
 
     await this.worker?.close();
     this.worker = undefined;
@@ -415,6 +432,7 @@ export class SessionController {
         ...effectiveWorker,
         cwd,
         resumeId,
+        ...(personaPreamble ? { personaPreamble } : {}),
         onEvent: event => this.record(event),
       });
       if (this.closed) {

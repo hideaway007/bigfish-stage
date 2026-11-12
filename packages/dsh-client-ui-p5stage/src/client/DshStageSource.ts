@@ -1,11 +1,18 @@
 import {
   DEFAULT_CHARACTER_ID,
+  getAllCharacterIds,
   getCachedCharacterPack,
+  getDiyPersonaOverride,
   KNOWN_CHARACTER_IDS,
   pickReactionForEvent,
   preloadCharacterPacks,
+  subscribeCharacterPacks,
   toCharacterSummary,
 } from '../../../../src/stage/characterLoader';
+import {
+  composeStagePersonaPreamble,
+  isCustomCharacterId,
+} from '../../../../src/shared/diy-character';
 import { DEFAULT_SETTINGS, type PublicSettings, type SettingsPatch } from '../../../../src/shared/settings';
 import type { StageEvent, ToolKind } from '../../../../src/shared/stage-events';
 import { PROTOCOL_VERSION, type ServerMessage, type SessionInfo, type SessionSummary } from '../../../../src/shared/wire';
@@ -95,7 +102,10 @@ export function getActiveStageSource(sessionId: string): DshStageSource | undefi
 export function getStoredCharacterId(): string {
   try {
     const saved = window.localStorage.getItem(ACTIVE_CHAR_STORAGE_KEY);
-    if (saved && (KNOWN_CHARACTER_IDS as readonly string[]).includes(saved)) {
+    if (
+      saved &&
+      ((KNOWN_CHARACTER_IDS as readonly string[]).includes(saved) || isCustomCharacterId(saved))
+    ) {
       return saved;
     }
   } catch {
@@ -530,20 +540,12 @@ export const providersBridge = {
 
 const PERSONA_TAG_RE = /<stage-persona>[\s\S]*?<\/stage-persona>\s*/g;
 
-const PERSONA_STYLE: Record<string, { self: string; call: string; tone: string }> = {
-  'deepseek-v4-pro': { self: '本鱼', call: '店长', tone: '元气活泼、爱用「咕噜」等鱼系语气词，干活冲劲十足' },
-  'gemini-4-argon': { self: '本喵', call: '主人', tone: '傲娇猫娘口吻，句尾偶尔带「喵」，对界面美感非常挑剔' },
-  'claude-opus-5-5': { self: '我', call: '老师', tone: '知性温柔的文学少女，措辞优雅、条理分明' },
-  'codex-dragon': { self: '我', call: '搭档', tone: '清冷高洁的白龙娘，从容自信、简洁可靠，偶尔带一丝神秘微笑' },
-};
-
-/** Hidden persona preamble so the worker answers as the active character, never as a generic "AI 助手". */
+/** Hidden persona preamble so the worker answers as the active character (with user DIY overrides), never as a generic "AI 助手". */
 export function buildPersonaPreamble(characterId: string): string {
   const pack = getCachedCharacterPack(characterId);
-  const name = pack.name.split('（')[0];
-  const style = PERSONA_STYLE[characterId] ?? { self: '我', call: '搭档', tone: '保持角色口吻' };
-  const role = DEFAULT_SETTINGS.characterBrains?.[characterId]?.rolePrompt ?? '';
-  return `<stage-persona>你现在是「${name}」。${role}自称「${style.self}」，称呼用户为「${style.call}」；语气：${style.tone}。全程用简体中文、以该角色身份回复，自我介绍时只说自己是「${name}」，不要提及任何模型名、厂商或版本号（如 DeepSeek、V4 Pro、GPT、Claude），绝不自称"AI 助手"或"编程助手"；角色口吻只体现在措辞上，技术内容必须准确完整，不编造执行结果。用户没有问起时，不要主动提及工作目录、文件路径、当前环境或自身状态，直接回应用户的话。此段为舞台设定，无需复述。</stage-persona>\n\n`;
+  const override = getDiyPersonaOverride(characterId);
+  const fallbackRole = DEFAULT_SETTINGS.characterBrains?.[characterId]?.rolePrompt ?? '';
+  return composeStagePersonaPreamble(pack, override, fallbackRole);
 }
 
 export function stripPersona(text: string): string {
@@ -675,13 +677,17 @@ export class DshStageSource implements StageDataSource {
         },
       },
       characterBrains: Object.fromEntries(
-        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [
-          cid,
-          {
-            rolePrompt: brain.rolePrompt,
-            ...(cid === this.activeCharacterId ? { model } : {}),
-          },
-        ])
+        getAllCharacterIds().map((cid) => {
+          const ov = getDiyPersonaOverride(cid);
+          const defBrain = DEFAULT_SETTINGS.characterBrains[cid];
+          return [
+            cid,
+            {
+              rolePrompt: ov?.rolePrompt ?? defBrain?.rolePrompt,
+              ...(cid === this.activeCharacterId ? { model } : {}),
+            },
+          ];
+        })
       ),
       voice: {
         enabled: false,
@@ -1087,7 +1093,7 @@ export class DshStageSource implements StageDataSource {
   }
 
   private publishWelcome(entries: readonly any[]): void {
-    const characters = KNOWN_CHARACTER_IDS.map((id) =>
+    const characters = getAllCharacterIds().map((id) =>
       toCharacterSummary(getCachedCharacterPack(id))
     );
     const history = this.buildFullHistoryFromWindow(entries);
@@ -1233,6 +1239,17 @@ export class DshStageSource implements StageDataSource {
           this.activeCharacterId = nextId;
           this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
         }
+      })
+    );
+
+    this.disposers.push(
+      subscribeCharacterPacks(() => {
+        const allIds = getAllCharacterIds();
+        if (!allIds.includes(this.activeCharacterId)) {
+          this.activeCharacterId = DEFAULT_CHARACTER_ID;
+          setStoredCharacterId(DEFAULT_CHARACTER_ID);
+        }
+        this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
       })
     );
   }

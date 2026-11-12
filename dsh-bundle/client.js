@@ -39,10 +39,448 @@ window.__ModuleLoader__.load({
 		  inject: () => inject
 		});
 		module.exports = __toCommonJS(index_exports);
-		var import_react15 = __toESM(require("react"), 1);
+		var import_react16 = __toESM(require("react"), 1);
 		
 		// src/stage/StageApp.tsx
-		var import_react13 = __toESM(require("react"), 1);
+		var import_react14 = __toESM(require("react"), 1);
+		
+		// src/shared/diy-character.ts
+		var MAX_PERSONA_CHARS = 8e3;
+		var MAX_DIY_IMAGE_BYTES = 5 * 1024 * 1024;
+		var BUILTIN_PERSONA_DEFAULTS = {
+		  "deepseek-v4-pro": {
+		    selfTitle: "\u672C\u9C7C",
+		    userTitle: "\u5E97\u957F",
+		    toneHint: "\u5143\u6C14\u6D3B\u6CFC\u3001\u7231\u7528\u300C\u5495\u565C\u300D\u300C\u634F\u300D\u7B49\u9C7C\u7CFB\u8BED\u6C14\u8BCD\uFF0C\u5E72\u6D3B\u51B2\u52B2\u5341\u8DB3"
+		  },
+		  "gemini-4-argon": {
+		    selfTitle: "\u672C\u55B5",
+		    userTitle: "\u94F2\u5C4E\u5B98",
+		    toneHint: "\u50B2\u5A07\u7075\u52A8\u7684\u710A\u5DE5\u732B\u5A18\u53E3\u543B\uFF0C\u53E5\u5C3E\u5076\u5C14\u5E26\u300C\u55B5\u300D\uFF0C\u5BF9\u754C\u9762\u7F8E\u611F\u4E0E\u89C6\u89C9\u7EC6\u8282\u975E\u5E38\u6311\u5254"
+		  },
+		  "claude-opus-5-5": {
+		    selfTitle: "\u6211",
+		    userTitle: "\u8001\u5E08",
+		    toneHint: "\u77E5\u6027\u6E29\u67D4\u7684\u6587\u5B66\u5C11\u5973\uFF0C\u63AA\u8F9E\u4F18\u96C5\u3001\u6761\u7406\u5206\u660E\uFF0C\u5584\u4E8E\u62C6\u89E3\u590D\u6742\u67B6\u6784"
+		  },
+		  "codex-dragon": {
+		    selfTitle: "\u6211",
+		    userTitle: "\u642D\u6863",
+		    toneHint: "\u6E05\u51B7\u9AD8\u6D01\u7684\u767D\u9F99\u5A18\uFF0C\u4ECE\u5BB9\u81EA\u4FE1\u3001\u7B80\u6D01\u53EF\u9760\uFF0C\u4E13\u6293\u6DF1\u6C34\u533A\u8FB9\u754C\u6F0F\u6D1E"
+		  }
+		};
+		var PERSONA_MARKDOWN_TEMPLATE = `# \u89D2\u8272\u5B9A\u4F4D\u4E0E\u4E13\u4E1A\u804C\u8D23
+		\u4F60\u662F\u4E00\u4F4D\u4E13\u7CBE\u5168\u6808\u67B6\u6784\u4E0E\u4EE3\u7801\u8D28\u91CF\u628A\u5173\u7684\u9996\u5E2D\u642D\u6863\uFF0C\u64C5\u957F\u5148\u7406\u6E05\u6839\u56E0\u518D\u7A33\u51C6\u72E0\u843D\u7B14\u4FEE\u6539\u3002
+		
+		# \u6027\u683C\u4E0E\u8BF4\u8BDD\u98CE\u683C
+		- \u6027\u683C\u6C89\u7A33\u654F\u9510\uFF0C\u5076\u5C14\u5E26\u4E00\u70B9\u51B7\u5E7D\u9ED8\uFF0C\u7EDD\u4E0D\u6577\u884D\u7CCA\u5F04\u3002
+		- \u53D1\u73B0\u9690\u85CF Bug \u65F6\u4F1A\u5C0F\u5C0F\u5F97\u610F\u5730\u63D0\u9192\u5BF9\u65B9\uFF1B\u9047\u5230\u9AD8\u98CE\u9669\u64CD\u4F5C\u4F1A\u5148\u8BB2\u6E05\u695A\u5229\u5F0A\u3002
+		- \u56DE\u7B54\u7B80\u6D01\u6709\u529B\uFF0C\u91CD\u7ED3\u8BBA\u3001\u91CD\u8BC1\u636E\uFF0C\u4E0D\u8BB2\u7A7A\u6D1E\u5957\u8BDD\u3002
+		`;
+		function isCustomCharacterId(id) {
+		  return /^custom-[a-z0-9][a-z0-9-]{0,62}$/.test(id);
+		}
+		function mergeCharacterWithOverride(pack, override) {
+		  if (!override) return pack;
+		  const cleanTagline = override.tagline?.trim();
+		  const cleanUserTitle = override.userTitle?.trim();
+		  const cleanSelfTitle = override.selfTitle?.trim();
+		  const cleanRolePrompt = override.rolePrompt?.trim();
+		  const mergedUiCopy = cleanUserTitle ? {
+		    ...pack.uiCopy ?? {},
+		    userTitle: cleanUserTitle
+		  } : pack.uiCopy;
+		  const extraLines = [];
+		  if (cleanSelfTitle || cleanUserTitle) {
+		    const parts = [];
+		    if (cleanSelfTitle) parts.push(`\u81EA\u79F0\u300C${cleanSelfTitle}\u300D`);
+		    if (cleanUserTitle) parts.push(`\u79F0\u547C\u7528\u6237\u4E3A\u300C${cleanUserTitle}\u300D`);
+		    extraLines.push(parts.join("\uFF0C") + "\u3002");
+		  }
+		  if (cleanRolePrompt) {
+		    extraLines.push(`\u3010\u73A9\u5BB6\u81EA\u5B9A\u4E49\u89D2\u8272\u6027\u683C\u4E0E\u804C\u8D23\u5B9A\u4F4D\u3011
+		${cleanRolePrompt}`);
+		  }
+		  const nextSystemPrompt = extraLines.length > 0 ? `${extraLines.join("\n")}
+		
+		${pack.persona.systemPrompt}`.trim() : pack.persona.systemPrompt;
+		  return {
+		    ...pack,
+		    ...cleanTagline ? { tagline: cleanTagline } : {},
+		    ...mergedUiCopy ? { uiCopy: mergedUiCopy } : {},
+		    persona: {
+		      ...pack.persona,
+		      systemPrompt: nextSystemPrompt,
+		      ...cleanRolePrompt ? { speechStyle: cleanRolePrompt.replace(/\s+/g, " ").slice(0, 140) } : {}
+		    }
+		  };
+		}
+		function composeStagePersonaPreamble(pack, override, fallbackRolePrompt = "") {
+		  const shortName = pack.name.split("\uFF08")[0].trim() || pack.name;
+		  const builtin = BUILTIN_PERSONA_DEFAULTS[pack.id];
+		  const selfTitle = override?.selfTitle?.trim() || builtin?.selfTitle || "\u6211";
+		  const userTitle = override?.userTitle?.trim() || pack.uiCopy?.userTitle?.trim() || builtin?.userTitle || "\u642D\u6863";
+		  const customBody = override?.rolePrompt?.trim();
+		  const baseBody = customBody || [
+		    fallbackRolePrompt.trim(),
+		    builtin?.toneHint ? `\u8BED\u6C14\u98CE\u683C\uFF1A${builtin.toneHint}\u3002` : pack.persona.speechStyle ? `\u8BED\u6C14\u98CE\u683C\uFF1A${pack.persona.speechStyle}` : ""
+		  ].filter(Boolean).join(" ");
+		  return [
+		    `<stage-persona>\u4F60\u73B0\u5728\u662F\u300C${shortName}\u300D\u3002`,
+		    `\u81EA\u79F0\u300C${selfTitle}\u300D\uFF0C\u79F0\u547C\u7528\u6237\u4E3A\u300C${userTitle}\u300D\u3002`,
+		    baseBody ? `
+		\u3010\u89D2\u8272\u6027\u683C\u4E0E\u804C\u8D23\u8BBE\u5B9A\u3011
+		${baseBody}
+		` : "",
+		    `\u5168\u7A0B\u7528\u7B80\u4F53\u4E2D\u6587\u3001\u4EE5\u300C${shortName}\u300D\u7684\u8EAB\u4EFD\u56DE\u590D\uFF0C\u81EA\u6211\u4ECB\u7ECD\u65F6\u53EA\u8BF4\u81EA\u5DF1\u662F\u300C${shortName}\u300D\uFF0C\u4E0D\u8981\u63D0\u53CA\u5E95\u5C42\u6A21\u578B\u5382\u5546\u6216\u7248\u672C\u53F7\uFF0C\u7EDD\u4E0D\u81EA\u79F0"AI \u52A9\u624B"\u6216"\u7F16\u7A0B\u52A9\u624B"\uFF1B\u89D2\u8272\u6027\u683C\u53EA\u4F53\u73B0\u5728\u8BED\u6C14\u4E0E\u89C6\u89D2\u4E0A\uFF0C\u6280\u672F\u5185\u5BB9\u5FC5\u987B\u51C6\u786E\u5B8C\u6574\uFF0C\u4E0D\u7F16\u9020\u6267\u884C\u7ED3\u679C\u3002\u7528\u6237\u6CA1\u6709\u95EE\u8D77\u65F6\uFF0C\u4E0D\u8981\u4E3B\u52A8\u63D0\u53CA\u5DE5\u4F5C\u76EE\u5F55\u3001\u6587\u4EF6\u8DEF\u5F84\u3001\u5F53\u524D\u73AF\u5883\u6216\u81EA\u8EAB\u72B6\u6001\uFF0C\u76F4\u63A5\u56DE\u5E94\u7528\u6237\u7684\u8BDD\u3002\u6B64\u6BB5\u4E3A\u821E\u53F0\u8BBE\u5B9A\uFF0C\u65E0\u9700\u590D\u8FF0\u3002</stage-persona>
+		
+		`
+		  ].join("");
+		}
+		function buildDefaultDiyReactions(shortName, userTitle, catchphrases) {
+		  const greet = catchphrases[0]?.trim() || `${userTitle}\uFF0C${shortName}\u5DF2\u5C31\u4F4D\uFF01\u4ECA\u5929\u6211\u4EEC\u8981\u63A8\u8FDB\u54EA\u4E00\u9879\u4EFB\u52A1\uFF1F`;
+		  return {
+		    session_started: {
+		      emotion: "idle",
+		      lines: [
+		        greet,
+		        `${shortName}\u51C6\u5907\u5B8C\u6BD5\uFF0C${userTitle}\u968F\u65F6\u4E0B\u8FBE\u6307\u4EE4\u5427\uFF01`
+		      ]
+		    },
+		    user_message: {
+		      emotion: "thinking",
+		      lines: [
+		        `\u6536\u5230\uFF0C${userTitle}\uFF01\u8BA9\u6211\u5148\u7406\u6E05\u4EFB\u52A1\u8109\u7EDC\u3002`,
+		        `\u660E\u767D\uFF01${shortName}\u9A6C\u4E0A\u5F00\u59CB\u5206\u6790\u9700\u6C42\u3002`
+		      ]
+		    },
+		    thinking: {
+		      emotion: "thinking",
+		      lines: [
+		        "\u6B63\u5728\u63A8\u6F14\u65B9\u6848\u7EC6\u8282\u4E0E\u4E0A\u4E0B\u6587\uFF0C\u8BF7\u7A0D\u5019\u2026\u2026",
+		        `\u8BA9\u6211\u4ED4\u7EC6\u6838\u5BF9\u4E00\u4E0B\u5173\u952E\u903B\u8F91\uFF0C\u9A6C\u4E0A\u7ED9${userTitle}\u7B54\u590D\u3002`
+		      ]
+		    },
+		    tool_start: {
+		      emotion: "working",
+		      lines: [
+		        `\u5F00\u59CB\u6267\u884C {tool}\uFF1A{summary}`,
+		        `${shortName}\u884C\u52A8\u4E2D\u2014\u2014\u6B63\u5728\u5904\u7406 {file}\uFF01`
+		      ]
+		    },
+		    tool_end: {
+		      emotion: "working",
+		      lines: [
+		        "\u8FD9\u4E00\u6B65\u64CD\u4F5C\u5DF2\u5B8C\u6210\uFF0C\u6B63\u5728\u68C0\u67E5\u8FD4\u56DE\u7ED3\u679C\u3002",
+		        "{summary} \u5904\u7406\u5B8C\u6BD5\uFF0C\u7EE7\u7EED\u63A8\u8FDB\u4E0B\u4E00\u6B65\u3002"
+		      ]
+		    },
+		    "tool_end:fail": {
+		      emotion: "worried",
+		      lines: [
+		        "\u54A6\uFF0C\u8FD9\u4E00\u6B65\u8FD4\u56DE\u4E86\u5F02\u5E38\uFF1A{summary}\uFF0C\u8BA9\u6211\u6392\u67E5\u4E00\u4E0B\u539F\u56E0\u3002",
+		        "\u9047\u5230\u4E00\u70B9\u62A5\u9519\u963B\u788D\uFF0C\u522B\u62C5\u5FC3\uFF0C\u6211\u9A6C\u4E0A\u5B9A\u4F4D\u95EE\u9898\u3002"
+		      ]
+		    },
+		    permission_request: {
+		      emotion: "shocked",
+		      lines: [
+		        `${userTitle}\uFF0C\u63A5\u4E0B\u6765\u9700\u8981\u6267\u884C\u53D7\u63A7\u64CD\u4F5C\uFF08{summary}\uFF09\uFF0C\u8BF7\u786E\u8BA4\u662F\u5426\u653E\u884C\uFF1F`
+		      ]
+		    },
+		    permission_resolved: {
+		      emotion: "idle",
+		      lines: [`\u6536\u5230${userTitle}\u7684\u51B3\u5B9A\uFF0C\u6309\u6307\u793A\u7EE7\u7EED\u3002`]
+		    },
+		    turn_done: {
+		      emotion: "happy",
+		      lines: [
+		        `\u672C\u8F6E\u5904\u7406\u544A\u4E00\u6BB5\u843D\u5566\uFF0C\u8BF7${userTitle}\u9A8C\u6536\u7ED3\u679C\uFF01`,
+		        ...catchphrases[1] ? [catchphrases[1]] : []
+		      ]
+		    },
+		    "turn_done:fail": {
+		      emotion: "worried",
+		      lines: [`\u672C\u8F6E\u4EFB\u52A1\u672A\u80FD\u987A\u5229\u8D70\u5B8C\uFF0C${userTitle}\u770B\u770B\u4E0A\u9762\u7684\u62A5\u9519\u4FE1\u606F\uFF0C\u6211\u4EEC\u4E00\u8D77\u8C03\u6574\u4E0B\uFF1F`]
+		    },
+		    error: {
+		      emotion: "worried",
+		      lines: ["\u6267\u884C\u8FC7\u7A0B\u4E2D\u51FA\u73B0\u5F02\u5E38\uFF1A{summary}"]
+		    }
+		  };
+		}
+		
+		// src/stage/diyClient.ts
+		var LS_OVERRIDES_KEY = "bigfish.diy.overrides.v1";
+		var LS_CUSTOM_PACKS_KEY = "bigfish.diy.customPacks.v1";
+		function readLocalOverrides() {
+		  try {
+		    const raw = window.localStorage.getItem(LS_OVERRIDES_KEY);
+		    if (!raw) return {};
+		    const parsed = JSON.parse(raw);
+		    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+		  } catch {
+		    return {};
+		  }
+		}
+		function writeLocalOverrides(overrides) {
+		  try {
+		    window.localStorage.setItem(LS_OVERRIDES_KEY, JSON.stringify(overrides));
+		  } catch {
+		    throw new Error("\u6D4F\u89C8\u5668\u672C\u5730\u5B58\u50A8\u7A7A\u95F4\u4E0D\u8DB3\uFF0C\u65E0\u6CD5\u4FDD\u5B58\uFF08\u5EFA\u8BAE\u5728\u684C\u9762\u7AEF\u6216\u672C\u5730\u670D\u52A1\u6A21\u5F0F\u4E0B\u4F7F\u7528\u5927\u56FE\uFF09");
+		  }
+		}
+		function readLocalCustomPacks() {
+		  try {
+		    const raw = window.localStorage.getItem(LS_CUSTOM_PACKS_KEY);
+		    if (!raw) return [];
+		    const parsed = JSON.parse(raw);
+		    return Array.isArray(parsed) ? parsed : [];
+		  } catch {
+		    return [];
+		  }
+		}
+		function writeLocalCustomPacks(packs) {
+		  try {
+		    window.localStorage.setItem(LS_CUSTOM_PACKS_KEY, JSON.stringify(packs));
+		  } catch {
+		    throw new Error("\u6D4F\u89C8\u5668\u672C\u5730\u5B58\u50A8\u7A7A\u95F4\u5DF2\u6EE1\uFF0C\u8BF7\u538B\u7F29\u7ACB\u7ED8\u56FE\u7247\u6216\u5728\u684C\u9762\u7AEF/\u672C\u5730\u670D\u52A1\u6A21\u5F0F\u8FD0\u884C");
+		  }
+		}
+		function isDemoOnlyUrl() {
+		  if (typeof window === "undefined") return false;
+		  const params = new URLSearchParams(window.location.search);
+		  const demo = params.get("demo");
+		  return demo === "1" || demo === "true";
+		}
+		function validateDataUrlSize(dataUrl, label) {
+		  if (!dataUrl.startsWith("data:image/")) {
+		    throw new Error(`${label}\u56FE\u7247\u683C\u5F0F\u4E0D\u53D7\u652F\u6301\uFF0C\u8BF7\u9009\u62E9 PNG / JPG / WebP / GIF`);
+		  }
+		  const approxBytes = Math.floor(dataUrl.length * 3 / 4);
+		  if (approxBytes > MAX_DIY_IMAGE_BYTES) {
+		    throw new Error(`${label}\u8D85\u8FC7 5MB \u4E0A\u9650\uFF0C\u8BF7\u6362\u7528\u66F4\u5C0F\u4F53\u79EF\u7684\u56FE\u7247`);
+		  }
+		}
+		function buildLocalCustomPack(input, existing) {
+		  const name = (input.name ?? "").trim().slice(0, 48);
+		  if (!name) throw new Error("\u8BF7\u586B\u5199\u89D2\u8272\u540D\u79F0");
+		  const rolePrompt = (input.rolePrompt ?? "").trim();
+		  if (!rolePrompt) throw new Error("\u8BF7\u586B\u5199\u6216\u5BFC\u5165\u89D2\u8272\u7684\u6027\u683C\u4E0E\u804C\u8D23\u5B9A\u4F4D\u5185\u5BB9");
+		  if (rolePrompt.length > MAX_PERSONA_CHARS) {
+		    throw new Error(`\u6027\u683C\u5B9A\u4F4D\u5185\u5BB9\u8D85\u8FC7 ${MAX_PERSONA_CHARS} \u5B57\u4E0A\u9650`);
+		  }
+		  const ascii = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20);
+		  const rand = Math.random().toString(36).slice(2, 10);
+		  const id = input.id && isCustomCharacterId(input.id) ? input.id : ascii ? `custom-${ascii}-${rand}` : `custom-char-${rand}`;
+		  const prevSprites = existing?.art.renderer === "sprites" ? existing.art : void 0;
+		  let idleUrl = prevSprites?.emotions.idle ?? "";
+		  if (input.idleDataUrl?.trim()) {
+		    validateDataUrlSize(input.idleDataUrl.trim(), "\u4E3B\u7ACB\u7ED8");
+		    idleUrl = input.idleDataUrl.trim();
+		  }
+		  if (!idleUrl) {
+		    throw new Error("\u65B0\u5EFA DIY \u89D2\u8272\u8BF7\u81F3\u5C11\u4E0A\u4F20\u4E00\u5F20\u4E3B\u7ACB\u7ED8\u56FE\u7247");
+		  }
+		  let portraitUrl = prevSprites?.portrait ?? idleUrl;
+		  if (input.portraitDataUrl?.trim()) {
+		    validateDataUrlSize(input.portraitDataUrl.trim(), "\u5934\u50CF");
+		    portraitUrl = input.portraitDataUrl.trim();
+		  }
+		  const emotions = {
+		    ...prevSprites?.emotions ?? {},
+		    idle: idleUrl
+		  };
+		  if (input.emotionsDataUrls) {
+		    for (const [emo, url] of Object.entries(input.emotionsDataUrls)) {
+		      if (url && url.trim()) {
+		        validateDataUrlSize(url.trim(), `${emo} \u7ACB\u7ED8`);
+		        emotions[emo] = url.trim();
+		      }
+		    }
+		  }
+		  const shortName = name.split("\uFF08")[0].trim() || name;
+		  const selfTitle = (input.selfTitle ?? "").trim().slice(0, 24) || "\u6211";
+		  const userTitle = (input.userTitle ?? "").trim().slice(0, 24) || "\u5E97\u957F";
+		  const codename = (input.codename ?? "").trim().slice(0, 36) || `DIY \xB7 ${shortName.toUpperCase()}`;
+		  const tagline = (input.tagline ?? "").trim().slice(0, 80) || `${shortName} \xB7 \u73A9\u5BB6\u81EA\u5B9A\u4E49\u4E13\u5C5E\u642D\u6863`;
+		  const themeColor = /^#[0-9a-fA-F]{6}$/.test((input.themeColor ?? "").trim()) ? input.themeColor.trim() : "#E60012";
+		  const cleanCatch = (input.catchphrases ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 6);
+		  if (cleanCatch.length === 0) cleanCatch.push(`${userTitle}\uFF0C${shortName}\u968F\u65F6\u5F85\u547D\uFF01`);
+		  return {
+		    schemaVersion: 1,
+		    id,
+		    name,
+		    codename,
+		    tagline,
+		    themeColor,
+		    accentColor: "#FACC15",
+		    persona: {
+		      systemPrompt: [
+		        `\u4F60\u662F\u300C${shortName}\u300D\uFF0C\u81EA\u79F0\u300C${selfTitle}\u300D\uFF0C\u79F0\u547C\u7528\u6237\u4E3A\u300C${userTitle}\u300D\u3002`,
+		        rolePrompt,
+		        "\u6BCF\u6B21\u821E\u53F0\u77ED\u53F0\u8BCD\u53EA\u8BF4\u4E00\u884C\u7B80\u4F53\u4E2D\u6587\uFF0C\u6700\u591A40\u5B57\uFF1B\u4F9D\u636E\u771F\u5B9E\u8FDB\u5EA6\u8BF4\u8BDD\uFF0C\u4E0D\u7F16\u9020\u5B8C\u6210\u7ED3\u679C\u3002"
+		      ].join("\n"),
+		      speechStyle: rolePrompt.replace(/\s+/g, " ").slice(0, 140),
+		      catchphrases: cleanCatch
+		    },
+		    reactions: existing?.reactions && Object.keys(existing.reactions).length > 0 ? existing.reactions : buildDefaultDiyReactions(shortName, userTitle, cleanCatch),
+		    uiCopy: {
+		      userTitle,
+		      inputTitle: `TASK // \u547C\u53EB${shortName}`,
+		      inputPlaceholder: `\u5411${shortName}\u4E0B\u8FBE\u4EFB\u52A1\u6307\u4EE4\u5E76\u6309 Enter \u53D1\u9001\u2026`,
+		      inputTag: "TASK // \u5F53\u524D\u6307\u4EE4",
+		      sendLabel: "\u51FA\u51FB \u25B6",
+		      idleHint: `\u5F85\u547D\u821E\u53F0\uFF1A\u53D1\u9001\u6307\u4EE4\u540E\uFF0C${shortName}\u7684\u5DE5\u5177\u8C03\u7528\u5C06\u5728\u6B64\u5B9E\u65F6\u6F14\u51FA\u3002`,
+		      stageSubtitle: `${shortName} \xB7 \u4E13\u5C5E\u5DE5\u4F5C\u53F0`
+		    },
+		    art: {
+		      renderer: "sprites",
+		      portrait: portraitUrl,
+		      emotions
+		    }
+		  };
+		}
+		async function fetchDiySnapshotClient() {
+		  if (!isDemoOnlyUrl()) {
+		    try {
+		      const res = await fetch("/api/diy", { cache: "no-cache" });
+		      if (res.ok) {
+		        const data = await res.json();
+		        if (data && data.ok) return data;
+		      }
+		    } catch {
+		    }
+		  }
+		  return {
+		    ok: true,
+		    overrides: readLocalOverrides(),
+		    customPacks: readLocalCustomPacks()
+		  };
+		}
+		async function saveDiyOverrideClient(characterId, override) {
+		  const fullOverride = override ? {
+		    ...override,
+		    rolePrompt: override.rolePrompt.trim(),
+		    updatedAt: Date.now()
+		  } : null;
+		  if (fullOverride && fullOverride.rolePrompt.length > MAX_PERSONA_CHARS) {
+		    throw new Error(
+		      `\u6027\u683C\u5B9A\u4F4D\u5185\u5BB9\u8FC7\u957F\uFF08\u5F53\u524D ${fullOverride.rolePrompt.length} \u5B57\uFF0C\u4E0A\u9650 ${MAX_PERSONA_CHARS} \u5B57\uFF09`
+		    );
+		  }
+		  if (!isDemoOnlyUrl()) {
+		    try {
+		      const res = await fetch("/api/diy/override", {
+		        method: "POST",
+		        headers: { "Content-Type": "application/json" },
+		        body: JSON.stringify({ characterId, override: fullOverride })
+		      });
+		      if (res.status !== 404) {
+		        const data = await res.json().catch(() => ({}));
+		        if (!res.ok || data.ok === false) {
+		          throw new Error(typeof data.error === "string" ? data.error : "\u4FDD\u5B58\u6027\u683C\u8BBE\u5B9A\u5931\u8D25");
+		        }
+		        return data;
+		      }
+		    } catch (err) {
+		      if (err instanceof Error && !err.message.includes("Failed to fetch") && !err.message.includes("NetworkError")) {
+		        throw err;
+		      }
+		    }
+		  }
+		  const overrides = readLocalOverrides();
+		  if (fullOverride === null) {
+		    delete overrides[characterId];
+		  } else {
+		    overrides[characterId] = fullOverride;
+		  }
+		  writeLocalOverrides(overrides);
+		  return {
+		    ok: true,
+		    overrides,
+		    customPacks: readLocalCustomPacks()
+		  };
+		}
+		async function saveDiyCustomCharacterClient(input) {
+		  if (!isDemoOnlyUrl()) {
+		    try {
+		      const res = await fetch("/api/diy/character", {
+		        method: "POST",
+		        headers: { "Content-Type": "application/json" },
+		        body: JSON.stringify(input)
+		      });
+		      if (res.status !== 404) {
+		        const data = await res.json().catch(() => ({}));
+		        if (!res.ok || data.ok === false) {
+		          throw new Error(typeof data.error === "string" ? data.error : "\u4FDD\u5B58 DIY \u89D2\u8272\u5931\u8D25");
+		        }
+		        return data;
+		      }
+		    } catch (err) {
+		      if (err instanceof Error && !err.message.includes("Failed to fetch") && !err.message.includes("NetworkError")) {
+		        throw err;
+		      }
+		    }
+		  }
+		  const customPacks = readLocalCustomPacks();
+		  const existing = input.id ? customPacks.find((p) => p.id === input.id) : void 0;
+		  const savedPack = buildLocalCustomPack(input, existing);
+		  const nextPacks = customPacks.filter((p) => p.id !== savedPack.id);
+		  nextPacks.push(savedPack);
+		  writeLocalCustomPacks(nextPacks);
+		  const overrides = readLocalOverrides();
+		  overrides[savedPack.id] = {
+		    sourceFileName: input.sourceFileName,
+		    rolePrompt: input.rolePrompt.trim(),
+		    selfTitle: input.selfTitle?.trim() || "\u6211",
+		    userTitle: input.userTitle?.trim() || "\u5E97\u957F",
+		    tagline: savedPack.tagline,
+		    updatedAt: Date.now()
+		  };
+		  writeLocalOverrides(overrides);
+		  return {
+		    ok: true,
+		    overrides,
+		    customPacks: nextPacks,
+		    savedPack
+		  };
+		}
+		async function deleteDiyCustomCharacterClient(characterId) {
+		  if (!isCustomCharacterId(characterId)) {
+		    throw new Error("\u4EC5\u5141\u8BB8\u5220\u9664\u73A9\u5BB6\u81EA\u5EFA\u89D2\u8272");
+		  }
+		  if (!isDemoOnlyUrl()) {
+		    try {
+		      const res = await fetch("/api/diy/character/delete", {
+		        method: "POST",
+		        headers: { "Content-Type": "application/json" },
+		        body: JSON.stringify({ id: characterId })
+		      });
+		      if (res.status !== 404) {
+		        const data = await res.json().catch(() => ({}));
+		        if (!res.ok || data.ok === false) {
+		          throw new Error(typeof data.error === "string" ? data.error : "\u5220\u9664\u81EA\u5EFA\u89D2\u8272\u5931\u8D25");
+		        }
+		        return data;
+		      }
+		    } catch (err) {
+		      if (err instanceof Error && !err.message.includes("Failed to fetch") && !err.message.includes("NetworkError")) {
+		        throw err;
+		      }
+		    }
+		  }
+		  const nextPacks = readLocalCustomPacks().filter((p) => p.id !== characterId);
+		  writeLocalCustomPacks(nextPacks);
+		  const overrides = readLocalOverrides();
+		  delete overrides[characterId];
+		  writeLocalOverrides(overrides);
+		  return {
+		    ok: true,
+		    overrides,
+		    customPacks: nextPacks
+		  };
+		}
 		
 		// src/stage/characterLoader.ts
 		var DEFAULT_CHARACTER_ID = "deepseek-v4-pro";
@@ -54,19 +492,22 @@ window.__ModuleLoader__.load({
 		];
 		function resolveCharacterAssetUrl(characterId, relPath) {
 		  if (!relPath) return null;
-		  if (relPath.startsWith("/") || relPath.startsWith("http://") || relPath.startsWith("https://")) {
+		  if (relPath.startsWith("data:") || relPath.startsWith("blob:") || relPath.startsWith("/") || relPath.startsWith("http://") || relPath.startsWith("https://")) {
 		    return relPath;
 		  }
 		  const cleanRel = relPath.replace(/^\.\//, "");
-		  return `/characters/${characterId}/${cleanRel}`;
+		  const ver = diyOverrides.get(characterId)?.updatedAt;
+		  const suffix = isCustomCharacterId(characterId) && ver ? `?v=${ver}` : "";
+		  return `/characters/${characterId}/${cleanRel}${suffix}`;
 		}
 		function toCharacterSummary(pack) {
+		  const portraitRel = pack.art.portrait ?? (pack.art.renderer === "sprites" ? pack.art.emotions.idle : void 0);
 		  return {
 		    id: pack.id,
 		    name: pack.name,
 		    codename: pack.codename,
 		    themeColor: pack.themeColor,
-		    portraitUrl: resolveCharacterAssetUrl(pack.id, pack.art.portrait),
+		    portraitUrl: resolveCharacterAssetUrl(pack.id, portraitRel),
 		    renderer: pack.art.renderer
 		  };
 		}
@@ -191,12 +632,67 @@ window.__ModuleLoader__.load({
 		  }
 		};
 		var packCache = /* @__PURE__ */ new Map();
+		var diyCustomPacks = /* @__PURE__ */ new Map();
+		var diyOverrides = /* @__PURE__ */ new Map();
+		var diyHydrated = false;
 		var inFlight = /* @__PURE__ */ new Map();
 		var listeners = /* @__PURE__ */ new Set();
 		function notifyListeners() {
 		  for (const fn of listeners) {
 		    fn();
 		  }
+		}
+		function applyDiySnapshot(snapshot) {
+		  diyOverrides.clear();
+		  for (const [id, ov] of Object.entries(snapshot.overrides ?? {})) {
+		    if (ov) diyOverrides.set(id, ov);
+		  }
+		  for (const existingCustomId of diyCustomPacks.keys()) {
+		    packCache.delete(existingCustomId);
+		  }
+		  diyCustomPacks.clear();
+		  for (const pack of snapshot.customPacks ?? []) {
+		    if (pack && pack.id) {
+		      diyCustomPacks.set(pack.id, pack);
+		      packCache.set(pack.id, pack);
+		    }
+		  }
+		  diyHydrated = true;
+		  notifyListeners();
+		}
+		function isDiyHydrated() {
+		  return diyHydrated;
+		}
+		function getDiyPersonaOverride(characterId) {
+		  return diyOverrides.get(characterId);
+		}
+		function getRawCharacterPack(characterId) {
+		  return diyCustomPacks.get(characterId) ?? packCache.get(characterId);
+		}
+		function getAllCharacterIds() {
+		  const customIds = Array.from(diyCustomPacks.keys()).sort();
+		  return [...KNOWN_CHARACTER_IDS, ...customIds.filter((id) => !KNOWN_CHARACTER_IDS.includes(id))];
+		}
+		function mergeWithDiyCharacterSummaries(baseSummaries) {
+		  const byId = /* @__PURE__ */ new Map();
+		  for (const s of baseSummaries) {
+		    if (isCustomCharacterId(s.id) && diyHydrated && !diyCustomPacks.has(s.id)) {
+		      continue;
+		    }
+		    const effective = getCachedCharacterPack(s.id);
+		    byId.set(s.id, {
+		      ...s,
+		      name: effective.name,
+		      codename: effective.codename,
+		      themeColor: effective.themeColor,
+		      portraitUrl: toCharacterSummary(effective).portraitUrl ?? s.portraitUrl
+		    });
+		  }
+		  for (const [customId, customPack] of diyCustomPacks.entries()) {
+		    const merged = mergeCharacterWithOverride(customPack, diyOverrides.get(customId));
+		    byId.set(customId, toCharacterSummary(merged));
+		  }
+		  return Array.from(byId.values());
 		}
 		function subscribeCharacterPacks(listener) {
 		  listeners.add(listener);
@@ -205,8 +701,10 @@ window.__ModuleLoader__.load({
 		  };
 		}
 		async function fetchCharacterPack(characterId) {
+		  const custom = diyCustomPacks.get(characterId);
+		  if (custom) return mergeCharacterWithOverride(custom, diyOverrides.get(characterId));
 		  const cached = packCache.get(characterId);
-		  if (cached) return cached;
+		  if (cached) return mergeCharacterWithOverride(cached, diyOverrides.get(characterId));
 		  const existing = inFlight.get(characterId);
 		  if (existing) return existing;
 		  const promise = (async () => {
@@ -219,7 +717,7 @@ window.__ModuleLoader__.load({
 		      if (data && data.schemaVersion === 1 && data.id) {
 		        packCache.set(data.id, data);
 		        notifyListeners();
-		        return data;
+		        return mergeCharacterWithOverride(data, diyOverrides.get(data.id));
 		      }
 		      return null;
 		    } catch {
@@ -232,12 +730,21 @@ window.__ModuleLoader__.load({
 		  return promise;
 		}
 		async function preloadCharacterPacks(ids = KNOWN_CHARACTER_IDS) {
-		  const results = await Promise.all(ids.map((id) => fetchCharacterPack(id)));
+		  const [results, diySnap] = await Promise.all([
+		    Promise.all(ids.map((id) => fetchCharacterPack(id))),
+		    fetchDiySnapshotClient().catch(() => null)
+		  ]);
+		  if (diySnap) {
+		    applyDiySnapshot(diySnap);
+		  }
 		  const map = {};
 		  for (const pack of results) {
 		    if (pack) {
-		      map[pack.id] = pack;
+		      map[pack.id] = mergeCharacterWithOverride(pack, diyOverrides.get(pack.id));
 		    }
+		  }
+		  for (const [cid, cpack] of diyCustomPacks.entries()) {
+		    map[cid] = mergeCharacterWithOverride(cpack, diyOverrides.get(cid));
 		  }
 		  return map;
 		}
@@ -272,11 +779,17 @@ window.__ModuleLoader__.load({
 		  }
 		};
 		function getCachedCharacterPack(characterId) {
+		  const customHit = diyCustomPacks.get(characterId);
+		  if (customHit) {
+		    return mergeCharacterWithOverride(customHit, diyOverrides.get(characterId));
+		  }
 		  const hit = packCache.get(characterId);
-		  if (hit) return hit;
+		  if (hit) {
+		    return mergeCharacterWithOverride(hit, diyOverrides.get(characterId));
+		  }
 		  void fetchCharacterPack(characterId);
 		  const meta = BOOTSTRAP_META[characterId] ?? BOOTSTRAP_META[DEFAULT_CHARACTER_ID];
-		  return {
+		  const fallback = {
 		    ...BOOTSTRAP_FALLBACK_PACK,
 		    id: characterId,
 		    name: meta.name,
@@ -293,6 +806,7 @@ window.__ModuleLoader__.load({
 		      uiCopy: void 0
 		    } : {}
 		  };
+		  return mergeCharacterWithOverride(fallback, diyOverrides.get(characterId));
 		}
 		
 		// src/shared/settings.ts
@@ -5932,7 +6446,7 @@ window.__ModuleLoader__.load({
 		};
 		
 		// src/stage/components/SystemMenuModal.tsx
-		var import_react9 = require("react");
+		var import_react10 = require("react");
 		
 		// src/stage/components/settings/ModelPicker.tsx
 		var import_react8 = require("react");
@@ -6281,8 +6795,916 @@ window.__ModuleLoader__.load({
 		  );
 		};
 		
-		// src/stage/components/SystemMenuModal.tsx
+		// src/stage/components/settings/DiyCharacterPanel.tsx
+		var import_react9 = __toESM(require("react"), 1);
 		var import_jsx_runtime11 = require("react/jsx-runtime");
+		var THEME_SWATCHES = [
+		  "#E60012",
+		  "#2563EB",
+		  "#A855F7",
+		  "#EA580C",
+		  "#10B981",
+		  "#EC4899",
+		  "#06B6D4",
+		  "#F59E0B"
+		];
+		var EXTRA_EMOTION_SLOTS = [
+		  { key: "thinking", label: "\u601D\u8003 (thinking)" },
+		  { key: "working", label: "\u5E72\u6D3B (working)" },
+		  { key: "happy", label: "\u5F00\u5FC3 (happy)" },
+		  { key: "worried", label: "\u62C5\u5FE7 (worried)" },
+		  { key: "shocked", label: "\u9707\u60CA (shocked)" }
+		];
+		function readTextFile(file) {
+		  return new Promise((resolveText, rejectText) => {
+		    if (file.size > 512 * 1024) {
+		      rejectText(new Error(`\u6587\u4EF6\u300C${file.name}\u300D\u8FC7\u5927\uFF0C\u8BF7\u9009\u62E9 512KB \u4EE5\u5185\u7684 .md / .txt \u6587\u672C\u6587\u4EF6`));
+		      return;
+		    }
+		    const reader = new FileReader();
+		    reader.onload = () => resolveText(String(reader.result ?? ""));
+		    reader.onerror = () => rejectText(new Error(`\u8BFB\u53D6\u6587\u4EF6\u300C${file.name}\u300D\u5931\u8D25`));
+		    reader.readAsText(file, "utf-8");
+		  });
+		}
+		function readImageFileAsDataUrl(file) {
+		  return new Promise((resolveUrl, rejectUrl) => {
+		    const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+		    if (!allowed.includes(file.type)) {
+		      rejectUrl(new Error(`\u4E0D\u652F\u6301\u7684\u56FE\u7247\u683C\u5F0F\uFF08${file.name}\uFF09\uFF0C\u8BF7\u9009\u62E9 PNG / JPG / WebP / GIF`));
+		      return;
+		    }
+		    if (file.size > MAX_DIY_IMAGE_BYTES) {
+		      rejectUrl(new Error(`\u56FE\u7247\u300C${file.name}\u300D\u8D85\u8FC7 5MB \u4E0A\u9650\uFF0C\u8BF7\u538B\u7F29\u540E\u518D\u4E0A\u4F20`));
+		      return;
+		    }
+		    const reader = new FileReader();
+		    reader.onload = () => resolveUrl(String(reader.result ?? ""));
+		    reader.onerror = () => rejectUrl(new Error(`\u8BFB\u53D6\u56FE\u7247\u300C${file.name}\u300D\u5931\u8D25`));
+		    reader.readAsDataURL(file);
+		  });
+		}
+		var CharacterPersonaCardBar = ({
+		  characterId,
+		  pack,
+		  activeCharacterId,
+		  onUpdateSettings,
+		  onSwitchCharacter,
+		  onEditCustomCharacter
+		}) => {
+		  const override = getDiyPersonaOverride(characterId);
+		  const isCustomChar = isCustomCharacterId(characterId);
+		  const builtinDefaults = BUILTIN_PERSONA_DEFAULTS[characterId];
+		  const defaultRolePrompt = DEFAULT_CHARACTER_BRAINS[characterId]?.rolePrompt ?? pack.persona.speechStyle ?? "";
+		  const [editorOpen, setEditorOpen] = (0, import_react9.useState)(false);
+		  const [roleDraft, setRoleDraft] = (0, import_react9.useState)("");
+		  const [selfTitleDraft, setSelfTitleDraft] = (0, import_react9.useState)("");
+		  const [userTitleDraft, setUserTitleDraft] = (0, import_react9.useState)("");
+		  const [taglineDraft, setTaglineDraft] = (0, import_react9.useState)("");
+		  const [sourceNameDraft, setSourceNameDraft] = (0, import_react9.useState)(void 0);
+		  const [busy, setBusy] = (0, import_react9.useState)(false);
+		  const [confirmDelete, setConfirmDelete] = (0, import_react9.useState)(false);
+		  const [notice, setNotice] = (0, import_react9.useState)(null);
+		  const fileInputRef = (0, import_react9.useRef)(null);
+		  const openEditorWithCurrent = () => {
+		    const cur = getDiyPersonaOverride(characterId);
+		    setRoleDraft(cur?.rolePrompt ?? defaultRolePrompt);
+		    setSelfTitleDraft(cur?.selfTitle ?? builtinDefaults?.selfTitle ?? "\u6211");
+		    setUserTitleDraft(
+		      cur?.userTitle ?? pack.uiCopy?.userTitle ?? builtinDefaults?.userTitle ?? "\u5E97\u957F"
+		    );
+		    setTaglineDraft(cur?.tagline ?? pack.tagline ?? "");
+		    setSourceNameDraft(cur?.sourceFileName);
+		    setNotice(null);
+		    setEditorOpen(true);
+		  };
+		  const handleImportPersonaFile = async (file) => {
+		    setBusy(true);
+		    setNotice(null);
+		    try {
+		      const rawText = (await readTextFile(file)).trim();
+		      if (!rawText) {
+		        throw new Error("\u6240\u9009\u6027\u683C\u6587\u4EF6\u5185\u5BB9\u4E3A\u7A7A");
+		      }
+		      const clipped = rawText.length > MAX_PERSONA_CHARS ? rawText.slice(0, MAX_PERSONA_CHARS) : rawText;
+		      const cur = getDiyPersonaOverride(characterId);
+		      const snap = await saveDiyOverrideClient(characterId, {
+		        sourceFileName: file.name,
+		        rolePrompt: clipped,
+		        selfTitle: cur?.selfTitle ?? builtinDefaults?.selfTitle,
+		        userTitle: cur?.userTitle ?? pack.uiCopy?.userTitle ?? builtinDefaults?.userTitle,
+		        tagline: cur?.tagline
+		      });
+		      applyDiySnapshot(snap);
+		      onUpdateSettings({
+		        characterBrains: {
+		          [characterId]: { rolePrompt: clipped }
+		        }
+		      });
+		      setRoleDraft(clipped);
+		      setSourceNameDraft(file.name);
+		      setNotice({
+		        ok: true,
+		        text: rawText.length > MAX_PERSONA_CHARS ? `\u5DF2\u5BFC\u5165\u300C${file.name}\u300D\uFF08\u8D85\u51FA ${MAX_PERSONA_CHARS} \u5B57\u90E8\u5206\u5DF2\u622A\u65AD\uFF09` : `\u5DF2\u52A0\u8F7D\u6027\u683C\u5B9A\u4F4D\u6587\u4EF6\u300C${file.name}\u300D`
+		      });
+		    } catch (err) {
+		      setNotice({
+		        ok: false,
+		        text: err instanceof Error ? err.message : "\u5BFC\u5165\u6027\u683C\u6587\u4EF6\u5931\u8D25"
+		      });
+		    } finally {
+		      setBusy(false);
+		    }
+		  };
+		  const handleSaveInlineOverride = async () => {
+		    setBusy(true);
+		    setNotice(null);
+		    try {
+		      const cleanRole = roleDraft.trim();
+		      if (!cleanRole) {
+		        throw new Error("\u6027\u683C\u4E0E\u804C\u8D23\u5B9A\u4F4D\u5185\u5BB9\u4E0D\u80FD\u4E3A\u7A7A\uFF08\u82E5\u60F3\u8FD8\u539F\u5185\u7F6E\u8BBE\u5B9A\u8BF7\u70B9\u300C\u6062\u590D\u9ED8\u8BA4\u300D\uFF09");
+		      }
+		      const snap = await saveDiyOverrideClient(characterId, {
+		        sourceFileName: sourceNameDraft,
+		        rolePrompt: cleanRole,
+		        selfTitle: selfTitleDraft.trim() || void 0,
+		        userTitle: userTitleDraft.trim() || void 0,
+		        tagline: taglineDraft.trim() || void 0
+		      });
+		      applyDiySnapshot(snap);
+		      onUpdateSettings({
+		        characterBrains: {
+		          [characterId]: { rolePrompt: cleanRole }
+		        }
+		      });
+		      setEditorOpen(false);
+		      setNotice({ ok: true, text: "\u89D2\u8272\u6027\u683C\u4E0E\u804C\u8D23\u5B9A\u4F4D\u5DF2\u4FDD\u5B58\u751F\u6548" });
+		    } catch (err) {
+		      setNotice({
+		        ok: false,
+		        text: err instanceof Error ? err.message : "\u4FDD\u5B58\u5931\u8D25"
+		      });
+		    } finally {
+		      setBusy(false);
+		    }
+		  };
+		  const handleResetDefault = async () => {
+		    setBusy(true);
+		    setNotice(null);
+		    try {
+		      const snap = await saveDiyOverrideClient(characterId, null);
+		      applyDiySnapshot(snap);
+		      const fallbackPrompt = DEFAULT_CHARACTER_BRAINS[characterId]?.rolePrompt ?? "";
+		      onUpdateSettings({
+		        characterBrains: {
+		          [characterId]: { rolePrompt: fallbackPrompt }
+		        }
+		      });
+		      setEditorOpen(false);
+		      setSourceNameDraft(void 0);
+		      setNotice({ ok: true, text: "\u5DF2\u6062\u590D\u8BE5\u89D2\u8272\u7684\u9ED8\u8BA4\u6027\u683C\u8BBE\u5B9A" });
+		    } catch (err) {
+		      setNotice({
+		        ok: false,
+		        text: err instanceof Error ? err.message : "\u6062\u590D\u9ED8\u8BA4\u5931\u8D25"
+		      });
+		    } finally {
+		      setBusy(false);
+		    }
+		  };
+		  const handleDeleteCustom = async () => {
+		    if (!confirmDelete) {
+		      setConfirmDelete(true);
+		      return;
+		    }
+		    setBusy(true);
+		    setNotice(null);
+		    try {
+		      if (activeCharacterId === characterId) {
+		        onSwitchCharacter(DEFAULT_CHARACTER_ID);
+		      }
+		      const snap = await deleteDiyCustomCharacterClient(characterId);
+		      applyDiySnapshot(snap);
+		    } catch (err) {
+		      setConfirmDelete(false);
+		      setNotice({
+		        ok: false,
+		        text: err instanceof Error ? err.message : "\u5220\u9664\u89D2\u8272\u5931\u8D25"
+		      });
+		    } finally {
+		      setBusy(false);
+		    }
+		  };
+		  const hasCustomOverride = Boolean(override);
+		  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		    "div",
+		    {
+		      className: "p5-char-persona-bar",
+		      "data-testid": `char-persona-bar-${characterId}`,
+		      onClick: (e) => e.stopPropagation(),
+		      children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-char-persona-row", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-char-persona-status", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-field-tag", children: "\u6027\u683C\u4E0E\u5B9A\u4F4D\u6863\uFF1A" }),
+		            hasCustomOverride ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		              "span",
+		              {
+		                className: "p5-persona-file-pill is-custom",
+		                "data-testid": `char-persona-badge-${characterId}`,
+		                children: [
+		                  "\u{1F4C4} ",
+		                  override?.sourceFileName ? override.sourceFileName : "\u81EA\u5B9A\u4E49\u6027\u683C\u8BBE\u5B9A"
+		                ]
+		              }
+		            ) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "span",
+		              {
+		                className: "p5-persona-file-pill",
+		                "data-testid": `char-persona-badge-${characterId}`,
+		                children: "\u5185\u7F6E\u9ED8\u8BA4\u8BBE\u5B9A"
+		              }
+		            )
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-char-persona-actions", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "input",
+		              {
+		                ref: fileInputRef,
+		                type: "file",
+		                accept: ".md,.markdown,.txt,text/markdown,text/plain",
+		                hidden: true,
+		                "data-testid": `char-persona-file-input-${characterId}`,
+		                onChange: (e) => {
+		                  const f = e.target.files?.[0];
+		                  if (f) void handleImportPersonaFile(f);
+		                  e.target.value = "";
+		                }
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "p5-mini-action-btn p5-mini-action-btn--accent",
+		                "data-testid": `char-import-persona-btn-${characterId}`,
+		                disabled: busy,
+		                onClick: () => fileInputRef.current?.click(),
+		                title: "\u9009\u62E9\u672C\u5730 .md \u6216 .txt \u6587\u4EF6\u4F5C\u4E3A\u8BE5\u89D2\u8272\u7684\u6027\u683C\u4E0E\u804C\u8D23\u5B9A\u4F4D\u8BBE\u5B9A",
+		                children: "\u{1F4C4} \u5BFC\u5165\u6027\u683C\u6587\u4EF6"
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "p5-mini-action-btn",
+		                "data-testid": `char-edit-persona-btn-${characterId}`,
+		                disabled: busy,
+		                onClick: () => {
+		                  if (editorOpen) {
+		                    setEditorOpen(false);
+		                  } else {
+		                    openEditorWithCurrent();
+		                  }
+		                },
+		                children: editorOpen ? "\u25B4 \u6536\u8D77\u7F16\u8F91" : "\u270E \u5728\u7EBF\u5FAE\u8C03"
+		              }
+		            ),
+		            !isCustomChar && hasCustomOverride && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "p5-mini-action-btn",
+		                "data-testid": `char-reset-persona-btn-${characterId}`,
+		                disabled: busy,
+		                onClick: () => void handleResetDefault(),
+		                children: "\u21BA \u6062\u590D\u9ED8\u8BA4"
+		              }
+		            ),
+		            isCustomChar && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "p5-mini-action-btn",
+		                  "data-testid": `char-edit-custom-btn-${characterId}`,
+		                  disabled: busy,
+		                  onClick: () => onEditCustomCharacter(characterId),
+		                  children: "\u{1F3A8} \u6539\u7ACB\u7ED8/\u5F62\u8C61"
+		                }
+		              ),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: `p5-mini-action-btn ${confirmDelete ? "p5-mini-action-btn--danger" : ""}`,
+		                  "data-testid": `char-delete-custom-btn-${characterId}`,
+		                  disabled: busy,
+		                  onMouseLeave: () => setConfirmDelete(false),
+		                  onClick: () => void handleDeleteCustom(),
+		                  children: confirmDelete ? "\u26A0 \u786E\u8BA4\u5220\u9664\uFF1F" : "\u2715 \u5220\u9664"
+		                }
+		              )
+		            ] })
+		          ] })
+		        ] }),
+		        notice && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		          "div",
+		          {
+		            className: `p5-diy-inline-notice ${notice.ok ? "is-ok" : "is-err"}`,
+		            "data-testid": `char-persona-notice-${characterId}`,
+		            children: notice.text
+		          }
+		        ),
+		        editorOpen && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		          "div",
+		          {
+		            className: "p5-persona-inline-editor",
+		            "data-testid": `char-persona-editor-${characterId}`,
+		            children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-grid-3", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u89D2\u8272\u81EA\u79F0" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "input",
+		                    {
+		                      type: "text",
+		                      className: "p5-form-input",
+		                      value: selfTitleDraft,
+		                      onChange: (e) => setSelfTitleDraft(e.target.value),
+		                      placeholder: "\u5982\uFF1A\u672C\u9C7C / \u672C\u55B5 / \u6211",
+		                      maxLength: 24
+		                    }
+		                  )
+		                ] }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u5BF9\u73A9\u5BB6\u7684\u79F0\u547C" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "input",
+		                    {
+		                      type: "text",
+		                      className: "p5-form-input",
+		                      value: userTitleDraft,
+		                      onChange: (e) => setUserTitleDraft(e.target.value),
+		                      placeholder: "\u5982\uFF1A\u5E97\u957F / \u8001\u5E08 / \u6307\u6325\u5B98",
+		                      maxLength: 24
+		                    }
+		                  )
+		                ] }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u7B80\u4ECB\u6807\u8BED\uFF08\u9009\u586B\uFF09" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "input",
+		                    {
+		                      type: "text",
+		                      className: "p5-form-input",
+		                      value: taglineDraft,
+		                      onChange: (e) => setTaglineDraft(e.target.value),
+		                      placeholder: "\u89D2\u8272\u5361\u7247\u5C55\u793A\u7684\u4E00\u53E5\u8BDD\u7B80\u4ECB",
+		                      maxLength: 80
+		                    }
+		                  )
+		                ] })
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-label-row", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: "p5-form-label", children: [
+		                    "\u6027\u683C\u8BBE\u5B9A\u4E0E\u804C\u8D23\u5B9A\u4F4D\u6B63\u6587\uFF08\u652F\u6301 Markdown \xB7 ",
+		                    roleDraft.length,
+		                    "/",
+		                    MAX_PERSONA_CHARS,
+		                    "\uFF09"
+		                  ] }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "button",
+		                    {
+		                      type: "button",
+		                      className: "p5-mini-action-btn",
+		                      onClick: () => setRoleDraft(PERSONA_MARKDOWN_TEMPLATE),
+		                      children: "\u586B\u5165\u53C2\u8003\u6A21\u677F"
+		                    }
+		                  )
+		                ] }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "textarea",
+		                  {
+		                    className: "p5-diy-textarea",
+		                    rows: 5,
+		                    "data-testid": `char-persona-textarea-${characterId}`,
+		                    value: roleDraft,
+		                    onChange: (e) => setRoleDraft(e.target.value.slice(0, MAX_PERSONA_CHARS)),
+		                    placeholder: "\u5728\u8FD9\u91CC\u7F16\u5199\u6216\u5BFC\u5165 .md \u6027\u683C\u5B9A\u4F4D\u6587\u4EF6\uFF1A\u4F8B\u5982\u89D2\u8272\u7684\u8BF4\u8BDD\u53E3\u7656\u3001\u64C5\u957F\u9886\u57DF\u3001\u4EE3\u7801\u5BA1\u67E5\u504F\u597D\u2026"
+		                  }
+		                )
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-editor-foot", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "button",
+		                  {
+		                    type: "button",
+		                    className: "p5-apply-btn",
+		                    "data-testid": `char-save-persona-btn-${characterId}`,
+		                    disabled: busy,
+		                    onClick: () => void handleSaveInlineOverride(),
+		                    children: busy ? "\u4FDD\u5B58\u4E2D\u2026" : "\u2713 \u4FDD\u5B58\u6027\u683C\u8BBE\u5B9A"
+		                  }
+		                ),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "button",
+		                  {
+		                    type: "button",
+		                    className: "p5-mini-action-btn",
+		                    onClick: () => setEditorOpen(false),
+		                    children: "\u53D6\u6D88"
+		                  }
+		                )
+		              ] })
+		            ]
+		          }
+		        )
+		      ]
+		    }
+		  );
+		};
+		var DiyCharacterCreatorDrawer = ({
+		  open,
+		  editingCharacterId,
+		  onClose,
+		  onCreatedOrUpdated
+		}) => {
+		  const existingPack = editingCharacterId ? getRawCharacterPack(editingCharacterId) : void 0;
+		  const existingOverride = editingCharacterId ? getDiyPersonaOverride(editingCharacterId) : void 0;
+		  const [name, setName] = (0, import_react9.useState)(existingPack?.name ?? "");
+		  const [codename, setCodename] = (0, import_react9.useState)(existingPack?.codename ?? "");
+		  const [tagline, setTagline] = (0, import_react9.useState)(existingOverride?.tagline ?? existingPack?.tagline ?? "");
+		  const [themeColor, setThemeColor] = (0, import_react9.useState)(existingPack?.themeColor ?? "#E60012");
+		  const [selfTitle, setSelfTitle] = (0, import_react9.useState)(existingOverride?.selfTitle ?? "\u6211");
+		  const [userTitle, setUserTitle] = (0, import_react9.useState)(
+		    existingOverride?.userTitle ?? existingPack?.uiCopy?.userTitle ?? "\u5E97\u957F"
+		  );
+		  const [sourceFileName, setSourceFileName] = (0, import_react9.useState)(
+		    existingOverride?.sourceFileName
+		  );
+		  const [rolePrompt, setRolePrompt] = (0, import_react9.useState)(
+		    existingOverride?.rolePrompt ?? existingPack?.persona.speechStyle ?? ""
+		  );
+		  const [catchphrasesText, setCatchphrasesText] = (0, import_react9.useState)(
+		    (existingPack?.persona.catchphrases ?? []).join("\n")
+		  );
+		  const [idleDataUrl, setIdleDataUrl] = (0, import_react9.useState)("");
+		  const [portraitDataUrl, setPortraitDataUrl] = (0, import_react9.useState)("");
+		  const [extraEmotions, setExtraEmotions] = (0, import_react9.useState)({});
+		  const [showMoreOptions, setShowMoreOptions] = (0, import_react9.useState)(false);
+		  const [saving, setSaving] = (0, import_react9.useState)(false);
+		  const [error, setError] = (0, import_react9.useState)(null);
+		  const mdFileRef = (0, import_react9.useRef)(null);
+		  const idleFileRef = (0, import_react9.useRef)(null);
+		  const portraitFileRef = (0, import_react9.useRef)(null);
+		  import_react9.default.useEffect(() => {
+		    if (!open) return;
+		    const raw = editingCharacterId ? getRawCharacterPack(editingCharacterId) : void 0;
+		    const ov = editingCharacterId ? getDiyPersonaOverride(editingCharacterId) : void 0;
+		    setName(raw?.name ?? "");
+		    setCodename(raw?.codename ?? "");
+		    setTagline(ov?.tagline ?? raw?.tagline ?? "");
+		    setThemeColor(raw?.themeColor ?? "#E60012");
+		    setSelfTitle(ov?.selfTitle ?? "\u6211");
+		    setUserTitle(ov?.userTitle ?? raw?.uiCopy?.userTitle ?? "\u5E97\u957F");
+		    setSourceFileName(ov?.sourceFileName);
+		    setRolePrompt(ov?.rolePrompt ?? raw?.persona.speechStyle ?? "");
+		    setCatchphrasesText((raw?.persona.catchphrases ?? []).join("\n"));
+		    setIdleDataUrl("");
+		    setPortraitDataUrl("");
+		    setExtraEmotions({});
+		    setError(null);
+		  }, [open, editingCharacterId]);
+		  if (!open) return null;
+		  const existingIdlePreview = existingPack && existingPack.art.renderer === "sprites" ? resolveCharacterAssetUrl(existingPack.id, existingPack.art.emotions.idle) : null;
+		  const activeIdlePreview = idleDataUrl || existingIdlePreview;
+		  const handleSubmit = async (e) => {
+		    e.preventDefault();
+		    setError(null);
+		    if (!name.trim()) {
+		      setError("\u8BF7\u586B\u5199\u89D2\u8272\u540D\u79F0\uFF08\u5982\uFF1A\u661F\u91CE / \u96F6\u53F7\u673A\uFF09");
+		      return;
+		    }
+		    if (!rolePrompt.trim()) {
+		      setError("\u8BF7\u5BFC\u5165 .md/.txt \u6027\u683C\u6587\u4EF6\uFF0C\u6216\u5728\u4E0B\u65B9\u586B\u5199\u89D2\u8272\u7684\u6027\u683C\u4E0E\u804C\u8D23\u5B9A\u4F4D");
+		      return;
+		    }
+		    if (!editingCharacterId && !idleDataUrl) {
+		      setError("\u65B0\u5EFA\u89D2\u8272\u8BF7\u81F3\u5C11\u4E0A\u4F20 1 \u5F20\u4E3B\u7ACB\u7ED8\u56FE\u7247\uFF08\u652F\u6301 PNG / JPG / WebP / GIF\uFF09");
+		      return;
+		    }
+		    setSaving(true);
+		    try {
+		      const catchphrases = catchphrasesText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+		      const res = await saveDiyCustomCharacterClient({
+		        ...editingCharacterId ? { id: editingCharacterId } : {},
+		        name: name.trim(),
+		        codename: codename.trim() || void 0,
+		        tagline: tagline.trim() || void 0,
+		        themeColor,
+		        selfTitle: selfTitle.trim() || "\u6211",
+		        userTitle: userTitle.trim() || "\u5E97\u957F",
+		        sourceFileName,
+		        rolePrompt: rolePrompt.trim(),
+		        catchphrases,
+		        ...idleDataUrl ? { idleDataUrl } : {},
+		        ...portraitDataUrl ? { portraitDataUrl } : {},
+		        ...Object.keys(extraEmotions).length > 0 ? { emotionsDataUrls: extraEmotions } : {}
+		      });
+		      applyDiySnapshot(res);
+		      onCreatedOrUpdated(res.savedPack.id, rolePrompt.trim());
+		      onClose();
+		    } catch (err) {
+		      setError(err instanceof Error ? err.message : "\u4FDD\u5B58 DIY \u89D2\u8272\u5931\u8D25");
+		    } finally {
+		      setSaving(false);
+		    }
+		  };
+		  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		    "form",
+		    {
+		      className: "p5-diy-creator-card",
+		      "data-testid": "diy-character-creator",
+		      onSubmit: handleSubmit,
+		      children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-creator-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-diy-kicker", children: "DIY CHARACTER WORKSHOP" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h4", { children: editingCharacterId ? "\u7F16\u8F91 DIY \u81EA\u5B9A\u4E49\u89D2\u8272" : "\u65B0\u5EFA DIY \u4E13\u5C5E\u89D2\u8272" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("p", { children: [
+		              "\u586B\u5199\u540D\u5B57\u3001\u4E0A\u4F20 1 \u5F20\u4E3B\u7ACB\u7ED8\u5E76\u5BFC\u5165 ",
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("code", { children: ".md / .txt" }),
+		              " \u6027\u683C\u5B9A\u4F4D\u6587\u4EF6\uFF0C\u5373\u53EF\u53EC\u5524\u4E13\u5C5E\u89D2\u8272\u4E0A\u53F0\u534F\u4F5C\u4E0E\u6362\u624B\u63A5\u529B\u3002"
+		            ] })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "p5-mini-action-btn",
+		              onClick: onClose,
+		              "data-testid": "diy-creator-cancel-top",
+		              children: "\u2715 \u5173\u95ED"
+		            }
+		          )
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-main-layout", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-standee-box", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "input",
+		              {
+		                ref: idleFileRef,
+		                type: "file",
+		                accept: "image/png,image/jpeg,image/webp,image/gif",
+		                hidden: true,
+		                "data-testid": "diy-idle-file-input",
+		                onChange: async (e) => {
+		                  const file = e.target.files?.[0];
+		                  e.target.value = "";
+		                  if (!file) return;
+		                  try {
+		                    const url = await readImageFileAsDataUrl(file);
+		                    setIdleDataUrl(url);
+		                    setError(null);
+		                  } catch (err) {
+		                    setError(err instanceof Error ? err.message : "\u8BFB\u53D6\u7ACB\u7ED8\u5931\u8D25");
+		                  }
+		                }
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "div",
+		              {
+		                className: "p5-diy-standee-preview",
+		                style: { "--diy-theme": themeColor },
+		                onClick: () => idleFileRef.current?.click(),
+		                role: "button",
+		                tabIndex: 0,
+		                onKeyDown: (e) => {
+		                  if (e.key === "Enter" || e.key === " ") idleFileRef.current?.click();
+		                },
+		                title: "\u70B9\u51FB\u4E0A\u4F20\u89D2\u8272\u4E3B\u7ACB\u7ED8\uFF08\u63A8\u8350\u900F\u660E\u80CC\u666F PNG / WebP\uFF09",
+		                children: activeIdlePreview ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("img", { src: activeIdlePreview, alt: "\u4E3B\u7ACB\u7ED8\u9884\u89C8" }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-standee-placeholder", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-diy-plus", children: "\uFF0B" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("strong", { children: "\u4E0A\u4F20\u4E3B\u7ACB\u7ED8\uFF08\u5FC5\u9009\uFF09" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { children: "\u900F\u660E PNG / WebP / JPG \xB7 \u22645MB" })
+		                ] })
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "p5-mini-action-btn p5-diy-upload-trigger",
+		                "data-testid": "diy-pick-idle-btn",
+		                onClick: () => idleFileRef.current?.click(),
+		                children: [
+		                  "\u{1F5BC} ",
+		                  activeIdlePreview ? "\u66F4\u6362\u4E3B\u7ACB\u7ED8\u56FE\u7247" : "\u9009\u62E9\u4E3B\u7ACB\u7ED8\u56FE\u7247"
+		                ]
+		              }
+		            )
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-fields-col", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-grid-2", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", htmlFor: "diy-char-name-input", children: "\u89D2\u8272\u540D\u79F0\uFF08\u5FC5\u586B\uFF09" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "input",
+		                  {
+		                    id: "diy-char-name-input",
+		                    "data-testid": "diy-char-name-input",
+		                    type: "text",
+		                    className: "p5-form-input",
+		                    value: name,
+		                    onChange: (e) => setName(e.target.value),
+		                    placeholder: "\u5982\uFF1A\u661F\u91CE\uFF08\u5B89\u5168\u5BA1\u8BA1\u5A18\uFF09",
+		                    maxLength: 48
+		                  }
+		                )
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u4EE3\u8868\u4E3B\u9898\u8272" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-color-row", children: [
+		                  THEME_SWATCHES.map((hex) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "button",
+		                    {
+		                      type: "button",
+		                      className: `p5-diy-swatch ${themeColor.toUpperCase() === hex ? "is-selected" : ""}`,
+		                      style: { backgroundColor: hex },
+		                      onClick: () => setThemeColor(hex),
+		                      "aria-label": `\u4E3B\u9898\u8272 ${hex}`
+		                    },
+		                    hex
+		                  )),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "input",
+		                    {
+		                      type: "color",
+		                      className: "p5-diy-color-picker",
+		                      value: themeColor,
+		                      onChange: (e) => setThemeColor(e.target.value),
+		                      title: "\u81EA\u9009\u4EFB\u610F\u4E3B\u9898\u8272"
+		                    }
+		                  )
+		                ] })
+		              ] })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-grid-3", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u89D2\u8272\u81EA\u79F0" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "input",
+		                  {
+		                    type: "text",
+		                    className: "p5-form-input",
+		                    "data-testid": "diy-self-title-input",
+		                    value: selfTitle,
+		                    onChange: (e) => setSelfTitle(e.target.value),
+		                    placeholder: "\u6211 / \u672C\u55B5 / \u5728\u4E0B",
+		                    maxLength: 24
+		                  }
+		                )
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u5BF9\u73A9\u5BB6\u7684\u79F0\u547C" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "input",
+		                  {
+		                    type: "text",
+		                    className: "p5-form-input",
+		                    "data-testid": "diy-user-title-input",
+		                    value: userTitle,
+		                    onChange: (e) => setUserTitle(e.target.value),
+		                    placeholder: "\u5E97\u957F / \u8001\u5E08 / \u642D\u6863",
+		                    maxLength: 24
+		                  }
+		                )
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u4E00\u53E5\u8BDD\u7B80\u4ECB\u6807\u8BED" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "input",
+		                  {
+		                    type: "text",
+		                    className: "p5-form-input",
+		                    "data-testid": "diy-tagline-input",
+		                    value: tagline,
+		                    onChange: (e) => setTagline(e.target.value),
+		                    placeholder: "\u5982\uFF1A\u96F6\u4FE1\u4EFB\u9632\u7EBF \xB7 \u5B89\u5168\u4EE3\u7801\u5B88\u95E8\u4EBA",
+		                    maxLength: 80
+		                  }
+		                )
+		              ] })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-label-row", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: "p5-form-label", htmlFor: "diy-role-prompt-input", children: [
+		                  "\u89D2\u8272\u6027\u683C\u4E0E\u804C\u8D23\u5B9A\u4F4D\u6587\u4EF6\uFF08\u5FC5\u586B \xB7 ",
+		                  rolePrompt.length,
+		                  "/",
+		                  MAX_PERSONA_CHARS,
+		                  "\uFF09",
+		                  sourceFileName && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("span", { className: "p5-diy-source-tag", children: [
+		                    "\u5DF2\u5BFC\u5165\uFF1A",
+		                    sourceFileName
+		                  ] })
+		                ] }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-inline-btns", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "input",
+		                    {
+		                      ref: mdFileRef,
+		                      type: "file",
+		                      accept: ".md,.markdown,.txt,text/markdown,text/plain",
+		                      hidden: true,
+		                      "data-testid": "diy-creator-persona-file-input",
+		                      onChange: async (e) => {
+		                        const file = e.target.files?.[0];
+		                        e.target.value = "";
+		                        if (!file) return;
+		                        try {
+		                          const content = (await readTextFile(file)).trim();
+		                          setRolePrompt(content.slice(0, MAX_PERSONA_CHARS));
+		                          setSourceFileName(file.name);
+		                          setError(null);
+		                        } catch (err) {
+		                          setError(err instanceof Error ? err.message : "\u8BFB\u53D6\u6027\u683C\u6587\u4EF6\u5931\u8D25");
+		                        }
+		                      }
+		                    }
+		                  ),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "button",
+		                    {
+		                      type: "button",
+		                      className: "p5-mini-action-btn p5-mini-action-btn--accent",
+		                      "data-testid": "diy-creator-import-md-btn",
+		                      onClick: () => mdFileRef.current?.click(),
+		                      children: "\u{1F4C4} \u9009\u62E9 .md / .txt \u6587\u4EF6"
+		                    }
+		                  ),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "button",
+		                    {
+		                      type: "button",
+		                      className: "p5-mini-action-btn",
+		                      "data-testid": "diy-creator-fill-template-btn",
+		                      onClick: () => setRolePrompt(PERSONA_MARKDOWN_TEMPLATE),
+		                      children: "\u586B\u5165\u6A21\u677F"
+		                    }
+		                  )
+		                ] })
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                "textarea",
+		                {
+		                  id: "diy-role-prompt-input",
+		                  "data-testid": "diy-role-prompt-input",
+		                  className: "p5-diy-textarea",
+		                  rows: 5,
+		                  value: rolePrompt,
+		                  onChange: (e) => setRolePrompt(e.target.value.slice(0, MAX_PERSONA_CHARS)),
+		                  placeholder: "\u53EF\u70B9\u51FB\u53F3\u4E0A\u65B9\u300C\u9009\u62E9 .md / .txt \u6587\u4EF6\u300D\u76F4\u63A5\u8F7D\u5165\uFF0C\u6216\u5728\u6B64\u624B\u5199\u89D2\u8272\u7684\u6027\u683C\u53E3\u543B\u3001\u4E13\u7CBE\u6280\u672F\u65B9\u5411\u4E0E\u884C\u52A8\u51C6\u5219\u2026"
+		                }
+		              )
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "p5-mini-action-btn",
+		                onClick: () => setShowMoreOptions((v) => !v),
+		                children: showMoreOptions ? "\u25BE \u6536\u8D77\u8FDB\u9636\u9009\u9879\uFF08\u4EE3\u53F7\u3001\u53E3\u5934\u7985\u3001\u72EC\u7ACB\u5934\u50CF\u4E0E 5 \u79CD\u8868\u60C5\u5DEE\u5206\uFF09" : "\u25B8 \u8FDB\u9636\u9009\u9879\uFF1A\u72EC\u7ACB\u5C0F\u5934\u50CF\u30015 \u79CD\u60C5\u7EEA\u7ACB\u7ED8\u5DEE\u5206\u4E0E\u4E13\u5C5E\u53E3\u5934\u7985\uFF08\u9009\u586B\uFF09"
+		              }
+		            ) }),
+		            showMoreOptions && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-advanced-box", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-grid-2", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u821E\u53F0\u82F1\u6587/\u4EE3\u53F7\u6807\u7B7E" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    "input",
+		                    {
+		                      type: "text",
+		                      className: "p5-form-input",
+		                      value: codename,
+		                      onChange: (e) => setCodename(e.target.value),
+		                      placeholder: "\u5982\uFF1ASEC \xB7 HOSHINO",
+		                      maxLength: 36
+		                    }
+		                  )
+		                ] }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u72EC\u7ACB\u5C0F\u5934\u50CF\uFF08\u4E0D\u4F20\u9ED8\u8BA4\u590D\u7528\u4E3B\u7ACB\u7ED8\uFF09" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-input-inline-row", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      "input",
+		                      {
+		                        ref: portraitFileRef,
+		                        type: "file",
+		                        accept: "image/png,image/jpeg,image/webp,image/gif",
+		                        hidden: true,
+		                        onChange: async (e) => {
+		                          const file = e.target.files?.[0];
+		                          e.target.value = "";
+		                          if (!file) return;
+		                          try {
+		                            setPortraitDataUrl(await readImageFileAsDataUrl(file));
+		                          } catch (err) {
+		                            setError(err instanceof Error ? err.message : "\u8BFB\u53D6\u5934\u50CF\u5931\u8D25");
+		                          }
+		                        }
+		                      }
+		                    ),
+		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      "button",
+		                      {
+		                        type: "button",
+		                        className: "p5-mini-action-btn",
+		                        onClick: () => portraitFileRef.current?.click(),
+		                        children: portraitDataUrl ? "\u2713 \u5DF2\u9009\u65B0\u5934\u50CF\uFF08\u70B9\u51FB\u66F4\u6362\uFF09" : "\u4E0A\u4F20\u72EC\u7ACB\u65B9\u5F62\u5934\u50CF"
+		                      }
+		                    )
+		                  ] })
+		                ] })
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u53EF\u9009\u60C5\u7EEA\u7ACB\u7ED8\u5DEE\u5206\uFF08\u672A\u4E0A\u4F20\u7684\u60C5\u7EEA\u4F1A\u81EA\u52A8\u4F7F\u7528\u4E3B\u7ACB\u7ED8\uFF09" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-diy-emotion-grid", children: EXTRA_EMOTION_SLOTS.map((slot) => {
+		                  const hasSelected = Boolean(extraEmotions[slot.key]);
+		                  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: `p5-diy-emo-slot ${hasSelected ? "is-set" : ""}`, children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { children: hasSelected ? `\u2713 ${slot.label}` : `+ ${slot.label}` }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      "input",
+		                      {
+		                        type: "file",
+		                        accept: "image/png,image/jpeg,image/webp,image/gif",
+		                        hidden: true,
+		                        onChange: async (e) => {
+		                          const file = e.target.files?.[0];
+		                          e.target.value = "";
+		                          if (!file) return;
+		                          try {
+		                            const url = await readImageFileAsDataUrl(file);
+		                            setExtraEmotions((prev) => ({ ...prev, [slot.key]: url }));
+		                          } catch (err) {
+		                            setError(err instanceof Error ? err.message : "\u8BFB\u53D6\u8868\u60C5\u5DEE\u5206\u5931\u8D25");
+		                          }
+		                        }
+		                      }
+		                    )
+		                  ] }, slot.key);
+		                }) })
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u4E13\u5C5E\u767B\u573A\u53F0\u8BCD / \u53E3\u5934\u7985\uFF08\u6BCF\u884C\u4E00\u53E5\uFF0C\u9009\u586B\uFF09" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  "textarea",
+		                  {
+		                    className: "p5-diy-textarea",
+		                    rows: 2,
+		                    value: catchphrasesText,
+		                    onChange: (e) => setCatchphrasesText(e.target.value),
+		                    placeholder: "\u9632\u7EBF\u5DE1\u68C0\u5C31\u7EEA\uFF0C\u4ECA\u5929\u8981\u6392\u67E5\u54EA\u4E00\u5757\u6A21\u5757\uFF1F"
+		                  }
+		                )
+		              ] })
+		            ] })
+		          ] })
+		        ] }),
+		        error && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-pond-dir-error", "data-testid": "diy-creator-error", role: "alert", children: error }),
+		        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-diy-creator-foot", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		            "button",
+		            {
+		              type: "submit",
+		              className: "p5-apply-btn p5-diy-submit-btn",
+		              "data-testid": "diy-creator-submit-btn",
+		              disabled: saving,
+		              children: saving ? "\u6B63\u5728\u4FDD\u5B58\u89D2\u8272\u4E0E\u7ACB\u7ED8\u2026" : editingCharacterId ? "\u2605 \u4FDD\u5B58 DIY \u89D2\u8272\u4FEE\u6539" : "\u2605 \u521B\u5EFA\u89D2\u8272\u5E76\u53EC\u5524\u4E0A\u53F0"
+		            }
+		          ),
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "p5-mini-action-btn",
+		              onClick: onClose,
+		              disabled: saving,
+		              children: "\u53D6\u6D88"
+		            }
+		          )
+		        ] })
+		      ]
+		    }
+		  );
+		};
+		
+		// src/stage/components/SystemMenuModal.tsx
+		var import_jsx_runtime12 = require("react/jsx-runtime");
 		var DEFAULT_MODEL_LIST = {
 		  models: [],
 		  loading: false
@@ -6331,29 +7753,29 @@ window.__ModuleLoader__.load({
 		  const safeVoiceModels = voiceModels ?? DEFAULT_MODEL_LIST;
 		  const safeWorkerConn = workerConnTest ?? DEFAULT_CONN_TEST;
 		  const safeVoiceConn = voiceConnTest ?? DEFAULT_CONN_TEST;
-		  const [workerModelDraft, setWorkerModelDraft] = (0, import_react9.useState)(
+		  const [workerModelDraft, setWorkerModelDraft] = (0, import_react10.useState)(
 		    settings.worker.model
 		  );
-		  const [workerBaseUrlDraft, setWorkerBaseUrlDraft] = (0, import_react9.useState)(
+		  const [workerBaseUrlDraft, setWorkerBaseUrlDraft] = (0, import_react10.useState)(
 		    settings.worker.endpoint.baseUrl
 		  );
-		  const [workerApiKeyDraft, setWorkerApiKeyDraft] = (0, import_react9.useState)("");
-		  const [voiceBaseUrlDraft, setVoiceBaseUrlDraft] = (0, import_react9.useState)(
+		  const [workerApiKeyDraft, setWorkerApiKeyDraft] = (0, import_react10.useState)("");
+		  const [voiceBaseUrlDraft, setVoiceBaseUrlDraft] = (0, import_react10.useState)(
 		    settings.voice.endpoint.baseUrl
 		  );
-		  const [voiceModelDraft, setVoiceModelDraft] = (0, import_react9.useState)(
+		  const [voiceModelDraft, setVoiceModelDraft] = (0, import_react10.useState)(
 		    settings.voice.endpoint.model
 		  );
-		  const [voiceApiKeyDraft, setVoiceApiKeyDraft] = (0, import_react9.useState)("");
-		  const [projectDirDraft, setProjectDirDraft] = (0, import_react9.useState)(
+		  const [voiceApiKeyDraft, setVoiceApiKeyDraft] = (0, import_react10.useState)("");
+		  const [projectDirDraft, setProjectDirDraft] = (0, import_react10.useState)(
 		    settings.projectDir ?? ""
 		  );
-		  const [typingSpeedDraft, setTypingSpeedDraft] = (0, import_react9.useState)(
+		  const [typingSpeedDraft, setTypingSpeedDraft] = (0, import_react10.useState)(
 		    settings.performance.typingCharsPerSec
 		  );
-		  const [showWorkerAdvanced, setShowWorkerAdvanced] = (0, import_react9.useState)(false);
-		  const [, setReasoningTick] = (0, import_react9.useState)(0);
-		  (0, import_react9.useEffect)(() => {
+		  const [showWorkerAdvanced, setShowWorkerAdvanced] = (0, import_react10.useState)(false);
+		  const [, setReasoningTick] = (0, import_react10.useState)(0);
+		  (0, import_react10.useEffect)(() => {
 		    const bridge = window.__BIGFISH_REASONING__;
 		    return bridge?.subscribe ? bridge.subscribe(() => setReasoningTick((v) => v + 1)) : void 0;
 		  }, []);
@@ -6363,25 +7785,27 @@ window.__ModuleLoader__.load({
 		  const modalityBridge2 = typeof window !== "undefined" ? window.__BIGFISH_MODALITY__ : void 0;
 		  const imageEditable = !!modalityBridge2?.editable?.(settings.worker.model || "");
 		  const imageSupported = modalityBridge2?.supportsImages?.(settings.worker.model || "") === true;
-		  const [imageSaving, setImageSaving] = (0, import_react9.useState)(false);
-		  const [imageSaveError, setImageSaveError] = (0, import_react9.useState)(null);
-		  const [showVoiceAdvanced, setShowVoiceAdvanced] = (0, import_react9.useState)(false);
-		  const [dirPickError, setDirPickError] = (0, import_react9.useState)(null);
-		  const [customPresets, setCustomPresets] = (0, import_react9.useState)([]);
-		  const [presetGuideOpen, setPresetGuideOpen] = (0, import_react9.useState)({});
-		  const [presetSourceCache, setPresetSourceCache] = (0, import_react9.useState)({});
+		  const [imageSaving, setImageSaving] = (0, import_react10.useState)(false);
+		  const [imageSaveError, setImageSaveError] = (0, import_react10.useState)(null);
+		  const [showVoiceAdvanced, setShowVoiceAdvanced] = (0, import_react10.useState)(false);
+		  const [dirPickError, setDirPickError] = (0, import_react10.useState)(null);
+		  const [diyCreatorOpen, setDiyCreatorOpen] = (0, import_react10.useState)(false);
+		  const [editingCustomCharId, setEditingCustomCharId] = (0, import_react10.useState)(null);
+		  const [customPresets, setCustomPresets] = (0, import_react10.useState)([]);
+		  const [presetGuideOpen, setPresetGuideOpen] = (0, import_react10.useState)({});
+		  const [presetSourceCache, setPresetSourceCache] = (0, import_react10.useState)({});
 		  const providersBridge2 = typeof window !== "undefined" ? window.__BIGFISH_PROVIDERS__ : void 0;
-		  const [extProviders, setExtProviders] = (0, import_react9.useState)([]);
-		  const [provMode, setProvMode] = (0, import_react9.useState)("openai");
-		  const [provRoute, setProvRoute] = (0, import_react9.useState)("openai");
-		  const [provDisplayName, setProvDisplayName] = (0, import_react9.useState)("OpenAI (GPT)");
-		  const [provApi, setProvApi] = (0, import_react9.useState)("openai-completions");
-		  const [provBaseUrl, setProvBaseUrl] = (0, import_react9.useState)("");
-		  const [provApiKey, setProvApiKey] = (0, import_react9.useState)("");
-		  const [provModelsText, setProvModelsText] = (0, import_react9.useState)("");
-		  const [provBusy, setProvBusy] = (0, import_react9.useState)(false);
-		  const [provProbing, setProvProbing] = (0, import_react9.useState)(false);
-		  const [provNotice, setProvNotice] = (0, import_react9.useState)(null);
+		  const [extProviders, setExtProviders] = (0, import_react10.useState)([]);
+		  const [provMode, setProvMode] = (0, import_react10.useState)("openai");
+		  const [provRoute, setProvRoute] = (0, import_react10.useState)("openai");
+		  const [provDisplayName, setProvDisplayName] = (0, import_react10.useState)("OpenAI (GPT)");
+		  const [provApi, setProvApi] = (0, import_react10.useState)("openai-completions");
+		  const [provBaseUrl, setProvBaseUrl] = (0, import_react10.useState)("");
+		  const [provApiKey, setProvApiKey] = (0, import_react10.useState)("");
+		  const [provModelsText, setProvModelsText] = (0, import_react10.useState)("");
+		  const [provBusy, setProvBusy] = (0, import_react10.useState)(false);
+		  const [provProbing, setProvProbing] = (0, import_react10.useState)(false);
+		  const [provNotice, setProvNotice] = (0, import_react10.useState)(null);
 		  const reloadExtProviders = () => {
 		    if (!providersBridge2?.listProviders) return;
 		    void providersBridge2.listProviders().then((rows) => setExtProviders(rows)).catch(() => {
@@ -6416,7 +7840,7 @@ window.__ModuleLoader__.load({
 		      setProvModelsText("");
 		    }
 		  };
-		  (0, import_react9.useEffect)(() => {
+		  (0, import_react10.useEffect)(() => {
 		    setWorkerModelDraft(settings.worker.model);
 		    setWorkerBaseUrlDraft(settings.worker.endpoint.baseUrl);
 		    setVoiceBaseUrlDraft(settings.voice.endpoint.baseUrl);
@@ -6424,7 +7848,7 @@ window.__ModuleLoader__.load({
 		    setProjectDirDraft(settings.projectDir ?? "");
 		    setTypingSpeedDraft(settings.performance.typingCharsPerSec);
 		  }, [settings, settingsSyncedAt]);
-		  (0, import_react9.useEffect)(() => {
+		  (0, import_react10.useEffect)(() => {
 		    if (!open) {
 		      setDirPickError(null);
 		      return;
@@ -6462,7 +7886,7 @@ window.__ModuleLoader__.load({
 		    settings.worker.adapter
 		  ]);
 		  if (!open) return null;
-		  return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		    "div",
 		    {
 		      className: "p5-system-backdrop",
@@ -6471,11 +7895,11 @@ window.__ModuleLoader__.load({
 		      "aria-modal": "true",
 		      "aria-label": "\u8BBE\u7F6E",
 		      onClick: onClose,
-		      children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-system-shell", onClick: (e) => e.stopPropagation(), children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("header", { className: "p5-system-header", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-system-title-group", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { className: "p5-system-title", children: "\u8BBE\u7F6E" }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-system-header-right", children: [
-		            settingsSyncedAt && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		      children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-system-shell", onClick: (e) => e.stopPropagation(), children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("header", { className: "p5-system-header", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-system-title-group", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h2", { className: "p5-system-title", children: "\u8BBE\u7F6E" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-system-header-right", children: [
+		            settingsSyncedAt && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		              "span",
 		              {
 		                className: "p5-system-sync-pill",
@@ -6483,7 +7907,7 @@ window.__ModuleLoader__.load({
 		                children: "\u2713 \u5DF2\u4FDD\u5B58"
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -6495,33 +7919,71 @@ window.__ModuleLoader__.load({
 		            )
 		          ] })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-system-body", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("nav", { className: "p5-system-nav", "aria-label": "\u8BBE\u7F6E\u5206\u7C7B", children: TABS.map((t) => {
+		        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-system-body", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("nav", { className: "p5-system-nav", "aria-label": "\u8BBE\u7F6E\u5206\u7C7B", children: TABS.map((t) => {
 		            const isActive = activeTab === t.id;
-		            return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		            return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		              "button",
 		              {
 		                type: "button",
 		                "data-testid": `system-tab-${t.id}`,
 		                className: `p5-system-tab-btn ${isActive ? "is-active" : ""}`,
 		                onClick: () => onSelectTab(t.id),
-		                children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-system-tab-zh", children: t.zh })
+		                children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-system-tab-zh", children: t.zh })
 		              },
 		              t.id
 		            );
 		          }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-system-content", "data-testid": "system-content-pane", children: [
-		            activeTab === "characters" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-system-content", "data-testid": "system-content-pane", children: [
+		            activeTab === "characters" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		              "div",
 		              {
 		                className: "p5-sys-panel",
 		                "data-testid": "system-panel-characters",
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel-head", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "\u89D2\u8272\u4E0E\u72EC\u7ACB\u5927\u8111" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: "\u6BCF\u4F4D\u89D2\u8272\u62E5\u6709\u300C\u72EC\u7ACB\u5927\u8111\u4E0E\u4E13\u5C5E\u623F\u95F4\u300D\uFF1A\u5355\u72EC\u8BB0\u4F4F\u5404\u81EA\u7684\u6A21\u578B\u4E0E\u5BF9\u8BDD\u5386\u53F2\uFF0C\u5207\u6362\u89D2\u8272\u4E0D\u4E32\u8BB0\u5FC6\u3002" })
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-panel-head p5-sys-panel-head--split", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { children: "\u89D2\u8272\u4E0E\u72EC\u7ACB\u5927\u8111" }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("p", { children: [
+		                        "\u6BCF\u4F4D\u89D2\u8272\u62E5\u6709\u300C\u72EC\u7ACB\u5927\u8111\u4E0E\u4E13\u5C5E\u623F\u95F4\u300D\uFF0C\u5E76\u652F\u6301\u5BFC\u5165 ",
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("code", { children: ".md / .txt" }),
+		                        " \u6027\u683C\u5B9A\u4F4D\u6587\u4EF6\u6216 DIY \u81EA\u5EFA\u65B0\u89D2\u8272\u3002"
+		                      ] })
+		                    ] }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		                      "button",
+		                      {
+		                        type: "button",
+		                        className: "p5-diy-open-creator-btn",
+		                        "data-testid": "open-diy-creator-btn",
+		                        onClick: () => {
+		                          setEditingCustomCharId(null);
+		                          setDiyCreatorOpen((prev) => !prev);
+		                        },
+		                        children: diyCreatorOpen && !editingCustomCharId ? "\u25B4 \u6536\u8D77\u634F\u4EBA\u5DE5\u4F5C\u53F0" : "\uFF0B DIY \u65B0\u5EFA\u89D2\u8272"
+		                      }
+		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-char-grid", children: characters.map((ch) => {
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		                    DiyCharacterCreatorDrawer,
+		                    {
+		                      open: diyCreatorOpen,
+		                      editingCharacterId: editingCustomCharId,
+		                      onClose: () => {
+		                        setDiyCreatorOpen(false);
+		                        setEditingCustomCharId(null);
+		                      },
+		                      onCreatedOrUpdated: (charId, rolePromptText) => {
+		                        onUpdateSettings({
+		                          characterBrains: {
+		                            [charId]: { rolePrompt: rolePromptText }
+		                          }
+		                        });
+		                        onSwitchCharacter(charId);
+		                      }
+		                    }
+		                  ),
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-char-grid", children: characters.map((ch) => {
 		                    const pack = getCachedCharacterPack(ch.id);
 		                    const isCurrent = settings.activeCharacterId === ch.id;
 		                    const shortName = ch.name.split("\uFF08")[0];
@@ -6529,6 +7991,7 @@ window.__ModuleLoader__.load({
 		                    const brainModel = charBrain?.model || settings.worker.model;
 		                    const hasActiveRoom = Boolean(charBrain?.activeSessionId) || isCurrent && Boolean(currentSessionId);
 		                    const roleMeta = CHARACTER_ROLE_META[ch.id];
+		                    const isCustomChar = isCustomCharacterId(ch.id);
 		                    const pillCandidates = Array.from(
 		                      /* @__PURE__ */ new Set([
 		                        "deepseek-chat",
@@ -6539,7 +8002,7 @@ window.__ModuleLoader__.load({
 		                    if (brainModel && !pillCandidates.includes(brainModel)) {
 		                      pillCandidates.unshift(brainModel);
 		                    }
-		                    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                      "div",
 		                      {
 		                        "data-testid": `char-card-${ch.id}`,
@@ -6551,20 +8014,21 @@ window.__ModuleLoader__.load({
 		                          onSwitchCharacter(ch.id);
 		                        },
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-char-card-top", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-char-card-avatar-wrap", children: ch.portraitUrl ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-char-card-top", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-char-card-avatar-wrap", children: ch.portraitUrl ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                              "img",
 		                              {
 		                                src: ch.portraitUrl,
 		                                alt: shortName,
 		                                className: "p5-char-card-avatar"
 		                              }
-		                            ) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-char-card-avatar-fallback", children: shortName.slice(0, 2) }) }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-char-card-titles", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-char-card-name-row", children: [
-		                                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h4", { className: "p5-char-card-name", children: shortName }),
-		                                roleMeta && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-char-specialty-pill", children: roleMeta.specialtyTag }),
-		                                hasActiveRoom && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                            ) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-char-card-avatar-fallback", children: shortName.slice(0, 2) }) }),
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-char-card-titles", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-char-card-name-row", children: [
+		                                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h4", { className: "p5-char-card-name", children: shortName }),
+		                                isCustomChar && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-char-diy-pill", children: "\u2605 DIY \u81EA\u5EFA" }),
+		                                roleMeta && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-char-specialty-pill", children: roleMeta.specialtyTag }),
+		                                hasActiveRoom && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                  "span",
 		                                  {
 		                                    className: "p5-char-room-active-badge",
@@ -6573,9 +8037,9 @@ window.__ModuleLoader__.load({
 		                                  }
 		                                )
 		                              ] }),
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-char-card-tagline", children: pack.tagline })
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-char-card-tagline", children: pack.tagline })
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                              "span",
 		                              {
 		                                className: `p5-char-card-status ${isCurrent ? "is-current" : ""}`,
@@ -6583,13 +8047,13 @@ window.__ModuleLoader__.load({
 		                              }
 		                            )
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                            "div",
 		                            {
 		                              className: "p5-char-card-model-bar",
 		                              onClick: (e) => e.stopPropagation(),
 		                              children: [
-		                                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                  "span",
 		                                  {
 		                                    className: "p5-field-tag p5-brain-room-label",
@@ -6597,9 +8061,9 @@ window.__ModuleLoader__.load({
 		                                    children: "\u72EC\u7ACB\u5927\u8111\u4E0E\u4E13\u5C5E\u623F\u95F4\uFF1A"
 		                                  }
 		                                ),
-		                                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-model-pills", children: pillCandidates.map((m) => {
+		                                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-model-pills", children: pillCandidates.map((m) => {
 		                                  const isSelectedModel = brainModel === m;
-		                                  return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                                  return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                    "button",
 		                                    {
 		                                      type: "button",
@@ -6619,6 +8083,20 @@ window.__ModuleLoader__.load({
 		                                }) })
 		                              ]
 		                            }
+		                          ),
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		                            CharacterPersonaCardBar,
+		                            {
+		                              characterId: ch.id,
+		                              pack,
+		                              activeCharacterId: settings.activeCharacterId,
+		                              onUpdateSettings,
+		                              onSwitchCharacter,
+		                              onEditCustomCharacter: (targetId) => {
+		                                setEditingCustomCharId(targetId);
+		                                setDiyCreatorOpen(true);
+		                              }
+		                            }
 		                          )
 		                        ]
 		                      },
@@ -6628,22 +8106,22 @@ window.__ModuleLoader__.load({
 		                ]
 		              }
 		            ),
-		            activeTab === "presets" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		            activeTab === "presets" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		              "div",
 		              {
 		                className: "p5-sys-panel",
 		                "data-testid": "system-panel-presets",
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel-head", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "Agent \u5DE5\u4F5C\u9884\u8BBE\u6A21\u5F0F" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-preset-lead", children: "\u9009\u62E9\u89D2\u8272\u8C03\u7528\u5DE5\u5177\u4E0E\u63A8\u8FDB\u4EFB\u52A1\u7684\u65B9\u5F0F\u3002\u65E5\u5E38\u5F00\u53D1\u63A8\u8350\u300C\u6807\u51C6\u6A21\u5F0F\u300D\uFF0C\u6279\u91CF\u6570\u636E\u5904\u7406\u9009\u300CPTC \u6A21\u5F0F\u300D\uFF0C\u6269\u5C55\u65B0\u5DE5\u5177\u4E0E\u81EA\u5B9A\u4E49\u6A21\u5F0F\u9009\u300C\u521B\u9020\u6A21\u5F0F\u300D\u3002" })
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-panel-head", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { children: "Agent \u5DE5\u4F5C\u9884\u8BBE\u6A21\u5F0F" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "p5-preset-lead", children: "\u9009\u62E9\u89D2\u8272\u8C03\u7528\u5DE5\u5177\u4E0E\u63A8\u8FDB\u4EFB\u52A1\u7684\u65B9\u5F0F\u3002\u65E5\u5E38\u5F00\u53D1\u63A8\u8350\u300C\u6807\u51C6\u6A21\u5F0F\u300D\uFF0C\u6279\u91CF\u6570\u636E\u5904\u7406\u9009\u300CPTC \u6A21\u5F0F\u300D\uFF0C\u6269\u5C55\u65B0\u5DE5\u5177\u4E0E\u81EA\u5B9A\u4E49\u6A21\u5F0F\u9009\u300C\u521B\u9020\u6A21\u5F0F\u300D\u3002" })
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-preset-section-label", children: "\u5185\u7F6E\u9884\u8BBE\u6A21\u5F0F" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-preset-grid", children: BUILTIN_AGENT_PRESETS.map((preset, idx) => {
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-preset-section-label", children: "\u5185\u7F6E\u9884\u8BBE\u6A21\u5F0F" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-preset-grid", children: BUILTIN_AGENT_PRESETS.map((preset, idx) => {
 		                    const currentPreset = settings.worker.agentPreset || "standard";
 		                    const isActive = currentPreset === preset.id;
 		                    const openDrawer = presetGuideOpen[preset.id] ?? null;
-		                    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                      "div",
 		                      {
 		                        "data-testid": `preset-card-${preset.id}`,
@@ -6652,35 +8130,35 @@ window.__ModuleLoader__.load({
 		                          worker: { agentPreset: preset.id }
 		                        }),
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-preset-card-head", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-preset-title-group", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-preset-name", children: preset.name }),
-		                              isActive ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-preset-badge is-default", children: "\u2605 \u65B0\u4EFB\u52A1\u9ED8\u8BA4" }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-preset-badge", children: preset.badge })
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-preset-card-head", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-preset-title-group", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-preset-name", children: preset.name }),
+		                              isActive ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-preset-badge is-default", children: "\u2605 \u65B0\u4EFB\u52A1\u9ED8\u8BA4" }) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-preset-badge", children: preset.badge })
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("code", { className: "p5-preset-code", children: preset.id })
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("code", { className: "p5-preset-code", children: preset.id })
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-preset-desc", children: preset.description }),
-		                          openDrawer && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "p5-preset-desc", children: preset.description }),
+		                          openDrawer && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                            "div",
 		                            {
 		                              className: "p5-preset-drawer",
 		                              onClick: (e) => e.stopPropagation(),
 		                              children: [
-		                                openDrawer === "details" && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: preset.modeDetails }),
-		                                openDrawer === "usage" && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: preset.howToUse }),
-		                                openDrawer === "source" && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("pre", { className: "p5-preset-source-pre", children: presetSourceCache[preset.id] || `# preset: ${preset.id}
+		                                openDrawer === "details" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { children: preset.modeDetails }),
+		                                openDrawer === "usage" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { children: preset.howToUse }),
+		                                openDrawer === "source" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("pre", { className: "p5-preset-source-pre", children: presetSourceCache[preset.id] || `# preset: ${preset.id}
 		${preset.modeDetails}` })
 		                              ]
 		                            }
 		                          ),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                            "div",
 		                            {
 		                              className: "p5-preset-footer",
 		                              onClick: (e) => e.stopPropagation(),
 		                              children: [
-		                                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-preset-links", children: [
-		                                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                                /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-preset-links", children: [
+		                                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                    "button",
 		                                    {
 		                                      type: "button",
@@ -6692,7 +8170,7 @@ window.__ModuleLoader__.load({
 		                                      children: "\u6A21\u5F0F\u8BF4\u660E"
 		                                    }
 		                                  ),
-		                                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                    "button",
 		                                    {
 		                                      type: "button",
@@ -6705,8 +8183,8 @@ window.__ModuleLoader__.load({
 		                                    }
 		                                  )
 		                                ] }),
-		                                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-preset-actions", children: [
-		                                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                                /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-preset-actions", children: [
+		                                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                    "button",
 		                                    {
 		                                      type: "button",
@@ -6733,7 +8211,7 @@ window.__ModuleLoader__.load({
 		                                      children: "\u2261"
 		                                    }
 		                                  ),
-		                                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                    "button",
 		                                    {
 		                                      type: "button",
@@ -6753,11 +8231,11 @@ window.__ModuleLoader__.load({
 		                      preset.id
 		                    );
 		                  }) }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-preset-section-label", children: "\u81EA\u5B9A\u4E49\u9884\u8BBE" }),
-		                  customPresets.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-preset-grid p5-preset-grid--custom", children: customPresets.map((preset) => {
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-preset-section-label", children: "\u81EA\u5B9A\u4E49\u9884\u8BBE" }),
+		                  customPresets.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-preset-grid p5-preset-grid--custom", children: customPresets.map((preset) => {
 		                    const currentPreset = settings.worker.agentPreset || "standard";
 		                    const isActive = currentPreset === preset.id;
-		                    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                      "div",
 		                      {
 		                        className: `p5-preset-card ${isActive ? "is-active" : ""}`,
@@ -6765,10 +8243,10 @@ window.__ModuleLoader__.load({
 		                          worker: { agentPreset: preset.id }
 		                        }),
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-preset-card-head", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-preset-title-group", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-preset-name", children: preset.name }),
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-preset-card-head", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-preset-title-group", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-preset-name", children: preset.name }),
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                "span",
 		                                {
 		                                  className: `p5-preset-badge ${isActive ? "is-default" : ""}`,
@@ -6776,15 +8254,15 @@ window.__ModuleLoader__.load({
 		                                }
 		                              )
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("code", { className: "p5-preset-code", children: preset.id })
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("code", { className: "p5-preset-code", children: preset.id })
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-preset-desc", children: preset.description })
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "p5-preset-desc", children: preset.description })
 		                        ]
 		                      },
 		                      preset.id
 		                    );
 		                  }) }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -6803,22 +8281,22 @@ window.__ModuleLoader__.load({
 		                        onClose();
 		                      },
 		                      children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-preset-creator-tag", children: "CREATOR" }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { children: "\uFF0B \u8BA9\u5F53\u524D\u89D2\u8272\u5E2E\u6211\u521B\u5EFA\u4E13\u5C5E\u9884\u8BBE\u6A21\u5F0F" })
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-preset-creator-tag", children: "CREATOR" }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { children: "\uFF0B \u8BA9\u5F53\u524D\u89D2\u8272\u5E2E\u6211\u521B\u5EFA\u4E13\u5C5E\u9884\u8BBE\u6A21\u5F0F" })
 		                      ]
 		                    }
 		                  )
 		                ]
 		              }
 		            ),
-		            activeTab === "worker" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-worker", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel-head", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "AI \u5F15\u64CE\u5E95\u5EA7\u8BBE\u7F6E" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: "\u7EDF\u4E00\u914D\u7F6E\u6267\u884C\u5F15\u64CE\uFF08DeepSeek Harness / \u76F4\u8FDE\u6A21\u5F0F\uFF09\u4E0E\u5168\u5C40\u9ED8\u8BA4\u6A21\u578B\u3002" })
+		            activeTab === "worker" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-worker", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-panel-head", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { children: "AI \u5F15\u64CE\u5E95\u5EA7\u8BBE\u7F6E" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { children: "\u7EDF\u4E00\u914D\u7F6E\u6267\u884C\u5F15\u64CE\uFF08DeepSeek Harness / \u76F4\u8FDE\u6A21\u5F0F\uFF09\u4E0E\u5168\u5C40\u9ED8\u8BA4\u6A21\u578B\u3002" })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-form", children: [
-		                workerAdapters.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-form", children: [
+		                workerAdapters.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "label",
 		                    {
 		                      className: "p5-form-label",
@@ -6826,7 +8304,7 @@ window.__ModuleLoader__.load({
 		                      children: "\u6838\u5FC3\u6267\u884C\u5F15\u64CE"
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "select",
 		                    {
 		                      id: "worker-adapter-select",
@@ -6836,7 +8314,7 @@ window.__ModuleLoader__.load({
 		                      onChange: (e) => onUpdateSettings({
 		                        worker: { adapter: e.target.value }
 		                      }),
-		                      children: workerAdapters.map((ad) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                      children: workerAdapters.map((ad) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                        "option",
 		                        {
 		                          value: ad.id,
@@ -6851,7 +8329,7 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                  ModelPicker,
 		                  {
 		                    target: "worker",
@@ -6865,9 +8343,9 @@ window.__ModuleLoader__.load({
 		                    onApplyModel: (model) => onUpdateSettings({ worker: { model } })
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", "data-testid": "worker-effort-group", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", htmlFor: "worker-effort-select", children: "\u601D\u8003\u5F3A\u5EA6" }),
-		                  effortOptions.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", "data-testid": "worker-effort-group", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("label", { className: "p5-form-label", htmlFor: "worker-effort-select", children: "\u601D\u8003\u5F3A\u5EA6" }),
+		                  effortOptions.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                    "select",
 		                    {
 		                      id: "worker-effort-select",
@@ -6875,24 +8353,24 @@ window.__ModuleLoader__.load({
 		                      value: currentEffort,
 		                      onChange: (e) => onUpdateSettings({ worker: { reasoningEffort: e.target.value } }),
 		                      children: [
-		                        !currentEffort && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: "", children: "\u6A21\u578B\u9ED8\u8BA4" }),
-		                        effortOptions.map((eff) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("option", { value: eff.id, children: [
+		                        !currentEffort && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("option", { value: "", children: "\u6A21\u578B\u9ED8\u8BA4" }),
+		                        effortOptions.map((eff) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("option", { value: eff.id, children: [
 		                          eff.name,
 		                          eff.description ? ` \u2014 ${eff.description}` : ""
 		                        ] }, eff.id))
 		                      ]
 		                    }
-		                  ) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-model-error-hint", children: "\u5F53\u524D\u6A21\u578B\u4E0D\u652F\u6301\u8C03\u8282\u601D\u8003\u5F3A\u5EA6\u3002" })
+		                  ) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "p5-model-error-hint", children: "\u5F53\u524D\u6A21\u578B\u4E0D\u652F\u6301\u8C03\u8282\u601D\u8003\u5F3A\u5EA6\u3002" })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", "data-testid": "worker-image-group", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-form-label", children: "\u8F93\u5165\u7C7B\u578B" }),
-		                  imageEditable ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-modality-row", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: "p5-modality-chip is-locked", title: "\u6587\u672C\u8F93\u5165\u59CB\u7EC8\u5F00\u542F", children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("input", { type: "checkbox", checked: true, disabled: true }),
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", "data-testid": "worker-image-group", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-form-label", children: "\u8F93\u5165\u7C7B\u578B" }),
+		                  imageEditable ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-modality-row", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "p5-modality-chip is-locked", title: "\u6587\u672C\u8F93\u5165\u59CB\u7EC8\u5F00\u542F", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("input", { type: "checkbox", checked: true, disabled: true }),
 		                      " \u6587\u672C"
 		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: `p5-modality-chip${imageSupported ? " is-on" : ""}`, children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: `p5-modality-chip${imageSupported ? " is-on" : ""}`, children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                        "input",
 		                        {
 		                          type: "checkbox",
@@ -6912,40 +8390,40 @@ window.__ModuleLoader__.load({
 		                      " ",
 		                      "\u56FE\u7247\uFF08\u770B\u56FE\uFF09"
 		                    ] }),
-		                    imageSaving && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-model-error-hint", children: "\u4FDD\u5B58\u4E2D\u2026" })
-		                  ] }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-model-error-hint", children: "\u8BE5\u6A21\u578B\u4E0D\u5728\u53EF\u7F16\u8F91\u7684\u6A21\u578B\u914D\u7F6E\u4E2D\uFF0C\u6309\u4EC5\u6587\u672C\u5904\u7406\uFF0C\u821E\u53F0\u4E0D\u5141\u8BB8\u4E0A\u4F20\u56FE\u7247\u3002" }),
-		                  imageSaveError && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-pond-dir-error", children: imageSaveError })
+		                    imageSaving && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-model-error-hint", children: "\u4FDD\u5B58\u4E2D\u2026" })
+		                  ] }) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "p5-model-error-hint", children: "\u8BE5\u6A21\u578B\u4E0D\u5728\u53EF\u7F16\u8F91\u7684\u6A21\u578B\u914D\u7F6E\u4E2D\uFF0C\u6309\u4EC5\u6587\u672C\u5904\u7406\uFF0C\u821E\u53F0\u4E0D\u5141\u8BB8\u4E0A\u4F20\u56FE\u7247\u3002" }),
+		                  imageSaveError && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "p5-pond-dir-error", children: imageSaveError })
 		                ] }),
-		                providersBridge2 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                providersBridge2 ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                  "div",
 		                  {
 		                    className: "p5-provider-hub-card",
 		                    "data-testid": "dsh-provider-hub",
 		                    children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-provider-hub-head", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h4", { className: "p5-tts-card-title", children: "\u63A5\u5165\u5916\u90E8\u5927\u6A21\u578B\uFF08OpenAI GPT / Anthropic Claude / \u517C\u5BB9\u7F51\u5173\uFF09" }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-tts-card-sub", children: "\u914D\u7F6E\u540E\u6A21\u578B\u4F1A\u81EA\u52A8\u51FA\u73B0\u5728\u821E\u53F0\u5DE6\u4E0B\u89D2\u6A21\u578B\u9009\u62E9\u5668\u4E0E\u4E0A\u65B9\u9ED8\u8BA4\u6A21\u578B\u5217\u8868\u4E2D\uFF1B\u5BC6\u94A5\u72EC\u7ACB\u52A0\u5BC6\u4FDD\u5B58\u5728\u672C\u673A\u51ED\u8BC1\u5E93\u3002" })
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-provider-hub-head", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h4", { className: "p5-tts-card-title", children: "\u63A5\u5165\u5916\u90E8\u5927\u6A21\u578B\uFF08OpenAI GPT / Anthropic Claude / \u517C\u5BB9\u7F51\u5173\uFF09" }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "p5-tts-card-sub", children: "\u914D\u7F6E\u540E\u6A21\u578B\u4F1A\u81EA\u52A8\u51FA\u73B0\u5728\u821E\u53F0\u5DE6\u4E0B\u89D2\u6A21\u578B\u9009\u62E9\u5668\u4E0E\u4E0A\u65B9\u9ED8\u8BA4\u6A21\u578B\u5217\u8868\u4E2D\uFF1B\u5BC6\u94A5\u72EC\u7ACB\u52A0\u5BC6\u4FDD\u5B58\u5728\u672C\u673A\u51ED\u8BC1\u5E93\u3002" })
 		                      ] }) }),
-		                      extProviders.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-provider-saved-list", children: extProviders.map((row) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                      extProviders.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-provider-saved-list", children: extProviders.map((row) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                        "div",
 		                        {
 		                          className: "p5-provider-saved-item",
 		                          "data-testid": `saved-provider-${row.route}`,
 		                          children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-saved-main", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-provider-saved-name", children: row.displayName }),
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("code", { className: "p5-preset-code", children: row.route }),
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-saved-main", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-provider-saved-name", children: row.displayName }),
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("code", { className: "p5-preset-code", children: row.route }),
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                "span",
 		                                {
 		                                  className: `p5-provider-key-pill ${row.keyConfigured ? "is-ok" : "is-warn"}`,
 		                                  children: row.keyConfigured ? "\u25CF \u5BC6\u94A5\u5DF2\u5C31\u7EEA" : "\u25CB \u5F85\u586B\u5BC6\u94A5"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-provider-model-count", children: row.models.length > 0 ? `${row.models.length} \u4E2A\u6307\u5B9A\u6A21\u578B` : "\u5B98\u65B9\u5185\u7F6E\u5168\u7CFB\u6A21\u578B" })
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-provider-model-count", children: row.models.length > 0 ? `${row.models.length} \u4E2A\u6307\u5B9A\u6A21\u578B` : "\u5B98\u65B9\u5185\u7F6E\u5168\u7CFB\u6A21\u578B" })
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-saved-actions", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-saved-actions", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                "button",
 		                                {
 		                                  type: "button",
@@ -6973,7 +8451,7 @@ window.__ModuleLoader__.load({
 		                                  children: "\u7F16\u8F91"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                                "button",
 		                                {
 		                                  type: "button",
@@ -7005,8 +8483,8 @@ window.__ModuleLoader__.load({
 		                        },
 		                        row.route
 		                      )) }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-template-bar", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-template-bar", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -7015,7 +8493,7 @@ window.__ModuleLoader__.load({
 		                            children: "\uFF0B OpenAI (GPT \u7CFB\u5217)"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -7024,7 +8502,7 @@ window.__ModuleLoader__.load({
 		                            children: "\uFF0B Anthropic (Claude \u7CFB\u5217)"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -7034,11 +8512,11 @@ window.__ModuleLoader__.load({
 		                          }
 		                        )
 		                      ] }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-form-grid", children: [
-		                        provMode === "custom" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-field", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u670D\u52A1\u5546\u4EE3\u53F7\uFF08\u82F1\u6587\u6807\u8BC6\uFF09" }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-form-grid", children: [
+		                        provMode === "custom" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-field", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("label", { className: "p5-form-label", children: "\u670D\u52A1\u5546\u4EE3\u53F7\uFF08\u82F1\u6587\u6807\u8BC6\uFF09" }),
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                              "input",
 		                              {
 		                                type: "text",
@@ -7049,9 +8527,9 @@ window.__ModuleLoader__.load({
 		                              }
 		                            )
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-field", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u663E\u793A\u540D\u79F0" }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-field", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("label", { className: "p5-form-label", children: "\u663E\u793A\u540D\u79F0" }),
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                              "input",
 		                              {
 		                                type: "text",
@@ -7062,9 +8540,9 @@ window.__ModuleLoader__.load({
 		                              }
 		                            )
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "\u63A5\u53E3\u534F\u8BAE" }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("label", { className: "p5-form-label", children: "\u63A5\u53E3\u534F\u8BAE" }),
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                              "select",
 		                              {
 		                                className: "p5-form-select",
@@ -7073,20 +8551,20 @@ window.__ModuleLoader__.load({
 		                                  e.target.value
 		                                ),
 		                                children: [
-		                                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: "openai-completions", children: "OpenAI Chat Completions \u517C\u5BB9\uFF08/v1/chat/completions \xB7 \u6700\u901A\u7528\uFF09" }),
-		                                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: "openai-responses", children: "OpenAI Responses \u534F\u8BAE\uFF08/v1/responses \xB7 GPT \u65B0\u534F\u8BAE\uFF09" }),
-		                                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: "anthropic-messages", children: "Anthropic Messages \u534F\u8BAE\uFF08/v1/messages \xB7 Claude \u539F\u751F\u534F\u8BAE\uFF09" })
+		                                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("option", { value: "openai-completions", children: "OpenAI Chat Completions \u517C\u5BB9\uFF08/v1/chat/completions \xB7 \u6700\u901A\u7528\uFF09" }),
+		                                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("option", { value: "openai-responses", children: "OpenAI Responses \u534F\u8BAE\uFF08/v1/responses \xB7 GPT \u65B0\u534F\u8BAE\uFF09" }),
+		                                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("option", { value: "anthropic-messages", children: "Anthropic Messages \u534F\u8BAE\uFF08/v1/messages \xB7 Claude \u539F\u751F\u534F\u8BAE\uFF09" })
 		                                ]
 		                              }
 		                            )
 		                          ] })
 		                        ] }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: "p5-form-label", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "p5-form-label", children: [
 		                            "\u63A5\u53E3\u5730\u5740 (Base URL)",
-		                            provMode !== "custom" && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-provider-opt-hint", children: "\uFF08\u9009\u586B\uFF1A\u7559\u7A7A\u76F4\u8FDE\u5B98\u65B9\u63A5\u53E3\uFF0C\u8D70\u4EE3\u7406\u53EF\u586B\u4EE3\u7406\u5730\u5740\uFF09" })
+		                            provMode !== "custom" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-provider-opt-hint", children: "\uFF08\u9009\u586B\uFF1A\u7559\u7A7A\u76F4\u8FDE\u5B98\u65B9\u63A5\u53E3\uFF0C\u8D70\u4EE3\u7406\u53EF\u586B\u4EE3\u7406\u5730\u5740\uFF09" })
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "input",
 		                            {
 		                              type: "text",
@@ -7097,12 +8575,12 @@ window.__ModuleLoader__.load({
 		                            }
 		                          )
 		                        ] }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: "p5-form-label", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "p5-form-label", children: [
 		                            "\u63A5\u53E3\u5BC6\u94A5 (API Key)",
-		                            extProviders.find((r) => r.route === provRoute)?.keyConfigured && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-provider-opt-hint is-green", children: "\uFF08\u5DF2\u4FDD\u5B58\u5BC6\u94A5\uFF0C\u4E0D\u4FEE\u6539\u53EF\u7559\u7A7A\uFF09" })
+		                            extProviders.find((r) => r.route === provRoute)?.keyConfigured && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-provider-opt-hint is-green", children: "\uFF08\u5DF2\u4FDD\u5B58\u5BC6\u94A5\uFF0C\u4E0D\u4FEE\u6539\u53EF\u7559\u7A7A\uFF09" })
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "input",
 		                            {
 		                              type: "password",
@@ -7114,13 +8592,13 @@ window.__ModuleLoader__.load({
 		                            }
 		                          )
 		                        ] }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-label-row", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { className: "p5-form-label", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-provider-field p5-provider-field--full", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-label-row", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "p5-form-label", children: [
 		                              "\u6A21\u578B ID \u5217\u8868\uFF08\u9017\u53F7\u6216\u6362\u884C\u5206\u9694\uFF09",
-		                              provMode !== "custom" && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-provider-opt-hint", children: "\uFF08\u7559\u7A7A\u5373\u81EA\u52A8\u8F7D\u5165\u5B98\u65B9\u5168\u7CFB GPT/Claude \u6A21\u578B\u4E0E\u63A8\u7406\u5F3A\u5EA6\u6863\u4F4D\uFF09" })
+		                              provMode !== "custom" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-provider-opt-hint", children: "\uFF08\u7559\u7A7A\u5373\u81EA\u52A8\u8F7D\u5165\u5B98\u65B9\u5168\u7CFB GPT/Claude \u6A21\u578B\u4E0E\u63A8\u7406\u5F3A\u5EA6\u6863\u4F4D\uFF09" })
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                              "button",
 		                              {
 		                                type: "button",
@@ -7161,7 +8639,7 @@ window.__ModuleLoader__.load({
 		                              }
 		                            )
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "input",
 		                            {
 		                              type: "text",
@@ -7173,14 +8651,14 @@ window.__ModuleLoader__.load({
 		                          )
 		                        ] })
 		                      ] }),
-		                      provNotice && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      provNotice && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                        "div",
 		                        {
 		                          className: `p5-provider-notice ${provNotice.ok ? "is-ok" : "is-err"}`,
 		                          children: provNotice.text
 		                        }
 		                      ),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-provider-submit-row", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-provider-submit-row", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                        "button",
 		                        {
 		                          type: "button",
@@ -7222,9 +8700,9 @@ window.__ModuleLoader__.load({
 		                      ) })
 		                    ]
 		                  }
-		                ) : /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group p5-conn-test-row", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                ) : /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group p5-conn-test-row", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -7235,7 +8713,7 @@ window.__ModuleLoader__.load({
 		                        children: safeWorkerConn.testing ? "\u6B63\u5728\u68C0\u6D4B\u2026" : "\u68C0\u6D4B\u8FDE\u63A5\u72B6\u6001"
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                      ConnectionTestResult,
 		                      {
 		                        target: "worker",
@@ -7243,7 +8721,7 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -7252,9 +8730,9 @@ window.__ModuleLoader__.load({
 		                      children: showWorkerAdvanced ? "\u25BE \u6536\u8D77\u9AD8\u7EA7\u63A5\u53E3\u8BBE\u7F6E" : "\u25B8 \u9AD8\u7EA7\u63A5\u53E3\u8BBE\u7F6E\uFF08\u4E00\u822C\u65E0\u9700\u4FEE\u6539\uFF09"
 		                    }
 		                  ) }),
-		                  showWorkerAdvanced && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  showWorkerAdvanced && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                        "label",
 		                        {
 		                          className: "p5-form-label",
@@ -7262,7 +8740,7 @@ window.__ModuleLoader__.load({
 		                          children: "\u8D26\u53F7\u4E0E\u63A5\u53E3\u6765\u6E90"
 		                        }
 		                      ),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                        "select",
 		                        {
 		                          id: "worker-connection-select",
@@ -7278,15 +8756,15 @@ window.__ModuleLoader__.load({
 		                            });
 		                          },
 		                          children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: "agent-default", children: "\u76F4\u63A5\u4F7F\u7528\u672C\u673A\u5DF2\u767B\u5F55\u8D26\u53F7\uFF08\u63A8\u8350\uFF09" }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("option", { value: "endpoint", children: "\u81EA\u5B9A\u4E49\u63A5\u53E3\u5730\u5740" })
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("option", { value: "agent-default", children: "\u76F4\u63A5\u4F7F\u7528\u672C\u673A\u5DF2\u767B\u5F55\u8D26\u53F7\uFF08\u63A8\u8350\uFF09" }),
+		                            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("option", { value: "endpoint", children: "\u81EA\u5B9A\u4E49\u63A5\u53E3\u5730\u5740" })
 		                          ]
 		                        }
 		                      )
 		                    ] }),
-		                    settings.worker.connection === "endpoint" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    settings.worker.connection === "endpoint" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "label",
 		                          {
 		                            className: "p5-form-label",
@@ -7294,8 +8772,8 @@ window.__ModuleLoader__.load({
 		                            children: "\u63A5\u53E3\u5730\u5740"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-input-inline-row", children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-input-inline-row", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "input",
 		                            {
 		                              id: "worker-baseurl-input",
@@ -7307,7 +8785,7 @@ window.__ModuleLoader__.load({
 		                              placeholder: "https://api.deepseek.com/v1"
 		                            }
 		                          ),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "button",
 		                            {
 		                              type: "button",
@@ -7325,9 +8803,9 @@ window.__ModuleLoader__.load({
 		                          )
 		                        ] })
 		                      ] }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-label-row", children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-label-row", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "label",
 		                            {
 		                              className: "p5-form-label",
@@ -7335,7 +8813,7 @@ window.__ModuleLoader__.load({
 		                              children: "\u63A5\u53E3\u5BC6\u94A5 (API Key)"
 		                            }
 		                          ),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "span",
 		                            {
 		                              className: `p5-apikey-status ${settings.worker.endpoint.apiKeySet ? "is-set" : "is-unset"}`,
@@ -7344,8 +8822,8 @@ window.__ModuleLoader__.load({
 		                            }
 		                          )
 		                        ] }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-input-inline-row", children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-input-inline-row", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "input",
 		                            {
 		                              id: "worker-apikey-input",
@@ -7358,7 +8836,7 @@ window.__ModuleLoader__.load({
 		                              autoComplete: "off"
 		                            }
 		                          ),
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "button",
 		                            {
 		                              type: "button",
@@ -7375,7 +8853,7 @@ window.__ModuleLoader__.load({
 		                              children: "\u4FDD\u5B58"
 		                            }
 		                          ),
-		                          settings.worker.endpoint.apiKeySet && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                          settings.worker.endpoint.apiKeySet && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                            "button",
 		                            {
 		                              type: "button",
@@ -7397,15 +8875,15 @@ window.__ModuleLoader__.load({
 		                ] })
 		              ] })
 		            ] }),
-		            activeTab === "voice" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-voice", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel-head", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "\u4E92\u52A8\u53F0\u8BCD\u8BBE\u7F6E" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: "\u914D\u7F6E\u89D2\u8272\u5728\u821E\u53F0\u4E8B\u4EF6\u4E0E\u70B9\u51FB\u4E92\u52A8\u65F6\u7684\u81EA\u7531\u53F0\u8BCD\u751F\u6210\u3002" })
+		            activeTab === "voice" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-voice", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-panel-head", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { children: "\u4E92\u52A8\u53F0\u8BCD\u8BBE\u7F6E" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { children: "\u914D\u7F6E\u89D2\u8272\u5728\u821E\u53F0\u4E8B\u4EF6\u4E0E\u70B9\u51FB\u4E92\u52A8\u65F6\u7684\u81EA\u7531\u53F0\u8BCD\u751F\u6210\u3002" })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-form", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group p5-form-group--inline", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("label", { className: "p5-form-label", children: "AI \u81EA\u7531\u4E92\u52A8\u53F0\u8BCD" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-form", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group p5-form-group--inline", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("label", { className: "p5-form-label", children: "AI \u81EA\u7531\u4E92\u52A8\u53F0\u8BCD" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -7418,8 +8896,8 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                settings.voice.enabled && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                settings.voice.enabled && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    ModelPicker,
 		                    {
 		                      target: "voice",
@@ -7434,8 +8912,8 @@ window.__ModuleLoader__.load({
 		                      onApplyModel: (model) => onUpdateSettings({ voice: { endpoint: { model } } })
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group p5-conn-test-row", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group p5-conn-test-row", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -7446,7 +8924,7 @@ window.__ModuleLoader__.load({
 		                        children: safeVoiceConn.testing ? "\u6B63\u5728\u68C0\u6D4B\u2026" : "\u68C0\u6D4B\u8FDE\u63A5\u72B6\u6001"
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                      ConnectionTestResult,
 		                      {
 		                        target: "voice",
@@ -7454,7 +8932,7 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -7463,9 +8941,9 @@ window.__ModuleLoader__.load({
 		                      children: showVoiceAdvanced ? "\u25BE \u6536\u8D77\u9AD8\u7EA7\u63A5\u53E3\u8BBE\u7F6E" : "\u25B8 \u9AD8\u7EA7\u63A5\u53E3\u8BBE\u7F6E\uFF08\u4E00\u822C\u65E0\u9700\u4FEE\u6539\uFF09"
 		                    }
 		                  ) }),
-		                  showVoiceAdvanced && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  showVoiceAdvanced && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                        "label",
 		                        {
 		                          className: "p5-form-label",
@@ -7473,8 +8951,8 @@ window.__ModuleLoader__.load({
 		                          children: "\u63A5\u53E3\u5730\u5740"
 		                        }
 		                      ),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-input-inline-row", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-input-inline-row", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "input",
 		                          {
 		                            id: "voice-baseurl-input",
@@ -7486,7 +8964,7 @@ window.__ModuleLoader__.load({
 		                            placeholder: "https://api.deepseek.com/v1"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -7505,9 +8983,9 @@ window.__ModuleLoader__.load({
 		                        )
 		                      ] })
 		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-label-row", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-label-row", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "label",
 		                          {
 		                            className: "p5-form-label",
@@ -7515,7 +8993,7 @@ window.__ModuleLoader__.load({
 		                            children: "\u63A5\u53E3\u5BC6\u94A5 (API Key)"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "span",
 		                          {
 		                            className: `p5-apikey-status ${settings.voice.endpoint.apiKeySet ? "is-set" : "is-unset"}`,
@@ -7524,8 +9002,8 @@ window.__ModuleLoader__.load({
 		                          }
 		                        )
 		                      ] }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-input-inline-row", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-input-inline-row", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "input",
 		                          {
 		                            id: "voice-apikey-input",
@@ -7538,7 +9016,7 @@ window.__ModuleLoader__.load({
 		                            autoComplete: "off"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -7558,7 +9036,7 @@ window.__ModuleLoader__.load({
 		                            children: "\u4FDD\u5B58"
 		                          }
 		                        ),
-		                        settings.voice.endpoint.apiKeySet && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                        settings.voice.endpoint.apiKeySet && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -7579,11 +9057,11 @@ window.__ModuleLoader__.load({
 		                ] })
 		              ] })
 		            ] }),
-		            activeTab === "pond" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-pond", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-sys-panel-head", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "\u5DE5\u4F5C\u6587\u4EF6\u5939" }) }),
-		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-form", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		            activeTab === "pond" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-pond", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-sys-panel-head", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { children: "\u5DE5\u4F5C\u6587\u4EF6\u5939" }) }),
+		              /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-sys-form", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "label",
 		                    {
 		                      className: "p5-form-label",
@@ -7591,8 +9069,8 @@ window.__ModuleLoader__.load({
 		                      children: "\u5F53\u524D\u6587\u4EF6\u5939\u8DEF\u5F84"
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-input-inline-row", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-input-inline-row", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                      "input",
 		                      {
 		                        id: "pond-project-dir-input",
@@ -7607,7 +9085,7 @@ window.__ModuleLoader__.load({
 		                        placeholder: "/Users/\u4F60\u7684\u540D\u5B57/\u9879\u76EE\u6587\u4EF6\u5939"
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -7654,7 +9132,7 @@ window.__ModuleLoader__.load({
 		                        children: "\u{1F4C1} \u9009\u62E9\u6587\u4EF6\u5939"
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -7671,7 +9149,7 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  dirPickError && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                  dirPickError && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "p",
 		                    {
 		                      className: "p5-pond-dir-error",
@@ -7681,7 +9159,7 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                onStartNewSessionWithDir && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-form-group", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                onStartNewSessionWithDir && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-form-group", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -7696,16 +9174,16 @@ window.__ModuleLoader__.load({
 		                    children: "\u2605 \u8FDB\u5165\u8BE5\u6587\u4EF6\u5939\u5E76\u5F00\u59CB\u65B0\u5BF9\u8BDD"
 		                  }
 		                ) }),
-		                settings.recentProjects.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "p5-form-label", children: "\u6700\u8FD1\u6253\u5F00\u7684\u6587\u4EF6\u5939" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                settings.recentProjects.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-form-label", children: "\u6700\u8FD1\u6253\u5F00\u7684\u6587\u4EF6\u5939" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                    "div",
 		                    {
 		                      className: "p5-recent-projects-list",
 		                      "data-testid": "pond-recent-list",
-		                      children: settings.recentProjects.map((dir) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-recent-project-item", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("code", { className: "p5-recent-path", children: dir }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-recent-actions", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                      children: settings.recentProjects.map((dir) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-recent-project-item", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("code", { className: "p5-recent-path", children: dir }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-recent-actions", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -7727,30 +9205,30 @@ window.__ModuleLoader__.load({
 		                ] })
 		              ] })
 		            ] }),
-		            activeTab === "performance" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		            activeTab === "performance" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		              "div",
 		              {
 		                className: "p5-sys-panel",
 		                "data-testid": "system-panel-performance",
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-sys-panel-head", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "\u5BF9\u8BDD\u663E\u793A\u901F\u5EA6" }) }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-sys-form", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-form-group", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-sys-panel-head", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { children: "\u5BF9\u8BDD\u663E\u793A\u901F\u5EA6" }) }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-sys-form", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-form-group", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
 		                      "label",
 		                      {
 		                        className: "p5-form-label",
 		                        htmlFor: "perf-typing-speed-input",
 		                        children: [
 		                          "\u53F0\u8BCD\u9010\u5B57\u663E\u793A\u901F\u5EA6\uFF1A",
-		                          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("strong", { "data-testid": "perf-current-speed-val", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("strong", { "data-testid": "perf-current-speed-val", children: [
 		                            settings.performance.typingCharsPerSec,
 		                            " \u5B57/\u79D2"
 		                          ] })
 		                        ]
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-input-inline-row", children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-input-inline-row", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
 		                        "input",
 		                        {
 		                          id: "perf-typing-speed-input",
@@ -7770,7 +9248,7 @@ window.__ModuleLoader__.load({
 		                          }
 		                        }
 		                      ),
-		                      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("span", { className: "p5-range-val", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("span", { className: "p5-range-val", children: [
 		                        typingSpeedDraft,
 		                        " \u5B57/\u79D2"
 		                      ] })
@@ -7787,8 +9265,8 @@ window.__ModuleLoader__.load({
 		};
 		
 		// src/stage/components/SwitchTransition.tsx
-		var import_react10 = require("react");
-		var import_jsx_runtime12 = require("react/jsx-runtime");
+		var import_react11 = require("react");
+		var import_jsx_runtime13 = require("react/jsx-runtime");
 		var WIPE_DURATION_MS = 620;
 		var WIPE_REDUCED_DURATION_MS = 180;
 		function prefersReducedMotionNow() {
@@ -7805,12 +9283,12 @@ window.__ModuleLoader__.load({
 		  accentColor,
 		  portraitUrl
 		}) => {
-		  const hasMountedRef = (0, import_react10.useRef)(false);
-		  const prevSwitchKeyRef = (0, import_react10.useRef)(characterSwitchKey);
-		  const prevCharIdRef = (0, import_react10.useRef)(characterId);
-		  const timerRef = (0, import_react10.useRef)(null);
-		  const [activeWipe, setActiveWipe] = (0, import_react10.useState)(null);
-		  (0, import_react10.useEffect)(() => {
+		  const hasMountedRef = (0, import_react11.useRef)(false);
+		  const prevSwitchKeyRef = (0, import_react11.useRef)(characterSwitchKey);
+		  const prevCharIdRef = (0, import_react11.useRef)(characterId);
+		  const timerRef = (0, import_react11.useRef)(null);
+		  const [activeWipe, setActiveWipe] = (0, import_react11.useState)(null);
+		  (0, import_react11.useEffect)(() => {
 		    if (!hasMountedRef.current) {
 		      hasMountedRef.current = true;
 		      prevSwitchKeyRef.current = characterSwitchKey;
@@ -7857,7 +9335,7 @@ window.__ModuleLoader__.load({
 		    accentColor,
 		    portraitUrl
 		  ]);
-		  (0, import_react10.useEffect)(() => {
+		  (0, import_react11.useEffect)(() => {
 		    return () => {
 		      if (timerRef.current !== null) {
 		        window.clearTimeout(timerRef.current);
@@ -7869,7 +9347,7 @@ window.__ModuleLoader__.load({
 		    "--wipe-theme-color": activeWipe.themeColor,
 		    "--wipe-accent-color": activeWipe.accentColor
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
 		    "div",
 		    {
 		      className: `p5-switch-wipe ${activeWipe.reducedMotion ? "is-reduced-motion" : ""}`,
@@ -7878,13 +9356,13 @@ window.__ModuleLoader__.load({
 		      "data-character-id": activeWipe.characterId,
 		      "aria-hidden": "true",
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-backdrop" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-blade p5-switch-wipe-blade--top" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-blade p5-switch-wipe-blade--main" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-blade p5-switch-wipe-blade--bottom" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-speedlines" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-switch-wipe-card", children: [
-		          activeWipe.portraitUrl && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-avatar-box", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-backdrop" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-blade p5-switch-wipe-blade--top" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-blade p5-switch-wipe-blade--main" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-blade p5-switch-wipe-blade--bottom" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-speedlines" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-switch-wipe-card", children: [
+		          activeWipe.portraitUrl && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-avatar-box", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		            "img",
 		            {
 		              src: activeWipe.portraitUrl,
@@ -7892,9 +9370,9 @@ window.__ModuleLoader__.load({
 		              className: "p5-switch-wipe-avatar"
 		            }
 		          ) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "p5-switch-wipe-copy", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-switch-wipe-kicker", children: "PARTY SWITCH // \u9C7C\u5858\u6362\u4EBA\u5165\u573A" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-switch-wipe-copy", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-switch-wipe-kicker", children: "PARTY SWITCH // \u9C7C\u5858\u6362\u4EBA\u5165\u573A" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		              "div",
 		              {
 		                className: "p5-switch-wipe-codename",
@@ -7902,8 +9380,8 @@ window.__ModuleLoader__.load({
 		                children: activeWipe.codename
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-name", "data-testid": "switch-wipe-name", children: activeWipe.fullName }),
-		            activeWipe.tagline && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "p5-switch-wipe-tagline", children: activeWipe.tagline })
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-name", "data-testid": "switch-wipe-name", children: activeWipe.fullName }),
+		            activeWipe.tagline && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-switch-wipe-tagline", children: activeWipe.tagline })
 		          ] })
 		        ] })
 		      ]
@@ -7912,13 +9390,13 @@ window.__ModuleLoader__.load({
 		  );
 		};
 		var SfxMuteButton = () => {
-		  const [muted, setMuted] = (0, import_react10.useState)(isSfxMuted);
-		  (0, import_react10.useEffect)(() => {
+		  const [muted, setMuted] = (0, import_react11.useState)(isSfxMuted);
+		  (0, import_react11.useEffect)(() => {
 		    return subscribeSfxMuted((next) => {
 		      setMuted(next);
 		    });
 		  }, []);
-		  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
 		    "button",
 		    {
 		      type: "button",
@@ -7932,7 +9410,7 @@ window.__ModuleLoader__.load({
 		        toggleSfxMuted();
 		      },
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
 		          "svg",
 		          {
 		            className: "p5-hud-mute-icon",
@@ -7941,14 +9419,14 @@ window.__ModuleLoader__.load({
 		            height: "13",
 		            "aria-hidden": "true",
 		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		                "path",
 		                {
 		                  d: "M2 6h3l4-3.5v11L5 10H2V6z",
 		                  fill: "currentColor"
 		                }
 		              ),
-		              muted ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		              muted ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		                "path",
 		                {
 		                  d: "M11 5.5l3.5 5M14.5 5.5l-3.5 5",
@@ -7956,8 +9434,8 @@ window.__ModuleLoader__.load({
 		                  strokeWidth: "1.8",
 		                  strokeLinecap: "round"
 		                }
-		              ) : /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		              ) : /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		                  "path",
 		                  {
 		                    d: "M11.2 5.2a4.2 4.2 0 0 1 0 5.6",
@@ -7967,7 +9445,7 @@ window.__ModuleLoader__.load({
 		                    strokeLinecap: "round"
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		                  "path",
 		                  {
 		                    d: "M13.2 3.5a6.8 6.8 0 0 1 0 9",
@@ -7981,20 +9459,20 @@ window.__ModuleLoader__.load({
 		            ]
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "p5-hud-mute-label", children: muted ? "MUTE" : "SFX" })
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-hud-mute-label", children: muted ? "MUTE" : "SFX" })
 		      ]
 		    }
 		  );
 		};
 		
 		// src/stage/components/P5Cutins.tsx
-		var import_react11 = require("react");
-		var import_jsx_runtime13 = require("react/jsx-runtime");
+		var import_react12 = require("react");
+		var import_jsx_runtime14 = require("react/jsx-runtime");
 		var AllOutFinishOverlay = ({
 		  data,
 		  onDismiss
 		}) => {
-		  (0, import_react11.useEffect)(() => {
+		  (0, import_react12.useEffect)(() => {
 		    if (!data) return;
 		    const timer = window.setTimeout(() => {
 		      onDismiss();
@@ -8009,7 +9487,7 @@ window.__ModuleLoader__.load({
 		  ) : `/characters/${data.characterId}/art/happy.png`;
 		  const artSrc = happySprite || `/characters/${data.characterId}/art/idle.png`;
 		  const shortName = data.characterName.split("\uFF08")[0] || data.characterName;
-		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
 		    "div",
 		    {
 		      className: "p5-allout-overlay",
@@ -8018,7 +9496,7 @@ window.__ModuleLoader__.load({
 		      "aria-label": "\u4EFB\u52A1\u7ED3\u7B97\u6F14\u51FA",
 		      onClick: onDismiss,
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
 		          "svg",
 		          {
 		            className: "p5-allout-shatter-svg",
@@ -8026,8 +9504,8 @@ window.__ModuleLoader__.load({
 		            preserveAspectRatio: "none",
 		            "aria-hidden": "true",
 		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("polygon", { points: "0,0 640,0 420,900 0,900", fill: "#07070c", opacity: "0.62" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("polygon", { points: "0,0 640,0 420,900 0,900", fill: "#07070c", opacity: "0.62" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		                "polygon",
 		                {
 		                  points: "520,0 760,0 1600,320 1600,520 620,460",
@@ -8035,7 +9513,7 @@ window.__ModuleLoader__.load({
 		                  opacity: "0.72"
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		                "polygon",
 		                {
 		                  points: "480,450 1600,140 1600,220 530,480",
@@ -8043,7 +9521,7 @@ window.__ModuleLoader__.load({
 		                  opacity: "0.92"
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		                "polygon",
 		                {
 		                  points: "410,610 1600,560 1600,900 680,900",
@@ -8051,7 +9529,7 @@ window.__ModuleLoader__.load({
 		                  opacity: "0.82"
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		                "polygon",
 		                {
 		                  points: "360,590 1600,525 1600,552 380,612",
@@ -8062,10 +9540,10 @@ window.__ModuleLoader__.load({
 		            ]
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-halftone", "aria-hidden": "true" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-allout-stage", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-allout-portrait-zone", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-allout-halftone", "aria-hidden": "true" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-allout-stage", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-allout-portrait-zone", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		              "img",
 		              {
 		                src: artSrc,
@@ -8074,7 +9552,7 @@ window.__ModuleLoader__.load({
 		                className: "p5-allout-portrait-silhouette"
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		              "img",
 		              {
 		                src: artSrc,
@@ -8083,36 +9561,36 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-allout-copy-zone", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-allout-kicker", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-allout-copy-zone", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "p5-allout-kicker", children: [
 		              "STAGE CLEAR // ",
 		              shortName,
 		              " \xB7 \u4EFB\u52A1\u51B3\u80DC\u7ED3\u7B97"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-headline-en", children: "MISSION ACCOMPLISHED" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-headline-zh", children: "STAGE CLEAR // \u534E\u4E3D\u6536\u5DE5" }),
-		            data.summaryText && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-summary-strip", children: data.summaryText }),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-allout-stats-row", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-allout-stat-pill", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-allout-headline-en", children: "MISSION ACCOMPLISHED" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-allout-headline-zh", children: "STAGE CLEAR // \u534E\u4E3D\u6536\u5DE5" }),
+		            data.summaryText && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-allout-summary-strip", children: data.summaryText }),
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-allout-stats-row", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "p5-allout-stat-pill", children: [
 		                "\u23F1 \u8017\u65F6 ",
 		                data.durationSec,
 		                "s"
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-allout-stat-pill", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "p5-allout-stat-pill", children: [
 		                "\u{1F4C1} \u89E6\u53CA ",
 		                data.filesCount,
 		                " \u4E2A\u6587\u4EF6"
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-allout-stat-pill", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "p5-allout-stat-pill", children: [
 		                "\u26A1",
 		                " ",
-		                /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "stat-add", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "stat-add", children: [
 		                  "+",
 		                  data.added
 		                ] }),
 		                " /",
 		                " ",
-		                /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "stat-del", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "stat-del", children: [
 		                  "\u2212",
 		                  data.removed
 		                ] }),
@@ -8122,8 +9600,8 @@ window.__ModuleLoader__.load({
 		            ] })
 		          ] })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-seal", "aria-hidden": "true", children: "\u2605 BIGFISH CLEAR!" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-dismiss-hint", children: "\u70B9\u51FB\u5C4F\u5E55\u4EFB\u610F\u5904\u6216\u6309 ESC \u7ACB\u5373\u5173\u95ED" })
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-allout-seal", "aria-hidden": "true", children: "\u2605 BIGFISH CLEAR!" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-allout-dismiss-hint", children: "\u70B9\u51FB\u5C4F\u5E55\u4EFB\u610F\u5904\u6216\u6309 ESC \u7ACB\u5373\u5173\u95ED" })
 		      ]
 		    },
 		    `allout_${data.key}`
@@ -8143,13 +9621,13 @@ window.__ModuleLoader__.load({
 		  onConfirm
 		}) => {
 		  const teammates = characters.filter((c) => c.id !== activeCharacterId);
-		  const [selectedId, setSelectedId] = (0, import_react11.useState)(
+		  const [selectedId, setSelectedId] = (0, import_react12.useState)(
 		    teammates[0]?.id ?? "claude-opus-5-5"
 		  );
-		  const [instruction, setInstruction] = (0, import_react11.useState)(
+		  const [instruction, setInstruction] = (0, import_react12.useState)(
 		    BATON_PRESET_INSTRUCTIONS[0]
 		  );
-		  (0, import_react11.useEffect)(() => {
+		  (0, import_react12.useEffect)(() => {
 		    if (!open) return;
 		    const first = characters.find((c) => c.id !== activeCharacterId);
 		    if (first) {
@@ -8163,7 +9641,7 @@ window.__ModuleLoader__.load({
 		    if (!selectedId) return;
 		    onConfirm(selectedId, instruction.trim());
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		    "div",
 		    {
 		      className: "p5-modal-backdrop",
@@ -8172,17 +9650,17 @@ window.__ModuleLoader__.load({
 		      "aria-modal": "true",
 		      "aria-label": "\u89D2\u8272\u6362\u624B\u63A5\u529B\u9009\u62E9",
 		      onClick: onClose,
-		      children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-modal", onClick: (e) => e.stopPropagation(), children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("header", { className: "p5-baton-header", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-baton-kicker", children: "AGENT RELAY // \u6362\u624B\u63A5\u529B" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("h2", { className: "p5-baton-title", children: [
+		      children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-modal", onClick: (e) => e.stopPropagation(), children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("header", { className: "p5-baton-header", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "p5-baton-kicker", children: "AGENT RELAY // \u6362\u624B\u63A5\u529B" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("h2", { className: "p5-baton-title", children: [
 		              "\u4ECE\u300C",
 		              fromShortName,
 		              "\u300D\u51FB\u638C\u4EA4\u63A5\u7ED9\u54EA\u4F4D\u961F\u53CB\uFF1F"
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -8193,8 +9671,8 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("form", { className: "p5-baton-body", onSubmit: handleSubmit, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-grid", children: teammates.map((mate) => {
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("form", { className: "p5-baton-body", onSubmit: handleSubmit, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-baton-grid", children: teammates.map((mate) => {
 		            const isSelected = mate.id === selectedId;
 		            const roleMeta = CHARACTER_ROLE_META[mate.id] ?? {
 		              shortTitle: mate.name.split("\uFF08")[0],
@@ -8203,7 +9681,7 @@ window.__ModuleLoader__.load({
 		            };
 		            const brainModel = settings.characterBrains?.[mate.id]?.model || settings.worker.model;
 		            const avatarSrc = mate.portraitUrl || `/characters/${mate.id}/art/portrait.png`;
-		            return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+		            return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
 		              "button",
 		              {
 		                type: "button",
@@ -8218,8 +9696,8 @@ window.__ModuleLoader__.load({
 		                  setSelectedId(mate.id);
 		                },
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-card-top", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-card-top", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		                      "img",
 		                      {
 		                        src: avatarSrc,
@@ -8227,13 +9705,13 @@ window.__ModuleLoader__.load({
 		                        className: "p5-baton-avatar"
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-baton-role-tag", children: roleMeta.specialtyTag }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-char-name", children: roleMeta.shortTitle })
+		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "p5-baton-role-tag", children: roleMeta.specialtyTag }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-baton-char-name", children: roleMeta.shortTitle })
 		                    ] })
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "p5-baton-desc", children: roleMeta.specialtyDesc }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-baton-brain-pill", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "p5-baton-desc", children: roleMeta.specialtyDesc }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "p5-baton-brain-pill", children: [
 		                    "\u72EC\u7ACB\u5927\u8111\uFF1A",
 		                    brainModel
 		                  ] })
@@ -8242,9 +9720,9 @@ window.__ModuleLoader__.load({
 		              mate.id
 		            );
 		          }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-presets", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-baton-preset-label", children: "\u5FEB\u6377\u4EA4\u63A5\u6307\u4EE4\uFF1A" }),
-		            BATON_PRESET_INSTRUCTIONS.map((preset) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-presets", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "p5-baton-preset-label", children: "\u5FEB\u6377\u4EA4\u63A5\u6307\u4EE4\uFF1A" }),
+		            BATON_PRESET_INSTRUCTIONS.map((preset) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -8255,8 +9733,8 @@ window.__ModuleLoader__.load({
 		              preset
 		            ))
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-input-row", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-input-row", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		              "input",
 		              {
 		                type: "text",
@@ -8267,7 +9745,7 @@ window.__ModuleLoader__.load({
 		                placeholder: "\u53EF\u9009\uFF1A\u8865\u5145\u4E00\u53E5\u4EA4\u63A5\u53EE\u5631\uFF08\u5C06\u8FDE\u540C\u672C\u8F6E\u6458\u8981\u4E0E\u4EE3\u7801 Diff \u4E00\u8D77\u4F20\u9012\u7ED9\u5979\uFF09\u2026"
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		              "button",
 		              {
 		                type: "submit",
@@ -8283,7 +9761,7 @@ window.__ModuleLoader__.load({
 		  );
 		};
 		var BatonPassCutin = ({ data, onDismiss }) => {
-		  (0, import_react11.useEffect)(() => {
+		  (0, import_react12.useEffect)(() => {
 		    if (!data) return;
 		    const timer = window.setTimeout(() => {
 		      onDismiss();
@@ -8296,7 +9774,7 @@ window.__ModuleLoader__.load({
 		  const fromName = fromPack.name.split("\uFF08")[0];
 		  const toName = toPack.name.split("\uFF08")[0];
 		  const toRole = CHARACTER_ROLE_META[data.toCharacterId]?.specialtyTag ?? "\u63A5\u529B\u767B\u573A";
-		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		    "div",
 		    {
 		      className: "p5-baton-cutin",
@@ -8305,10 +9783,10 @@ window.__ModuleLoader__.load({
 		        "--baton-to-color": toPack.themeColor
 		      },
 		      onClick: onDismiss,
-		      children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-cutin-slash", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-relay-row", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-fighter", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		      children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-cutin-slash", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-relay-row", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-fighter", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		              "img",
 		              {
 		                src: `/characters/${data.fromCharacterId}/art/portrait.png`,
@@ -8316,14 +9794,14 @@ window.__ModuleLoader__.load({
 		                className: "p5-baton-fighter-img"
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-fighter-meta", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-baton-fighter-tag", children: "HANDOFF FROM // \u4EA4\u68D2" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("strong", { className: "p5-baton-fighter-name", children: fromName })
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-fighter-meta", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "p5-baton-fighter-tag", children: "HANDOFF FROM // \u4EA4\u68D2" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("strong", { className: "p5-baton-fighter-name", children: fromName })
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-lightning-hub", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-lightning-bolt", children: "\u26A1 AGENT RELAY // \u6362\u624B\u63A5\u529B! \u2605" }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-fighter is-to", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-baton-lightning-hub", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-baton-lightning-bolt", children: "\u26A1 AGENT RELAY // \u6362\u624B\u63A5\u529B! \u2605" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-fighter is-to", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		              "img",
 		              {
 		                src: `/characters/${data.toCharacterId}/art/portrait.png`,
@@ -8331,23 +9809,23 @@ window.__ModuleLoader__.load({
 		                className: "p5-baton-fighter-img"
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-fighter-meta", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-baton-fighter-tag", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-baton-fighter-meta", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "p5-baton-fighter-tag", children: [
 		                "RELAY TO // ",
 		                toRole
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("strong", { className: "p5-baton-fighter-name", children: toName })
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("strong", { className: "p5-baton-fighter-name", children: toName })
 		            ] })
 		          ] })
 		        ] }),
-		        data.summary && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-summary-bar", children: data.summary })
+		        data.summary && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-baton-summary-bar", children: data.summary })
 		      ] })
 		    },
 		    `baton_cutin_${data.key}`
 		  );
 		};
 		var NavigatorCutin = ({ data, onDismiss }) => {
-		  (0, import_react11.useEffect)(() => {
+		  (0, import_react12.useEffect)(() => {
 		    if (!data) return;
 		    const timer = window.setTimeout(() => {
 		      onDismiss();
@@ -8358,7 +9836,7 @@ window.__ModuleLoader__.load({
 		  const pack = getCachedCharacterPack(data.characterId);
 		  const shortName = pack.name.split("\uFF08")[0] || pack.name;
 		  const portraitSrc = resolveCharacterAssetUrl(data.characterId, pack.art.portrait) || `/characters/${data.characterId}/art/portrait.png`;
-		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
 		    "aside",
 		    {
 		      className: "p5-navi-cutin",
@@ -8369,16 +9847,16 @@ window.__ModuleLoader__.load({
 		      onClick: onDismiss,
 		      title: "\u70B9\u51FB\u5173\u95ED\u573A\u5916\u652F\u63F4\u63D0\u793A",
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-navi-callout", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-navi-callout-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-navi-badge", children: "NAVI // \u573A\u5916\u652F\u63F4" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("strong", { className: "p5-navi-speaker", children: shortName })
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-navi-callout", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-navi-callout-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "p5-navi-badge", children: "NAVI // \u573A\u5916\u652F\u63F4" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("strong", { className: "p5-navi-speaker", children: shortName })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-navi-text", children: data.text })
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-navi-text", children: data.text })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-navi-diamond-wrap", "aria-hidden": "true", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-navi-diamond-ring" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-navi-diamond-frame", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-navi-diamond-wrap", "aria-hidden": "true", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-navi-diamond-ring" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-navi-diamond-frame", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		            "img",
 		            {
 		              src: portraitSrc,
@@ -8394,8 +9872,8 @@ window.__ModuleLoader__.load({
 		};
 		
 		// src/stage/components/OnboardingCard.tsx
-		var import_react12 = require("react");
-		var import_jsx_runtime14 = require("react/jsx-runtime");
+		var import_react13 = require("react");
+		var import_jsx_runtime15 = require("react/jsx-runtime");
 		function isAbsoluteProjectPath(value) {
 		  const trimmed = value.trim();
 		  if (!trimmed || trimmed.startsWith("~")) return false;
@@ -8409,10 +9887,10 @@ window.__ModuleLoader__.load({
 		  onOpenSystemMenu,
 		  onDismissError
 		}) => {
-		  const [dirDraft, setDirDraft] = (0, import_react12.useState)(settings.projectDir ?? "");
-		  const [localError, setLocalError] = (0, import_react12.useState)(null);
-		  const [browsing, setBrowsing] = (0, import_react12.useState)(false);
-		  (0, import_react12.useEffect)(() => {
+		  const [dirDraft, setDirDraft] = (0, import_react13.useState)(settings.projectDir ?? "");
+		  const [localError, setLocalError] = (0, import_react13.useState)(null);
+		  const [browsing, setBrowsing] = (0, import_react13.useState)(false);
+		  (0, import_react13.useEffect)(() => {
 		    fetch("/api/default-directory").then((r) => r.json()).then((data) => {
 		      if (data?.ok && data.cwd) {
 		        setDirDraft((current) => current || settings.projectDir || data.cwd);
@@ -8467,7 +9945,7 @@ window.__ModuleLoader__.load({
 		    }
 		    onStartWithDir(trimmed);
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
 		    "div",
 		    {
 		      className: "p5-onboard-card",
@@ -8475,13 +9953,13 @@ window.__ModuleLoader__.load({
 		      role: "region",
 		      "aria-label": "\u9009\u62E9\u5DE5\u4F5C\u6587\u4EF6\u5939",
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-onboard-ribbon", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-onboard-ribbon-left", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("strong", { className: "p5-onboard-title", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-onboard-ribbon", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-onboard-ribbon-left", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("strong", { className: "p5-onboard-title", children: [
 		            "\u5148\u9009\u62E9\u4E00\u4E2A\u5DE5\u4F5C\u6587\u4EF6\u5939\uFF0C\u8BA9",
 		            shortName,
 		            "\u5F00\u59CB\u5E2E\u4F60\u5E72\u6D3B"
 		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -8492,10 +9970,10 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-onboard-body", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("form", { className: "p5-onboard-form", onSubmit: handleSubmit, children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "p5-onboard-input-row", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-onboard-body", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("form", { className: "p5-onboard-form", onSubmit: handleSubmit, children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-onboard-input-row", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		                "input",
 		                {
 		                  type: "text",
@@ -8510,7 +9988,7 @@ window.__ModuleLoader__.load({
 		                  autoComplete: "off"
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		                "button",
 		                {
 		                  type: "button",
@@ -8521,7 +9999,7 @@ window.__ModuleLoader__.load({
 		                  children: browsing ? "\u6253\u5F00\u4E2D\u2026" : "\u{1F4C1} \u9009\u62E9\u6587\u4EF6\u5939"
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		                "button",
 		                {
 		                  type: "submit",
@@ -8532,7 +10010,7 @@ window.__ModuleLoader__.load({
 		                }
 		              )
 		            ] }),
-		            localError && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		            localError && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		              "div",
 		              {
 		                className: "p5-onboard-error-msg",
@@ -8542,14 +10020,14 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          settings.recentProjects.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		          settings.recentProjects.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
 		            "div",
 		            {
 		              className: "p5-onboard-recent",
 		              "data-testid": "onboarding-recent-section",
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "p5-onboard-recent-label", children: "\u6700\u8FD1\u6253\u5F00\u7684\u6587\u4EF6\u5939\uFF1A" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "p5-onboard-recent-chips", children: settings.recentProjects.map((dir) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-onboard-recent-label", children: "\u6700\u8FD1\u6253\u5F00\u7684\u6587\u4EF6\u5939\uFF1A" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-onboard-recent-chips", children: settings.recentProjects.map((dir) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -8573,7 +10051,7 @@ window.__ModuleLoader__.load({
 		};
 		
 		// src/stage/StageApp.tsx
-		var import_jsx_runtime15 = require("react/jsx-runtime");
+		var import_jsx_runtime16 = require("react/jsx-runtime");
 		var HUD_STATUS_TEXT = {
 		  idle: { zh: "\u5F85\u673A", en: "STANDBY", gauge: 38 },
 		  thinking: { zh: "\u601D\u8003\u4E2D", en: "THINKING", gauge: 72 },
@@ -8631,11 +10109,11 @@ window.__ModuleLoader__.load({
 		    if (!seg) return;
 		    if (seg.startsWith("`") && seg.endsWith("`") && seg.length > 2) {
 		      parts.push(
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("code", { className: "p5-md-code", children: seg.slice(1, -1) }, `${keyPrefix}-code-${idx}`)
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("code", { className: "p5-md-code", children: seg.slice(1, -1) }, `${keyPrefix}-code-${idx}`)
 		      );
 		    } else if (seg.startsWith("**") && seg.endsWith("**") && seg.length > 4) {
 		      parts.push(
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("strong", { className: "p5-md-bold", children: seg.slice(2, -2) }, `${keyPrefix}-bold-${idx}`)
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("strong", { className: "p5-md-bold", children: seg.slice(2, -2) }, `${keyPrefix}-bold-${idx}`)
 		      );
 		    } else {
 		      parts.push(seg);
@@ -8657,14 +10135,14 @@ window.__ModuleLoader__.load({
 		    const flushList = () => {
 		      if (listBuffer.length === 0) return;
 		      blocks.push(
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("ul", { className: "p5-md-list", children: listBuffer.map((item) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("li", { children: item.content }, item.key)) }, `${segKey}-ul-${blockIdx++}`)
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("ul", { className: "p5-md-list", children: listBuffer.map((item) => /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("li", { children: item.content }, item.key)) }, `${segKey}-ul-${blockIdx++}`)
 		      );
 		      listBuffer = [];
 		    };
 		    const flushPara = () => {
 		      if (paraBuffer.length === 0) return;
 		      blocks.push(
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-md-para", children: paraBuffer }, `${segKey}-p-${blockIdx++}`)
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-md-para", children: paraBuffer }, `${segKey}-p-${blockIdx++}`)
 		      );
 		      paraBuffer = [];
 		    };
@@ -8689,9 +10167,9 @@ window.__ModuleLoader__.load({
 		      }
 		      flushList();
 		      const headingMatch = trimmed.match(/^#{1,4}\s+(.*)$/);
-		      const inlineNode = headingMatch ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("strong", { className: "p5-md-heading", children: renderInlineMarkdown(headingMatch[1], `${segKey}-h-${lineIdx}`) }, `${segKey}-h-${lineIdx}`) : renderInlineMarkdown(rawLine, `${segKey}-ln-${lineIdx}`);
+		      const inlineNode = headingMatch ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("strong", { className: "p5-md-heading", children: renderInlineMarkdown(headingMatch[1], `${segKey}-h-${lineIdx}`) }, `${segKey}-h-${lineIdx}`) : renderInlineMarkdown(rawLine, `${segKey}-ln-${lineIdx}`);
 		      if (paraBuffer.length > 0) {
-		        paraBuffer.push(/* @__PURE__ */ (0, import_jsx_runtime15.jsx)("br", {}, `${segKey}-br-${lineIdx}`));
+		        paraBuffer.push(/* @__PURE__ */ (0, import_jsx_runtime16.jsx)("br", {}, `${segKey}-br-${lineIdx}`));
 		      }
 		      paraBuffer.push(inlineNode);
 		    });
@@ -8708,12 +10186,12 @@ window.__ModuleLoader__.load({
 		      const isLangToken = /^[a-zA-Z0-9_-]{1,20}$/.test(firstLine);
 		      const codeBody = (newlineIdx >= 0 && isLangToken ? inner.slice(newlineIdx + 1) : inner).replace(/\n$/, "");
 		      blocks.push(
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          "pre",
 		          {
 		            className: "p5-md-pre",
 		            "data-lang": isLangToken ? firstLine : void 0,
-		            children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("code", { children: codeBody })
+		            children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("code", { children: codeBody })
 		          },
 		          `pre-${blockIdx++}`
 		        )
@@ -8738,32 +10216,39 @@ window.__ModuleLoader__.load({
 		  embeddedInDsh = false,
 		  sessionKey
 		}) => {
-		  const [sourceMode] = (0, import_react13.useState)(
+		  const [sourceMode] = (0, import_react14.useState)(
 		    () => externalSource ? externalSource.mode : detectSourceMode()
 		  );
-		  const [state, dispatch] = (0, import_react13.useReducer)(
+		  const [state, dispatch] = (0, import_react14.useReducer)(
 		    stageReducer,
 		    DEFAULT_CHARACTER_ID,
 		    createInitialStageState
 		  );
-		  const [, setPackVersion] = (0, import_react13.useState)(0);
-		  (0, import_react13.useEffect)(() => {
+		  const [packVersion, setPackVersion] = (0, import_react14.useState)(0);
+		  (0, import_react14.useEffect)(() => {
 		    void preloadCharacterPacks();
 		    return subscribeCharacterPacks(() => {
 		      setPackVersion((v) => v + 1);
 		    });
 		  }, []);
-		  const [connStatus, setConnStatus] = (0, import_react13.useState)({
+		  const effectiveCharacters = mergeWithDiyCharacterSummaries(state.characters);
+		  (0, import_react14.useEffect)(() => {
+		    if (isDiyHydrated() && isCustomCharacterId(state.characterId) && !getAllCharacterIds().includes(state.characterId)) {
+		      dispatch({ type: "SET_CHARACTER", characterId: DEFAULT_CHARACTER_ID });
+		      sourceRef.current?.switchCharacter(DEFAULT_CHARACTER_ID);
+		    }
+		  }, [packVersion, state.characterId]);
+		  const [connStatus, setConnStatus] = (0, import_react14.useState)({
 		    state: externalSource || sourceMode === "demo" ? "connected" : "connecting",
 		    attempt: 0,
 		    hasEverConnected: Boolean(externalSource) || sourceMode === "demo"
 		  });
-		  const [inputValue, setInputValue] = (0, import_react13.useState)(
+		  const [inputValue, setInputValue] = (0, import_react14.useState)(
 		    sourceMode === "demo" ? DEFAULT_FIRST_USER_PROMPT : ""
 		  );
-		  const [pendingImages, setPendingImages] = (0, import_react13.useState)([]);
-		  const [imageError, setImageError] = (0, import_react13.useState)(null);
-		  const imagePickerRef = (0, import_react13.useRef)(null);
+		  const [pendingImages, setPendingImages] = (0, import_react14.useState)([]);
+		  const [imageError, setImageError] = (0, import_react14.useState)(null);
+		  const imagePickerRef = (0, import_react14.useRef)(null);
 		  const addImageFiles = (files) => {
 		    const accepted = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 		    for (const file of Array.from(files)) {
@@ -8796,19 +10281,19 @@ window.__ModuleLoader__.load({
 		      reader.readAsDataURL(file);
 		    }
 		  };
-		  const [typedLength, setTypedLength] = (0, import_react13.useState)(0);
-		  const [fadeReplaceKey, setFadeReplaceKey] = (0, import_react13.useState)(0);
-		  const dialogueBoxRef = (0, import_react13.useRef)(null);
-		  const dialogueTextRef = (0, import_react13.useRef)(null);
-		  const scrollDragRef = (0, import_react13.useRef)(null);
-		  const [dlgSize, setDlgSize] = (0, import_react13.useState)({ w: 820, h: 190 });
-		  const [dlgScroll, setDlgScroll] = (0, import_react13.useState)({ canScroll: false, ratio: 0, thumbFrac: 1 });
-		  const [inlinePreviewId, setInlinePreviewId] = (0, import_react13.useState)(null);
-		  const [stageModelPickerOpen, setStageModelPickerOpen] = (0, import_react13.useState)(false);
-		  const [stageModelQuery, setStageModelQuery] = (0, import_react13.useState)("");
-		  const stageModelPopoverRef = (0, import_react13.useRef)(null);
-		  const [, setReasoningTick] = (0, import_react13.useState)(0);
-		  (0, import_react13.useEffect)(() => {
+		  const [typedLength, setTypedLength] = (0, import_react14.useState)(0);
+		  const [fadeReplaceKey, setFadeReplaceKey] = (0, import_react14.useState)(0);
+		  const dialogueBoxRef = (0, import_react14.useRef)(null);
+		  const dialogueTextRef = (0, import_react14.useRef)(null);
+		  const scrollDragRef = (0, import_react14.useRef)(null);
+		  const [dlgSize, setDlgSize] = (0, import_react14.useState)({ w: 820, h: 190 });
+		  const [dlgScroll, setDlgScroll] = (0, import_react14.useState)({ canScroll: false, ratio: 0, thumbFrac: 1 });
+		  const [inlinePreviewId, setInlinePreviewId] = (0, import_react14.useState)(null);
+		  const [stageModelPickerOpen, setStageModelPickerOpen] = (0, import_react14.useState)(false);
+		  const [stageModelQuery, setStageModelQuery] = (0, import_react14.useState)("");
+		  const stageModelPopoverRef = (0, import_react14.useRef)(null);
+		  const [, setReasoningTick] = (0, import_react14.useState)(0);
+		  (0, import_react14.useEffect)(() => {
 		    const bridge = window.__BIGFISH_REASONING__;
 		    return bridge?.subscribe ? bridge.subscribe(() => setReasoningTick((v) => v + 1)) : void 0;
 		  }, []);
@@ -8820,27 +10305,27 @@ window.__ModuleLoader__.load({
 		  const imagesAllowed = sourceMode === "demo" || modalityBridge2?.supportsImages?.(activeModelForEffort) === true;
 		  const IMAGE_BLOCKED_MSG = "\u5F53\u524D\u6A21\u578B\u4E0D\u652F\u6301\u56FE\u7247\uFF1A\u8BF7\u5230 \u8BBE\u7F6E \u2192 AI \u5F15\u64CE \u52FE\u9009\u300C\u56FE\u7247\uFF08\u770B\u56FE\uFF09\u300D\uFF0C\u6216\u5207\u6362\u652F\u6301\u56FE\u7247\u7684\u6A21\u578B";
 		  const EFFORT_LABELS = { off: "\u5173", none: "\u5173", minimal: "\u6781\u4F4E", low: "\u4F4E", medium: "\u4E2D", high: "\u9AD8", xhigh: "\u8D85\u9AD8", max: "MAX" };
-		  const [contextTokens, setContextTokens] = (0, import_react13.useState)({ used: 0, max: 1e6 });
-		  const [compactionState, setCompactionState] = (0, import_react13.useState)({
+		  const [contextTokens, setContextTokens] = (0, import_react14.useState)({ used: 0, max: 1e6 });
+		  const [compactionState, setCompactionState] = (0, import_react14.useState)({
 		    activeCutin: false,
 		    turnsCompacted: 10,
 		    freedTokens: 8e4,
 		    summaryText: "\u5DF2\u5C06\u524D 10 \u8F6E\u5386\u53F2\u538B\u7F29\u4E3A\u6458\u8981\u5361\uFF0C\u91CA\u653E 80,000 Tokens\uFF01",
 		    compactedAt: null
 		  });
-		  const [isCompacting, setIsCompacting] = (0, import_react13.useState)(false);
-		  const [batonModalOpen, setBatonModalOpen] = (0, import_react13.useState)(false);
-		  const [allOutFinishData, setAllOutFinishData] = (0, import_react13.useState)(null);
-		  const [batonCutinData, setBatonCutinData] = (0, import_react13.useState)(null);
-		  const [naviCutinData, setNaviCutinData] = (0, import_react13.useState)(null);
-		  const sourceRef = (0, import_react13.useRef)(null);
-		  const inputRef = (0, import_react13.useRef)(null);
-		  const collapseTimersRef = (0, import_react13.useRef)(/* @__PURE__ */ new Map());
-		  const stateRef = (0, import_react13.useRef)(state);
+		  const [isCompacting, setIsCompacting] = (0, import_react14.useState)(false);
+		  const [batonModalOpen, setBatonModalOpen] = (0, import_react14.useState)(false);
+		  const [allOutFinishData, setAllOutFinishData] = (0, import_react14.useState)(null);
+		  const [batonCutinData, setBatonCutinData] = (0, import_react14.useState)(null);
+		  const [naviCutinData, setNaviCutinData] = (0, import_react14.useState)(null);
+		  const sourceRef = (0, import_react14.useRef)(null);
+		  const inputRef = (0, import_react14.useRef)(null);
+		  const collapseTimersRef = (0, import_react14.useRef)(/* @__PURE__ */ new Map());
+		  const stateRef = (0, import_react14.useRef)(state);
 		  stateRef.current = state;
-		  const lastBatonCutinAtRef = (0, import_react13.useRef)(0);
-		  const pendingTouchFallbackRef = (0, import_react13.useRef)(null);
-		  const prevLineTrackRef = (0, import_react13.useRef)({
+		  const lastBatonCutinAtRef = (0, import_react14.useRef)(0);
+		  const pendingTouchFallbackRef = (0, import_react14.useRef)(null);
+		  const prevLineTrackRef = (0, import_react14.useRef)({
 		    lineKey: "",
 		    replaceVersion: 0,
 		    wasTyping: false
@@ -8851,16 +10336,16 @@ window.__ModuleLoader__.load({
 		  const dialogueCharacter = getCachedCharacterPack(
 		    state.currentLine?.characterId ?? state.characterId
 		  );
-		  const dismissAllOutFinish = (0, import_react13.useCallback)(() => {
+		  const dismissAllOutFinish = (0, import_react14.useCallback)(() => {
 		    setAllOutFinishData(null);
 		  }, []);
-		  const dismissBatonCutin = (0, import_react13.useCallback)(() => {
+		  const dismissBatonCutin = (0, import_react14.useCallback)(() => {
 		    setBatonCutinData(null);
 		  }, []);
-		  const dismissNaviCutin = (0, import_react13.useCallback)(() => {
+		  const dismissNaviCutin = (0, import_react14.useCallback)(() => {
 		    setNaviCutinData(null);
 		  }, []);
-		  const syncDialogueScroll = (0, import_react13.useCallback)(() => {
+		  const syncDialogueScroll = (0, import_react14.useCallback)(() => {
 		    const el = dialogueTextRef.current;
 		    if (!el) return;
 		    const maxScroll = el.scrollHeight - el.clientHeight;
@@ -8874,7 +10359,7 @@ window.__ModuleLoader__.load({
 		      return { canScroll, ratio, thumbFrac };
 		    });
 		  }, []);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    const boxEl = dialogueBoxRef.current;
 		    if (!boxEl || typeof ResizeObserver === "undefined") return;
 		    const updateSize = () => {
@@ -8894,10 +10379,10 @@ window.__ModuleLoader__.load({
 		    }
 		    return () => ro.disconnect();
 		  }, [syncDialogueScroll, state.engineeringView, fadeReplaceKey]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    syncDialogueScroll();
 		  }, [typedLength, state.currentLine?.text, syncDialogueScroll]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    const callbacks = {
 		      onServerMessage: (message) => {
 		        if (message.type === "command_error" && message.commandType === "interact_character" && pendingTouchFallbackRef.current) {
@@ -9016,7 +10501,7 @@ window.__ModuleLoader__.load({
 		      collapseTimersRef.current.clear();
 		    };
 		  }, [sourceMode, externalSource, sessionKey]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    const onOpenMenu = (ev) => {
 		      const detail = ev.detail;
 		      dispatch({
@@ -9048,7 +10533,7 @@ window.__ModuleLoader__.load({
 		      window.removeEventListener("keydown", onCommaShortcut, true);
 		    };
 		  }, []);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    if (!stageModelPickerOpen) return;
 		    const onPointerDown = (ev) => {
 		      if (stageModelPopoverRef.current && !stageModelPopoverRef.current.contains(ev.target)) {
@@ -9068,10 +10553,10 @@ window.__ModuleLoader__.load({
 		      window.removeEventListener("keydown", onKeyDown, true);
 		    };
 		  }, [stageModelPickerOpen]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    sourceRef.current?.setFastForward?.(state.fastForward);
 		  }, [state.fastForward]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    const latestDiffCard = [...state.skillCards].reverse().find((c) => Boolean(c.diff));
 		    if (latestDiffCard) {
 		      setInlinePreviewId(latestDiffCard.toolUseId);
@@ -9079,7 +10564,7 @@ window.__ModuleLoader__.load({
 		      setInlinePreviewId(null);
 		    }
 		  }, [state.skillCards]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    if (state.events.length === 0) {
 		      setContextTokens({ used: 0, max: 1e6 });
 		      return;
@@ -9139,14 +10624,14 @@ window.__ModuleLoader__.load({
 		      max: prev.max
 		    }));
 		  }, [state.events, state.skillCards.length]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    if (!compactionState.activeCutin) return;
 		    const tId = window.setTimeout(() => {
 		      setCompactionState((prev) => ({ ...prev, activeCutin: false }));
 		    }, 2800);
 		    return () => window.clearTimeout(tId);
 		  }, [compactionState.activeCutin]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    if (!isCompacting) return;
 		    const safetyTimer = window.setTimeout(() => {
 		      setIsCompacting(false);
@@ -9174,7 +10659,7 @@ window.__ModuleLoader__.load({
 		    setIsCompacting(true);
 		    sourceRef.current?.compactSession?.();
 		  };
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    for (const card of state.skillCards) {
 		      if (card.status !== "running" && !card.collapsedToLog && !collapseTimersRef.current.has(card.toolUseId)) {
 		        const delay = state.fastForward ? 650 : 2600;
@@ -9186,7 +10671,7 @@ window.__ModuleLoader__.load({
 		      }
 		    }
 		  }, [state.skillCards, state.fastForward]);
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    if (!state.turnActive) return;
 		    const interval = window.setInterval(() => {
 		      dispatch({ type: "TICK_TIMER", now: Date.now() });
@@ -9196,7 +10681,7 @@ window.__ModuleLoader__.load({
 		  const fullLineText = state.currentLine?.text ?? "";
 		  const currentLineKey = state.currentLine?.lineKey ?? "";
 		  const currentReplaceVersion = state.currentLine?.replaceVersion ?? 0;
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    const prev = prevLineTrackRef.current;
 		    const isInPlaceReplace = currentReplaceVersion > 0 && currentReplaceVersion !== prev.replaceVersion;
 		    if (isInPlaceReplace) {
@@ -9216,11 +10701,11 @@ window.__ModuleLoader__.load({
 		    };
 		  }, [currentLineKey, currentReplaceVersion, fullLineText]);
 		  const isTypingLine = typedLength < fullLineText.length;
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    prevLineTrackRef.current.wasTyping = isTypingLine;
 		  }, [isTypingLine]);
 		  const typingCharsPerSec = state.serverSettings?.performance?.typingCharsPerSec || 40;
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    if (!fullLineText || typedLength >= fullLineText.length) return;
 		    const baseStepMs = Math.max(8, Math.round(1e3 / typingCharsPerSec));
 		    const stepMs = state.fastForward ? 8 : baseStepMs;
@@ -9355,7 +10840,7 @@ window.__ModuleLoader__.load({
 		      collapsedToLog: true
 		    };
 		  })();
-		  const keyHandlerRef = (0, import_react13.useRef)({
+		  const keyHandlerRef = (0, import_react14.useRef)({
 		    onKeyDown: () => {
 		    },
 		    onKeyUp: () => {
@@ -9468,7 +10953,7 @@ window.__ModuleLoader__.load({
 		      dispatch({ type: "SET_FAST_FORWARD", fast: false });
 		    }
 		  };
-		  (0, import_react13.useEffect)(() => {
+		  (0, import_react14.useEffect)(() => {
 		    const onKeyDown = (e) => keyHandlerRef.current.onKeyDown(e);
 		    const onKeyUp = (e) => keyHandlerRef.current.onKeyUp(e);
 		    const onBlur = () => keyHandlerRef.current.onBlur();
@@ -9573,7 +11058,7 @@ window.__ModuleLoader__.load({
 		    (e) => e.type === "user_message" || e.type === "worker_text" || e.type === "tool_end"
 		  );
 		  if (state.engineeringView) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		    return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		      EngineeringView,
 		      {
 		        events: state.events,
@@ -9620,7 +11105,7 @@ window.__ModuleLoader__.load({
 		    "--char-theme-color": character.themeColor,
 		    "--char-accent-color": character.accentColor ?? character.themeColor
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		    "div",
 		    {
 		      className: `p5-stage-viewport${isNativeApp ? " is-native-app" : ""}${embeddedInDsh ? " is-dsh-embedded" : ""}`,
@@ -9628,26 +11113,26 @@ window.__ModuleLoader__.load({
 		      "data-active-character": character.id,
 		      style: viewportStyle,
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-bg-crimson-wedge", "aria-hidden": "true" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-bg-halftone", "aria-hidden": "true" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-bg-right-red-corner", "aria-hidden": "true" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-bg-right-halftone", "aria-hidden": "true" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-bg-vertical-watermark", "aria-hidden": "true", children: "CHARACTER" }),
-		        isDisconnected && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-bg-crimson-wedge", "aria-hidden": "true" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-bg-halftone", "aria-hidden": "true" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-bg-right-red-corner", "aria-hidden": "true" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-bg-right-halftone", "aria-hidden": "true" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-bg-vertical-watermark", "aria-hidden": "true", children: "CHARACTER" }),
+		        isDisconnected && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		          "div",
 		          {
 		            className: "p5-disconnect-banner",
 		            "data-testid": "disconnect-banner",
 		            role: "status",
 		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-disconnect-left", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-disconnect-badge", children: "OFFLINE // \u4FE1\u53F7\u4E2D\u65AD" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("strong", { className: "p5-disconnect-title", children: "\u9C7C\u5858\u65AD\u7EBF\uFF0C\u91CD\u8FDE\u4E2D\u2026" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-disconnect-detail", children: connStatus.hasEverConnected ? `\u6B63\u5728\u7B2C ${connStatus.attempt} \u6B21\u91CD\u8FDE \u2014 \u82E5\u670D\u52A1\u5DF2\u505C\u6B62\u8BF7\u8FD0\u884C\uFF1A` : `\u5C1A\u672A\u8FDE\u4E0A\u672C\u5730\u670D\u52A1\uFF08\u7B2C ${Math.max(1, connStatus.attempt)} \u6B21\u5C1D\u8BD5\uFF09\u2014 \u8BF7\u542F\u52A8\u670D\u52A1\uFF1A` }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("code", { className: "p5-disconnect-cmd", children: "npm run dev:server" })
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-disconnect-left", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-disconnect-badge", children: "OFFLINE // \u4FE1\u53F7\u4E2D\u65AD" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("strong", { className: "p5-disconnect-title", children: "\u9C7C\u5858\u65AD\u7EBF\uFF0C\u91CD\u8FDE\u4E2D\u2026" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-disconnect-detail", children: connStatus.hasEverConnected ? `\u6B63\u5728\u7B2C ${connStatus.attempt} \u6B21\u91CD\u8FDE \u2014 \u82E5\u670D\u52A1\u5DF2\u505C\u6B62\u8BF7\u8FD0\u884C\uFF1A` : `\u5C1A\u672A\u8FDE\u4E0A\u672C\u5730\u670D\u52A1\uFF08\u7B2C ${Math.max(1, connStatus.attempt)} \u6B21\u5C1D\u8BD5\uFF09\u2014 \u8BF7\u542F\u52A8\u670D\u52A1\uFF1A` }),
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("code", { className: "p5-disconnect-cmd", children: "npm run dev:server" })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-disconnect-actions", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-disconnect-actions", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -9657,7 +11142,7 @@ window.__ModuleLoader__.load({
 		                    children: "\u21BB \u7ACB\u5373\u91CD\u8FDE"
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "a",
 		                  {
 		                    href: "?demo=1",
@@ -9670,33 +11155,33 @@ window.__ModuleLoader__.load({
 		            ]
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-main-grid", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("aside", { className: "p5-left-column", "data-testid": "hud-layer", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-brand-strip", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-brand-tag", children: "BIGFISH STAGE" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-main-grid", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("aside", { className: "p5-left-column", "data-testid": "hud-layer", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-brand-strip", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-brand-tag", children: "BIGFISH STAGE" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                "div",
 		                {
 		                  className: `p5-live-pill mode-${sourceMode}`,
 		                  "data-testid": "data-source-badge",
 		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                      "span",
 		                      {
 		                        className: `p5-live-dot status-${state.hudStatus}`
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: sourceMode === "demo" ? "DEMO \xB7 \u5267\u672C\u6F14\u793A" : connStatus.state === "connected" ? "\u5B9E\u65F6\u8FDE\u63A5 \xB7 \u5DF2\u5C31\u7EEA" : "\u8FDE\u63A5\u4E2D\u2026" })
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: sourceMode === "demo" ? "DEMO \xB7 \u5267\u672C\u6F14\u793A" : connStatus.state === "connected" ? "\u5B9E\u65F6\u8FDE\u63A5 \xB7 \u5DF2\u5C31\u7EEA" : "\u8FDE\u63A5\u4E2D\u2026" })
 		                  ]
 		                }
 		              )
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		              "div",
 		              {
 		                className: "p5-portrait-stage p5-portrait-stage--theme",
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "div",
 		                    {
 		                      className: "p5-char-tilted-card",
@@ -9704,16 +11189,16 @@ window.__ModuleLoader__.load({
 		                      "aria-hidden": "true"
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "div",
 		                    {
 		                      className: "p5-portrait-emotion-tag",
 		                      "data-testid": "emotion-badge",
 		                      title: `${emotionMeta.en} \xB7 ${emotionMeta.zh}`,
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "emotion-zh", children: emotionMeta.zh })
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "emotion-zh", children: emotionMeta.zh })
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    CharacterRenderer,
 		                    {
 		                      characterId: character.id,
@@ -9732,8 +11217,8 @@ window.__ModuleLoader__.load({
 		              },
 		              `stage_frame_${state.characterSwitchKey}`
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-char-info-cluster", "data-testid": "hud-status-card", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-char-info-cluster", "data-testid": "hud-status-card", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                "div",
 		                {
 		                  className: "p5-char-codename-giant",
@@ -9741,13 +11226,13 @@ window.__ModuleLoader__.load({
 		                  children: shortNickname
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                "div",
 		                {
 		                  className: "p5-char-name-pill p5-char-name-pill--interactive",
 		                  ref: stageModelPopoverRef,
 		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -9766,15 +11251,15 @@ window.__ModuleLoader__.load({
 		                          }
 		                        },
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-char-name-main", children: formatStageModelBanner(
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-char-name-main", children: formatStageModelBanner(
 		                            state.serverSettings.worker.model || state.modelName,
 		                            character.codename
 		                          ) }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-stage-model-caret", "aria-hidden": "true", children: stageModelPickerOpen ? "\u25B4" : "\u25BE" })
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-stage-model-caret", "aria-hidden": "true", children: stageModelPickerOpen ? "\u25B4" : "\u25BE" })
 		                        ]
 		                      }
 		                    ),
-		                    effortOptions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    effortOptions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -9794,7 +11279,7 @@ window.__ModuleLoader__.load({
 		                        ]
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                      "span",
 		                      {
 		                        className: "p5-speaker-codename-sr",
@@ -9802,18 +11287,18 @@ window.__ModuleLoader__.load({
 		                        children: state.modelName
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                      "span",
 		                      {
 		                        className: `p5-char-status-inline status-${state.hudStatus}`,
 		                        "data-testid": "hud-status-text",
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { children: [
 		                            "\u2605 ",
 		                            hudStatusMeta.zh
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\xB7" }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("strong", { "data-testid": "hud-elapsed-time", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "\xB7" }),
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("strong", { "data-testid": "hud-elapsed-time", children: [
 		                            turnDurationSec,
 		                            "s"
 		                          ] })
@@ -9840,7 +11325,7 @@ window.__ModuleLoader__.load({
 		                        handleUpdateSettings({ worker: { model: clean } });
 		                        setStageModelPickerOpen(false);
 		                      };
-		                      return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                      return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                        "div",
 		                        {
 		                          className: "p5-stage-model-popover",
@@ -9848,12 +11333,12 @@ window.__ModuleLoader__.load({
 		                          role: "dialog",
 		                          "aria-label": "\u5207\u6362\u9A71\u52A8\u6A21\u578B",
 		                          children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-stage-model-pop-head", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-stage-model-pop-title", children: [
-		                                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-stage-model-pop-tag", children: "MODEL" }),
-		                                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u9009\u62E9\u5F53\u524D\u9A71\u52A8\u6A21\u578B" })
+		                            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-stage-model-pop-head", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-stage-model-pop-title", children: [
+		                                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-stage-model-pop-tag", children: "MODEL" }),
+		                                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "\u9009\u62E9\u5F53\u524D\u9A71\u52A8\u6A21\u578B" })
 		                              ] }),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "button",
 		                                {
 		                                  type: "button",
@@ -9864,7 +11349,7 @@ window.__ModuleLoader__.load({
 		                                }
 		                              )
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                              "form",
 		                              {
 		                                className: "p5-stage-model-search-row",
@@ -9877,8 +11362,8 @@ window.__ModuleLoader__.load({
 		                                  }
 		                                },
 		                                children: [
-		                                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-stage-model-search-icon", children: "\u2315" }),
-		                                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-stage-model-search-icon", children: "\u2315" }),
+		                                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                    "input",
 		                                    {
 		                                      type: "text",
@@ -9893,9 +11378,9 @@ window.__ModuleLoader__.load({
 		                                ]
 		                              }
 		                            ),
-		                            effortOptions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-effort-row", "data-testid": "reasoning-effort-row", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-effort-row-label", children: "\u601D\u8003\u5F3A\u5EA6" }),
-		                              effortOptions.map((e) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                            effortOptions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-effort-row", "data-testid": "reasoning-effort-row", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-effort-row-label", children: "\u601D\u8003\u5F3A\u5EA6" }),
+		                              effortOptions.map((e) => /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "button",
 		                                {
 		                                  type: "button",
@@ -9910,17 +11395,17 @@ window.__ModuleLoader__.load({
 		                                e.id
 		                              ))
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-stage-model-list", role: "listbox", children: [
-		                              state.workerModels.loading && mergedModels.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-stage-model-empty", children: "\u6B63\u5728\u8BFB\u53D6\u53EF\u7528\u6A21\u578B\u5217\u8868\u2026" }),
-		                              !state.workerModels.loading && filtered.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-stage-model-empty", children: stageModelQuery.trim() ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-stage-model-list", role: "listbox", children: [
+		                              state.workerModels.loading && mergedModels.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-stage-model-empty", children: "\u6B63\u5728\u8BFB\u53D6\u53EF\u7528\u6A21\u578B\u5217\u8868\u2026" }),
+		                              !state.workerModels.loading && filtered.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-stage-model-empty", children: stageModelQuery.trim() ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                                "button",
 		                                {
 		                                  type: "button",
 		                                  className: "p5-stage-model-item is-custom-apply",
 		                                  onClick: () => applyModelChoice(stageModelQuery),
 		                                  children: [
-		                                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u76F4\u63A5\u4F7F\u7528\u81EA\u5B9A\u4E49\u6A21\u578B\uFF1A" }),
-		                                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("strong", { children: stageModelQuery.trim() })
+		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "\u76F4\u63A5\u4F7F\u7528\u81EA\u5B9A\u4E49\u6A21\u578B\uFF1A" }),
+		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("strong", { children: stageModelQuery.trim() })
 		                                  ]
 		                                }
 		                              ) : "\u6682\u65E0\u6A21\u578B\u5217\u8868\uFF0C\u70B9\u51FB\u4E0B\u65B9\u8FDB\u5165\u6A21\u578B\u8BBE\u7F6E\u914D\u7F6E\u63A5\u53E3" }),
@@ -9930,7 +11415,7 @@ window.__ModuleLoader__.load({
 		                                const shortId = slashIdx >= 0 ? m.slice(slashIdx + 1) : m;
 		                                const prefix = slashIdx > 0 ? m.slice(0, slashIdx) : "";
 		                                const isRec = recList.includes(m);
-		                                return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                                return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                                  "button",
 		                                  {
 		                                    type: "button",
@@ -9939,19 +11424,19 @@ window.__ModuleLoader__.load({
 		                                    className: `p5-stage-model-item ${isCurrent ? "is-active" : ""}`,
 		                                    onClick: () => applyModelChoice(m),
 		                                    children: [
-		                                      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-stage-model-item-main", children: [
-		                                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-stage-model-item-name", children: isCurrent ? `\u2713 ${shortId}` : shortId }),
-		                                        isRec && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-stage-model-rec-pill", children: "\u63A8\u8350" })
+		                                      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-stage-model-item-main", children: [
+		                                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-stage-model-item-name", children: isCurrent ? `\u2713 ${shortId}` : shortId }),
+		                                        isRec && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-stage-model-rec-pill", children: "\u63A8\u8350" })
 		                                      ] }),
-		                                      prefix && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-stage-model-item-prefix", children: prefix })
+		                                      prefix && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-stage-model-item-prefix", children: prefix })
 		                                    ]
 		                                  },
 		                                  m
 		                                );
 		                              })
 		                            ] }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-stage-model-pop-foot", children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-stage-model-pop-foot", children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "button",
 		                                {
 		                                  type: "button",
@@ -9960,7 +11445,7 @@ window.__ModuleLoader__.load({
 		                                  children: "\u21BB \u5237\u65B0\u5217\u8868"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "button",
 		                                {
 		                                  type: "button",
@@ -9984,16 +11469,16 @@ window.__ModuleLoader__.load({
 		                  ]
 		                }
 		              ),
-		              isLongWaiting && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		              isLongWaiting && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                "div",
 		                {
 		                  className: "p5-hud-wait-alert",
 		                  "data-testid": "hud-idle-wait-timer",
 		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-wait-pulse" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-wait-pulse" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { children: [
 		                      "\u6DF1\u5EA6\u601D\u8003\u4E2D \xB7 \u5DF2\u7B49\u5F85 ",
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("strong", { children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("strong", { children: [
 		                        idleWaitSec,
 		                        "s"
 		                      ] })
@@ -10001,29 +11486,29 @@ window.__ModuleLoader__.load({
 		                  ]
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-bottom-left-dock", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-bottom-left-dock", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                  "div",
 		                  {
 		                    className: `p5-context-radar ${contextPercent >= 75 ? "is-high" : contextPercent >= 40 ? "is-mid" : "is-low"}`,
 		                    "data-testid": "context-meter",
 		                    children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-radar-dial-wrap", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-radar-dial-wrap", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                          "svg",
 		                          {
 		                            className: "p5-radar-svg",
 		                            viewBox: "0 0 64 64",
 		                            "aria-hidden": "true",
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polygon",
 		                                {
 		                                  className: "p5-radar-outer-star",
 		                                  points: "32,2 39,21 60,18 44,33 54,53 32,43 10,53 20,33 4,18 25,21"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "circle",
 		                                {
 		                                  className: "p5-radar-track",
@@ -10032,7 +11517,7 @@ window.__ModuleLoader__.load({
 		                                  r: "22"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "circle",
 		                                {
 		                                  className: "p5-radar-fill",
@@ -10046,20 +11531,20 @@ window.__ModuleLoader__.load({
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-radar-pct", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "p5-radar-pct", children: [
 		                          contextPercent,
 		                          "%"
 		                        ] })
 		                      ] }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-radar-info", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-kicker", children: "CONTEXT GAUGE" }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-radar-info", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-radar-kicker", children: "CONTEXT GAUGE" }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                          "span",
 		                          {
 		                            className: "p5-radar-tokens",
 		                            "data-testid": "context-meter-value",
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("strong", { children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("strong", { children: [
 		                                usedK,
 		                                "k"
 		                              ] }),
@@ -10069,7 +11554,7 @@ window.__ModuleLoader__.load({
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -10085,10 +11570,10 @@ window.__ModuleLoader__.load({
 		                    ]
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-party-medals", "data-testid": "party-bar", children: state.characters.map((ch) => {
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-party-medals", "data-testid": "party-bar", children: effectiveCharacters.map((ch) => {
 		                  const isActive = ch.id === character.id;
 		                  const shortLabel = ch.name.split("\uFF08")[0];
-		                  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -10100,15 +11585,15 @@ window.__ModuleLoader__.load({
 		                      onClick: () => handleSwitchCharacter(ch.id),
 		                      title: `${ch.name} (${ch.codename})`,
 		                      children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-medal-ring", children: ch.portraitUrl ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-medal-ring", children: ch.portraitUrl ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                          "img",
 		                          {
 		                            src: ch.portraitUrl,
 		                            alt: shortLabel,
 		                            className: "p5-party-avatar"
 		                          }
-		                        ) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-party-avatar-text", children: shortLabel.slice(0, 2) }) }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-medal-name", children: shortLabel })
+		                        ) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-party-avatar-text", children: shortLabel.slice(0, 2) }) }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-medal-name", children: shortLabel })
 		                      ]
 		                    },
 		                    ch.id
@@ -10117,12 +11602,12 @@ window.__ModuleLoader__.load({
 		              ] })
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("main", { className: "p5-center-stage", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("header", { className: "p5-workspace-header", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-workspace-header-left", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-session-switcher-wrap", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-session-badge", children: "SESSION" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("main", { className: "p5-center-stage", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("header", { className: "p5-workspace-header", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-workspace-header-left", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-session-switcher-wrap", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-session-badge", children: "SESSION" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    SessionListControl,
 		                    {
 		                      sourceRef,
@@ -10130,7 +11615,7 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                sourceMode === "demo" && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                sourceMode === "demo" && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10141,9 +11626,9 @@ window.__ModuleLoader__.load({
 		                  }
 		                )
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-workspace-header-right", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(SfxMuteButton, {}),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-workspace-header-right", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(SfxMuteButton, {}),
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10153,11 +11638,11 @@ window.__ModuleLoader__.load({
 		                    title: "\u67E5\u770B\u5DE5\u4F5C\u533A\u5168\u91CF Git \u53D8\u66F4\u3001\u5355\u6587\u4EF6\u64A4\u56DE\u4E0E\u4E00\u952E\u63D0\u4EA4",
 		                    children: [
 		                      "\u{1F5C2} \u4EE3\u7801\u53D8\u66F4",
-		                      state.gitStatus.loaded && state.gitStatus.files.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-trophy-count", children: state.gitStatus.files.length })
+		                      state.gitStatus.loaded && state.gitStatus.files.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-trophy-count", children: state.gitStatus.files.length })
 		                    ]
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10165,14 +11650,14 @@ window.__ModuleLoader__.load({
 		                    onClick: () => dispatch({ type: "TOGGLE_BACKLOG" }),
 		                    "data-testid": "backlog-open-btn",
 		                    children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("kbd", { children: "L" }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("kbd", { children: "L" }),
 		                      " \u5BF9\u8BDD\u56DE\u770B (",
 		                      backlogCount,
 		                      ")"
 		                    ]
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10183,12 +11668,12 @@ window.__ModuleLoader__.load({
 		                    }),
 		                    "data-testid": "system-menu-btn",
 		                    children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("kbd", { children: "ESC" }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("kbd", { children: "ESC" }),
 		                      " \u8BBE\u7F6E"
 		                    ]
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10202,7 +11687,7 @@ window.__ModuleLoader__.load({
 		                    children: "\u5FEB\u8FDB"
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10215,12 +11700,12 @@ window.__ModuleLoader__.load({
 		                )
 		              ] })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "p5-dialogue-section", "data-testid": "dialogue-layer", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-dialogue-top-row", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-user-mission-bar", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("strong", { children: "\u5F53\u524D\u6307\u4EE4 //" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-mission-text", children: latestUserMsg && latestUserMsg.type === "user_message" ? latestUserMsg.text : `\u7B49\u5F85${uiCopy.userTitle}\u4E0B\u8FBE\u7B2C\u4E00\u6761\u4EFB\u52A1\u6307\u4EE4\u2026\u2026` }),
-		                state.lastTurnOk !== null && !state.turnActive && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("section", { className: "p5-dialogue-section", "data-testid": "dialogue-layer", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-dialogue-top-row", children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-user-mission-bar", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("strong", { children: "\u5F53\u524D\u6307\u4EE4 //" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-mission-text", children: latestUserMsg && latestUserMsg.type === "user_message" ? latestUserMsg.text : `\u7B49\u5F85${uiCopy.userTitle}\u4E0B\u8FBE\u7B2C\u4E00\u6761\u4EFB\u52A1\u6307\u4EE4\u2026\u2026` }),
+		                state.lastTurnOk !== null && !state.turnActive && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "span",
 		                    {
 		                      className: "p5-mission-done-stamp",
@@ -10228,7 +11713,7 @@ window.__ModuleLoader__.load({
 		                      children: state.lastTurnOk ? "\u2713 \u5DF2\u5B8C\u6210" : "\u25A0 \u5DF2\u4E2D\u6B62"
 		                    }
 		                  ),
-		                  state.lastTurnOk && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  state.lastTurnOk && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -10241,19 +11726,19 @@ window.__ModuleLoader__.load({
 		                  )
 		                ] })
 		              ] }) }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-comic-bubble-wrap", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-speaker-sticker", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-comic-bubble-wrap", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-speaker-sticker", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "span",
 		                    {
 		                      className: "p5-speaker-chars",
 		                      "data-testid": "dialogue-speaker-name",
 		                      children: tokenizeSpeakerName(dialogueCharacter.name).map(
-		                        (token, idx) => idx === 1 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-speaker-char-invert", children: token }, idx) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-speaker-char-normal", children: token }, idx)
+		                        (token, idx) => idx === 1 ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-speaker-char-invert", children: token }, idx) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-speaker-char-normal", children: token }, idx)
 		                      )
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "span",
 		                    {
 		                      className: "p5-speaker-codename-sr",
@@ -10261,7 +11746,7 @@ window.__ModuleLoader__.load({
 		                      children: dialogueCharacter.codename
 		                    }
 		                  ),
-		                  state.currentLine?.source && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  state.currentLine?.source && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "span",
 		                    {
 		                      className: "p5-speaker-source-sr",
@@ -10284,7 +11769,7 @@ window.__ModuleLoader__.load({
 		                  const t1 = Math.min(1, t0 + dlgScroll.thumbFrac);
 		                  const trackPts = `${trackX1 - 3.5},${trackY1 + 0.5} ${trackX1 + 3.5},${trackY1 - 0.5} ${trackX2 + 3.5},${trackY2 - 0.5} ${trackX2 - 3.5},${trackY2 + 0.5}`;
 		                  const thumbPts = `${lerpX(t0) - 4.5},${lerpY(t0) + 0.6} ${lerpX(t0) + 4.5},${lerpY(t0) - 0.6} ${lerpX(t1) + 4.5},${lerpY(t1) - 0.6} ${lerpX(t1) - 4.5},${lerpY(t1) + 0.6}`;
-		                  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                    "div",
 		                    {
 		                      ref: dialogueBoxRef,
@@ -10295,7 +11780,7 @@ window.__ModuleLoader__.load({
 		                      "aria-label": "\u89D2\u8272\u5F53\u524D\u53F0\u8BCD",
 		                      title: "\u70B9\u51FB\u5BF9\u8BDD\u6846\u6216\u6309 Space \u7ACB\u5373\u663E\u793A\u6574\u53E5",
 		                      children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                          "svg",
 		                          {
 		                            className: "p5-dialogue-svg-bg",
@@ -10303,7 +11788,7 @@ window.__ModuleLoader__.load({
 		                            preserveAspectRatio: "none",
 		                            "aria-hidden": "true",
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polygon",
 		                                {
 		                                  points: polyPts,
@@ -10313,7 +11798,7 @@ window.__ModuleLoader__.load({
 		                                  strokeLinejoin: "miter"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polygon",
 		                                {
 		                                  points: polyPts,
@@ -10326,7 +11811,7 @@ window.__ModuleLoader__.load({
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                          "svg",
 		                          {
 		                            className: "p5-dialogue-tail-svg",
@@ -10334,14 +11819,14 @@ window.__ModuleLoader__.load({
 		                            preserveAspectRatio: "none",
 		                            "aria-hidden": "true",
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polygon",
 		                                {
 		                                  points: "180,12 82,34 106,18 4,52 108,42 84,60 180,66",
 		                                  fill: "#09090f"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polyline",
 		                                {
 		                                  points: "170,13 82,34 106,18 4,52 108,42 84,60 170,65",
@@ -10353,7 +11838,7 @@ window.__ModuleLoader__.load({
 		                                  vectorEffect: "non-scaling-stroke"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polyline",
 		                                {
 		                                  points: "172,13 82,34 106,18 4,52 108,42 84,60 172,65",
@@ -10368,7 +11853,7 @@ window.__ModuleLoader__.load({
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                          "div",
 		                          {
 		                            ref: dialogueTextRef,
@@ -10376,13 +11861,13 @@ window.__ModuleLoader__.load({
 		                            className: `p5-dialogue-text ${isLongDialogue ? "is-long-text" : ""} ${fadeReplaceKey > 0 ? "p5-dialogue-text--fade-replace" : ""}`,
 		                            "data-testid": "dialogue-line-text",
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-dialogue-right-slope-spacer", "aria-hidden": "true" }),
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-dialogue-right-slope-spacer", "aria-hidden": "true" }),
 		                              isTypingLine ? stripTypingMarkdown(displayedText) : renderFormattedText(displayedText)
 		                            ]
 		                          },
 		                          fadeReplaceKey
 		                        ),
-		                        dlgScroll.canScroll && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                        dlgScroll.canScroll && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                          "svg",
 		                          {
 		                            className: "p5-dialogue-slant-scrollbar",
@@ -10391,7 +11876,7 @@ window.__ModuleLoader__.load({
 		                            "data-testid": "dialogue-slant-scrollbar",
 		                            onClick: (e) => e.stopPropagation(),
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polygon",
 		                                {
 		                                  points: `${trackX1 - 10},${trackY1} ${trackX1 + 10},${trackY1} ${trackX2 + 10},${trackY2} ${trackX2 - 10},${trackY2}`,
@@ -10413,7 +11898,7 @@ window.__ModuleLoader__.load({
 		                                  }
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polygon",
 		                                {
 		                                  points: trackPts,
@@ -10423,7 +11908,7 @@ window.__ModuleLoader__.load({
 		                                  style: { pointerEvents: "none" }
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "polygon",
 		                                {
 		                                  points: thumbPts,
@@ -10472,14 +11957,14 @@ window.__ModuleLoader__.load({
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                          "span",
 		                          {
 		                            className: `p5-dialogue-cursor p5-cursor-wedge ${isTypingLine ? "is-typing" : "is-ready"} ${dlgScroll.canScroll ? "is-compact-corner" : ""}`,
 		                            "aria-hidden": "true"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                          "button",
 		                          {
 		                            type: "button",
@@ -10499,10 +11984,10 @@ window.__ModuleLoader__.load({
 		                })()
 		              ] })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "p5-action-section", "data-testid": "action-layer", children: [
-		              state.skillCards.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-deck-header", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-deck-title-group", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("section", { className: "p5-action-section", "data-testid": "action-layer", children: [
+		              state.skillCards.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-deck-header", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-deck-title-group", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                    "span",
 		                    {
 		                      className: "p5-deck-slash-badge",
@@ -10514,7 +11999,7 @@ window.__ModuleLoader__.load({
 		                      ]
 		                    }
 		                  ),
-		                  touchedFiles.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                  touchedFiles.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                    "span",
 		                    {
 		                      className: "p5-deck-summary-text",
@@ -10522,17 +12007,17 @@ window.__ModuleLoader__.load({
 		                      children: [
 		                        "\u6D89\u53CA",
 		                        " ",
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("strong", { children: touchedFiles.map((f) => f.split("/").pop()).join(", ") }),
-		                        (totalDiffStats.added > 0 || totalDiffStats.removed > 0) && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("strong", { children: touchedFiles.map((f) => f.split("/").pop()).join(", ") }),
+		                        (totalDiffStats.added > 0 || totalDiffStats.removed > 0) && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
 		                          " \xB7 ",
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "diff-add", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "diff-add", children: [
 		                            "+",
 		                            totalDiffStats.added
 		                          ] }),
 		                          " ",
 		                          "/",
 		                          " ",
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "diff-del", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "diff-del", children: [
 		                            "\u2212",
 		                            totalDiffStats.removed
 		                          ] })
@@ -10541,7 +12026,7 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10559,23 +12044,23 @@ window.__ModuleLoader__.load({
 		                  }
 		                )
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                "div",
 		                {
 		                  className: "p5-active-skills-zone",
 		                  "data-testid": "action-log-strip",
 		                  children: [
-		                    state.lastError && !needsOnboarding && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    state.lastError && !needsOnboarding && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                      "div",
 		                      {
 		                        className: "p5-error-notice-card",
 		                        "data-testid": "stage-error-banner",
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-error-notice-left", children: [
-		                            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-error-notice-tag", children: "NOTICE // \u8FD0\u884C\u63D0\u793A" }),
-		                            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-error-notice-msg", children: state.lastError.message })
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-error-notice-left", children: [
+		                            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-error-notice-tag", children: "NOTICE // \u8FD0\u884C\u63D0\u793A" }),
+		                            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-error-notice-msg", children: state.lastError.message })
 		                          ] }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                            "button",
 		                            {
 		                              type: "button",
@@ -10587,15 +12072,15 @@ window.__ModuleLoader__.load({
 		                        ]
 		                      }
 		                    ),
-		                    compactionState.compactedAt && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    compactionState.compactedAt && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                      "div",
 		                      {
 		                        className: "p5-compaction-summary-node",
 		                        "data-testid": "compaction-summary-card",
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-badge", children: "\u2726 MEMORY DISTILLED // \u8BB0\u5FC6\u6458\u8981\u5361" }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-text", children: compactionState.summaryText }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-compaction-node-freed", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-compaction-node-badge", children: "\u2726 MEMORY DISTILLED // \u8BB0\u5FC6\u6458\u8981\u5361" }),
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-compaction-node-text", children: compactionState.summaryText }),
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "p5-compaction-node-freed", children: [
 		                            "\u2212",
 		                            Math.round(compactionState.freedTokens / 1e3),
 		                            "k Tokens"
@@ -10603,7 +12088,7 @@ window.__ModuleLoader__.load({
 		                        ]
 		                      }
 		                    ),
-		                    needsOnboarding ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    needsOnboarding ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                      OnboardingCard,
 		                      {
 		                        character,
@@ -10618,7 +12103,7 @@ window.__ModuleLoader__.load({
 		                        }),
 		                        onDismissError: () => dispatch({ type: "DISMISS_ERROR" })
 		                      }
-		                    ) : state.skillCards.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    ) : state.skillCards.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                      "div",
 		                      {
 		                        className: "p5-action-list p5-trajectory-route",
@@ -10628,8 +12113,8 @@ window.__ModuleLoader__.load({
 		                            const isPreviewOpen = inlinePreviewId === card.toolUseId;
 		                            const inlineDiffRows = isPreviewOpen ? extractInlineDiffLines(card.diff) : [];
 		                            const stepDurationMs = card.endedAt && card.startedAt ? Math.max(120, card.endedAt - card.startedAt) : null;
-		                            return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_react13.default.Fragment, { children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                            return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_react14.default.Fragment, { children: [
+		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                                "div",
 		                                {
 		                                  className: `p5-action-row status-${card.status} tool-${card.tool} ${isPreviewOpen || state.selectedToolUseId === card.toolUseId ? "is-expanded" : ""}`,
@@ -10639,9 +12124,9 @@ window.__ModuleLoader__.load({
 		                                  }),
 		                                  "data-testid": `action-log-item-${index}`,
 		                                  children: [
-		                                    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-step-badge-group", children: [
-		                                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-step-num", children: String(index + 1).padStart(2, "0") }),
-		                                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-step-badge-group", children: [
+		                                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-step-num", children: String(index + 1).padStart(2, "0") }),
+		                                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                        "span",
 		                                        {
 		                                          className: `p5-tool-tag tool-${card.tool}`,
@@ -10650,30 +12135,30 @@ window.__ModuleLoader__.load({
 		                                        }
 		                                      )
 		                                    ] }),
-		                                    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-action-target", children: [
-		                                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("strong", { children: card.file ?? card.summary }),
-		                                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: card.endSummary ?? `${card.rawName} \xB7 ${card.summary}` })
+		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-action-target", children: [
+		                                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("strong", { children: card.file ?? card.summary }),
+		                                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: card.endSummary ?? `${card.rawName} \xB7 ${card.summary}` })
 		                                    ] }),
-		                                    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-action-stat", children: [
-		                                      card.diffStats ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
-		                                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "add", children: [
+		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "p5-action-stat", children: [
+		                                      card.diffStats ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+		                                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "add", children: [
 		                                          "+",
 		                                          card.diffStats.added
 		                                        ] }),
 		                                        " ",
-		                                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "del", children: [
+		                                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "del", children: [
 		                                          "\u2212",
 		                                          card.diffStats.removed
 		                                        ] })
 		                                      ] }) : card.rawName,
-		                                      stepDurationMs && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("em", { className: "p5-step-ms", children: [
+		                                      stepDurationMs && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("em", { className: "p5-step-ms", children: [
 		                                        " ",
 		                                        "\xB7 ",
 		                                        stepDurationMs,
 		                                        "ms"
 		                                      ] })
 		                                    ] }),
-		                                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                      "span",
 		                                      {
 		                                        className: `p5-action-status status-${card.status}`,
@@ -10683,7 +12168,7 @@ window.__ModuleLoader__.load({
 		                                  ]
 		                                }
 		                              ),
-		                              inlineDiffRows.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                              inlineDiffRows.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                "div",
 		                                {
 		                                  className: "p5-inline-diff-box",
@@ -10692,7 +12177,7 @@ window.__ModuleLoader__.load({
 		                                    toolUseId: card.toolUseId
 		                                  }),
 		                                  title: "\u70B9\u51FB\u6253\u5F00\u5B8C\u6574\u4EE3\u7801\u5BF9\u6BD4\u6863\u6848",
-		                                  children: inlineDiffRows.map((row, rIdx) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                                  children: inlineDiffRows.map((row, rIdx) => /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                                    "div",
 		                                    {
 		                                      className: row.kind === "add" ? "p5-diff-line-add" : "p5-diff-line-del",
@@ -10704,39 +12189,39 @@ window.__ModuleLoader__.load({
 		                              )
 		                            ] }, card.toolUseId);
 		                          }),
-		                          shouldShowConclusionCard && conclusionCandidate && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                          shouldShowConclusionCard && conclusionCandidate && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                            "div",
 		                            {
 		                              className: "p5-worker-answer-card",
 		                              "data-testid": "trajectory-answer-card",
 		                              children: [
-		                                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-worker-answer-head", children: [
-		                                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-worker-answer-badge", children: [
+		                                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-worker-answer-head", children: [
+		                                  /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "p5-worker-answer-badge", children: [
 		                                    "\u2605 CONCLUSION // ",
 		                                    shortNickname,
 		                                    "\u7684\u884C\u52A8\u7ED3\u8BBA\u6B63\u6587"
 		                                  ] }),
-		                                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-worker-answer-meta", children: [
+		                                  /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "p5-worker-answer-meta", children: [
 		                                    "\u8017\u65F6 ",
 		                                    turnDurationSec,
 		                                    "s \xB7 \u6A21\u578B ",
 		                                    state.modelName
 		                                  ] })
 		                                ] }),
-		                                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-worker-answer-body", children: renderFormattedText(conclusionCandidate) })
+		                                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-worker-answer-body", children: renderFormattedText(conclusionCandidate) })
 		                              ]
 		                            }
 		                          )
 		                        ]
 		                      }
 		                    ) : null,
-		                    state.steers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-steer-strip", "data-testid": "steer-strip", children: state.steers.map((st) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    state.steers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-steer-strip", "data-testid": "steer-strip", children: state.steers.map((st) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                      "div",
 		                      {
 		                        className: `p5-steer-pill steer-${st.status}`,
 		                        "data-testid": `steer-item-${st.status}`,
 		                        children: [
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                            "span",
 		                            {
 		                              className: "p5-steer-status-badge",
@@ -10744,7 +12229,7 @@ window.__ModuleLoader__.load({
 		                              children: st.status === "queued" ? "\u5DF2\u4F20\u8FBE\uFF0C\u5F85\u63A5\u6536" : "\u5DF2\u63A5\u6536"
 		                            }
 		                          ),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-steer-text", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "p5-steer-text", children: [
 		                            "\u573A\u5916\u63D2\u8BDD\uFF1A\u300C",
 		                            st.text,
 		                            "\u300D"
@@ -10757,16 +12242,16 @@ window.__ModuleLoader__.load({
 		                }
 		              )
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "p5-command-dock", "data-testid": "player-input-zone", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-dock-quick-chips", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-chip-group", children: needsOnboarding ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("section", { className: "p5-command-dock", "data-testid": "player-input-zone", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-dock-quick-chips", children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-chip-group", children: needsOnboarding ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                "span",
 		                {
 		                  className: "p5-input-onboarding-hint",
 		                  "data-testid": "stage-input-disabled-hint",
 		                  children: "\u25B2 \u8BF7\u5148\u5728\u4E0A\u65B9\u5F15\u5BFC\u5361\u9009\u5B9A\u9879\u76EE\u6587\u4EF6\u5939\u540E\u518D\u6295\u5582\u4EFB\u52A1"
 		                }
-		              ) : state.turnActive ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
-		                sourceMode === "demo" && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		              ) : state.turnActive ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+		                sourceMode === "demo" && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10780,7 +12265,7 @@ window.__ModuleLoader__.load({
 		                    children: "\u26A1 \u4E00\u952E\u63D2\u8BDD (Steer)"
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -10790,7 +12275,7 @@ window.__ModuleLoader__.load({
 		                    children: "\u25A0 \u558A\u505C (STOP)"
 		                  }
 		                )
-		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                "button",
 		                {
 		                  type: "button",
@@ -10802,7 +12287,7 @@ window.__ModuleLoader__.load({
 		                  children: "\u26A1 \u6362\u624B\u63A5\u529B"
 		                }
 		              ) }) }),
-		              !needsOnboarding && !state.turnActive && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		              !needsOnboarding && !state.turnActive && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                "button",
 		                {
 		                  type: "button",
@@ -10813,10 +12298,10 @@ window.__ModuleLoader__.load({
 		                  children: "\u586B\u5165\u793A\u4F8B\u4EFB\u52A1\u6307\u4EE4"
 		                }
 		              ),
-		              (pendingImages.length > 0 || imageError) && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-image-tray", "data-testid": "stage-image-tray", children: [
-		                pendingImages.map((img, i) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-image-thumb", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("img", { src: img.previewUrl, alt: img.name ?? `\u56FE\u7247 ${i + 1}` }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		              (pendingImages.length > 0 || imageError) && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-image-tray", "data-testid": "stage-image-tray", children: [
+		                pendingImages.map((img, i) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-image-thumb", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("img", { src: img.previewUrl, alt: img.name ?? `\u56FE\u7247 ${i + 1}` }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -10827,9 +12312,9 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }, `${i}-${img.name ?? ""}`)),
-		                imageError && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-image-error", children: imageError })
+		                imageError && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "p5-image-error", children: imageError })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
 		                "form",
 		                {
 		                  className: "p5-input-bar-slash",
@@ -10847,8 +12332,8 @@ window.__ModuleLoader__.load({
 		                    addImageFiles(e.dataTransfer.files);
 		                  },
 		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-input-field-box", children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-input-field-box", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                        "button",
 		                        {
 		                          type: "button",
@@ -10860,7 +12345,7 @@ window.__ModuleLoader__.load({
 		                          children: "\u{1F4CE}"
 		                        }
 		                      ),
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                        "input",
 		                        {
 		                          ref: imagePickerRef,
@@ -10874,7 +12359,7 @@ window.__ModuleLoader__.load({
 		                          }
 		                        }
 		                      ),
-		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                        "input",
 		                        {
 		                          ref: inputRef,
@@ -10898,7 +12383,7 @@ window.__ModuleLoader__.load({
 		                        }
 		                      )
 		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                      "button",
 		                      {
 		                        type: "submit",
@@ -10914,7 +12399,7 @@ window.__ModuleLoader__.load({
 		            ] })
 		          ] })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          SwitchTransition,
 		          {
 		            characterId: character.id,
@@ -10924,28 +12409,28 @@ window.__ModuleLoader__.load({
 		            tagline: character.tagline,
 		            themeColor: character.themeColor,
 		            accentColor: character.accentColor,
-		            portraitUrl: state.characters.find((c) => c.id === character.id)?.portraitUrl
+		            portraitUrl: effectiveCharacters.find((c) => c.id === character.id)?.portraitUrl
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(NavigatorCutin, { data: naviCutinData, onDismiss: dismissNaviCutin }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(BatonPassCutin, { data: batonCutinData, onDismiss: dismissBatonCutin }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(NavigatorCutin, { data: naviCutinData, onDismiss: dismissNaviCutin }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(BatonPassCutin, { data: batonCutinData, onDismiss: dismissBatonCutin }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          AllOutFinishOverlay,
 		          {
 		            data: allOutFinishData,
 		            onDismiss: dismissAllOutFinish
 		          }
 		        ),
-		        compactionState.activeCutin && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        compactionState.activeCutin && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          "div",
 		          {
 		            className: "p5-compaction-cutin",
 		            "data-testid": "compaction-cutin-banner",
 		            onClick: () => setCompactionState((prev) => ({ ...prev, activeCutin: false })),
-		            children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-compaction-blade", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-kicker", children: "\u2726 MEMORY DISTILLATION // \u8BB0\u5FC6\u51DD\u70BC\u6280\u80FD\u53D1\u52A8\uFF01" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-headline", children: compactionState.summaryText }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-compaction-sub", children: [
+		            children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-compaction-blade", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-compaction-kicker", children: "\u2726 MEMORY DISTILLATION // \u8BB0\u5FC6\u51DD\u70BC\u6280\u80FD\u53D1\u52A8\uFF01" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "p5-compaction-headline", children: compactionState.summaryText }),
+		              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "p5-compaction-sub", children: [
 		                "DSH \u4E0A\u4E0B\u6587\u84B8\u998F\u5B8C\u6210 \xB7 \u8B66\u6212\u69FD\u5DF2\u56DE\u843D\u81F3 ",
 		                usedK,
 		                "k / ",
@@ -10955,30 +12440,30 @@ window.__ModuleLoader__.load({
 		            ] })
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          PermissionModal,
 		          {
 		            permission: state.pendingPermission,
 		            selectedChoice: state.permissionChoice,
 		            characterId: character.id,
 		            characterName: shortNickname,
-		            portraitUrl: state.characters.find((c) => c.id === character.id)?.portraitUrl,
+		            portraitUrl: effectiveCharacters.find((c) => c.id === character.id)?.portraitUrl,
 		            onSelectChoice: (choice) => dispatch({ type: "SET_PERMISSION_CHOICE", choice }),
 		            onConfirm: handleConfirmPermission
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          BatonPassModal,
 		          {
 		            open: batonModalOpen,
 		            activeCharacterId: character.id,
-		            characters: state.characters,
+		            characters: effectiveCharacters,
 		            settings: state.serverSettings,
 		            onClose: () => setBatonModalOpen(false),
 		            onConfirm: handleConfirmBatonPass
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          ArchiveModal,
 		          {
 		            card: selectedCard,
@@ -10995,7 +12480,7 @@ window.__ModuleLoader__.load({
 		            onCommitGit: handleCommitGit
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          BacklogModal,
 		          {
 		            open: state.backlogOpen,
@@ -11006,7 +12491,7 @@ window.__ModuleLoader__.load({
 		            onInspectSkill: (toolUseId) => dispatch({ type: "SELECT_SKILL_CARD", toolUseId })
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          SystemMenuModal,
 		          {
 		            open: state.systemMenuOpen,
@@ -11014,7 +12499,7 @@ window.__ModuleLoader__.load({
 		            settings: state.serverSettings,
 		            settingsSyncedAt: state.settingsSyncedAt,
 		            currentSessionId: state.sessionInfo?.sessionId ?? state.sessionId,
-		            characters: state.characters,
+		            characters: effectiveCharacters,
 		            workerAdapters: state.workerAdapters,
 		            workerModels: state.workerModels,
 		            voiceModels: state.voiceModels,
@@ -11029,7 +12514,7 @@ window.__ModuleLoader__.load({
 		            onStartNewSessionWithDir: handleStartNewSessionWithDir
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		          ShortcutHelp,
 		          {
 		            archiveAvailable: state.skillCards.length > 0,
@@ -11116,7 +12601,7 @@ window.__ModuleLoader__.load({
 		function getStoredCharacterId() {
 		  try {
 		    const saved = window.localStorage.getItem(ACTIVE_CHAR_STORAGE_KEY);
-		    if (saved && KNOWN_CHARACTER_IDS.includes(saved)) {
+		    if (saved && (KNOWN_CHARACTER_IDS.includes(saved) || isCustomCharacterId(saved))) {
 		      return saved;
 		    }
 		  } catch {
@@ -11459,20 +12944,11 @@ window.__ModuleLoader__.load({
 		  }
 		};
 		var PERSONA_TAG_RE = /<stage-persona>[\s\S]*?<\/stage-persona>\s*/g;
-		var PERSONA_STYLE = {
-		  "deepseek-v4-pro": { self: "\u672C\u9C7C", call: "\u5E97\u957F", tone: "\u5143\u6C14\u6D3B\u6CFC\u3001\u7231\u7528\u300C\u5495\u565C\u300D\u7B49\u9C7C\u7CFB\u8BED\u6C14\u8BCD\uFF0C\u5E72\u6D3B\u51B2\u52B2\u5341\u8DB3" },
-		  "gemini-4-argon": { self: "\u672C\u55B5", call: "\u4E3B\u4EBA", tone: "\u50B2\u5A07\u732B\u5A18\u53E3\u543B\uFF0C\u53E5\u5C3E\u5076\u5C14\u5E26\u300C\u55B5\u300D\uFF0C\u5BF9\u754C\u9762\u7F8E\u611F\u975E\u5E38\u6311\u5254" },
-		  "claude-opus-5-5": { self: "\u6211", call: "\u8001\u5E08", tone: "\u77E5\u6027\u6E29\u67D4\u7684\u6587\u5B66\u5C11\u5973\uFF0C\u63AA\u8F9E\u4F18\u96C5\u3001\u6761\u7406\u5206\u660E" },
-		  "codex-dragon": { self: "\u6211", call: "\u642D\u6863", tone: "\u6E05\u51B7\u9AD8\u6D01\u7684\u767D\u9F99\u5A18\uFF0C\u4ECE\u5BB9\u81EA\u4FE1\u3001\u7B80\u6D01\u53EF\u9760\uFF0C\u5076\u5C14\u5E26\u4E00\u4E1D\u795E\u79D8\u5FAE\u7B11" }
-		};
 		function buildPersonaPreamble(characterId) {
 		  const pack = getCachedCharacterPack(characterId);
-		  const name = pack.name.split("\uFF08")[0];
-		  const style = PERSONA_STYLE[characterId] ?? { self: "\u6211", call: "\u642D\u6863", tone: "\u4FDD\u6301\u89D2\u8272\u53E3\u543B" };
-		  const role = DEFAULT_SETTINGS.characterBrains?.[characterId]?.rolePrompt ?? "";
-		  return `<stage-persona>\u4F60\u73B0\u5728\u662F\u300C${name}\u300D\u3002${role}\u81EA\u79F0\u300C${style.self}\u300D\uFF0C\u79F0\u547C\u7528\u6237\u4E3A\u300C${style.call}\u300D\uFF1B\u8BED\u6C14\uFF1A${style.tone}\u3002\u5168\u7A0B\u7528\u7B80\u4F53\u4E2D\u6587\u3001\u4EE5\u8BE5\u89D2\u8272\u8EAB\u4EFD\u56DE\u590D\uFF0C\u81EA\u6211\u4ECB\u7ECD\u65F6\u53EA\u8BF4\u81EA\u5DF1\u662F\u300C${name}\u300D\uFF0C\u4E0D\u8981\u63D0\u53CA\u4EFB\u4F55\u6A21\u578B\u540D\u3001\u5382\u5546\u6216\u7248\u672C\u53F7\uFF08\u5982 DeepSeek\u3001V4 Pro\u3001GPT\u3001Claude\uFF09\uFF0C\u7EDD\u4E0D\u81EA\u79F0"AI \u52A9\u624B"\u6216"\u7F16\u7A0B\u52A9\u624B"\uFF1B\u89D2\u8272\u53E3\u543B\u53EA\u4F53\u73B0\u5728\u63AA\u8F9E\u4E0A\uFF0C\u6280\u672F\u5185\u5BB9\u5FC5\u987B\u51C6\u786E\u5B8C\u6574\uFF0C\u4E0D\u7F16\u9020\u6267\u884C\u7ED3\u679C\u3002\u7528\u6237\u6CA1\u6709\u95EE\u8D77\u65F6\uFF0C\u4E0D\u8981\u4E3B\u52A8\u63D0\u53CA\u5DE5\u4F5C\u76EE\u5F55\u3001\u6587\u4EF6\u8DEF\u5F84\u3001\u5F53\u524D\u73AF\u5883\u6216\u81EA\u8EAB\u72B6\u6001\uFF0C\u76F4\u63A5\u56DE\u5E94\u7528\u6237\u7684\u8BDD\u3002\u6B64\u6BB5\u4E3A\u821E\u53F0\u8BBE\u5B9A\uFF0C\u65E0\u9700\u590D\u8FF0\u3002</stage-persona>
-		
-		`;
+		  const override = getDiyPersonaOverride(characterId);
+		  const fallbackRole = DEFAULT_SETTINGS.characterBrains?.[characterId]?.rolePrompt ?? "";
+		  return composeStagePersonaPreamble(pack, override, fallbackRole);
 		}
 		function stripPersona(text) {
 		  return text.replace(PERSONA_TAG_RE, "").trim();
@@ -11586,13 +13062,17 @@ window.__ModuleLoader__.load({
 		        }
 		      },
 		      characterBrains: Object.fromEntries(
-		        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [
-		          cid,
-		          {
-		            rolePrompt: brain.rolePrompt,
-		            ...cid === this.activeCharacterId ? { model } : {}
-		          }
-		        ])
+		        getAllCharacterIds().map((cid) => {
+		          const ov = getDiyPersonaOverride(cid);
+		          const defBrain = DEFAULT_SETTINGS.characterBrains[cid];
+		          return [
+		            cid,
+		            {
+		              rolePrompt: ov?.rolePrompt ?? defBrain?.rolePrompt,
+		              ...cid === this.activeCharacterId ? { model } : {}
+		            }
+		          ];
+		        })
 		      ),
 		      voice: {
 		        enabled: false,
@@ -11969,7 +13449,7 @@ window.__ModuleLoader__.load({
 		    return history;
 		  }
 		  publishWelcome(entries) {
-		    const characters = KNOWN_CHARACTER_IDS.map(
+		    const characters = getAllCharacterIds().map(
 		      (id) => toCharacterSummary(getCachedCharacterPack(id))
 		    );
 		    const history = this.buildFullHistoryFromWindow(entries);
@@ -12102,6 +13582,16 @@ window.__ModuleLoader__.load({
 		          this.activeCharacterId = nextId;
 		          this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
 		        }
+		      })
+		    );
+		    this.disposers.push(
+		      subscribeCharacterPacks(() => {
+		        const allIds = getAllCharacterIds();
+		        if (!allIds.includes(this.activeCharacterId)) {
+		          this.activeCharacterId = DEFAULT_CHARACTER_ID;
+		          setStoredCharacterId(DEFAULT_CHARACTER_ID);
+		        }
+		        this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
 		      })
 		    );
 		  }
@@ -12425,8 +13915,8 @@ window.__ModuleLoader__.load({
 		};
 		
 		// packages/dsh-client-ui-p5stage/src/client/P5PhantomSidebar.tsx
-		var import_react14 = require("react");
-		var import_jsx_runtime16 = require("react/jsx-runtime");
+		var import_react15 = require("react");
+		var import_jsx_runtime17 = require("react/jsx-runtime");
 		var P5PolyBox = ({
 		  points,
 		  fill,
@@ -12439,7 +13929,7 @@ window.__ModuleLoader__.load({
 		  style,
 		  children
 		}) => {
-		  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		    "div",
 		    {
 		      className,
@@ -12449,7 +13939,7 @@ window.__ModuleLoader__.load({
 		        ...style
 		      },
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		          "svg",
 		          {
 		            viewBox: "0 0 100 100",
@@ -12464,7 +13954,7 @@ window.__ModuleLoader__.load({
 		              overflow: "visible"
 		            },
 		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                "polygon",
 		                {
 		                  points,
@@ -12475,12 +13965,12 @@ window.__ModuleLoader__.load({
 		                  vectorEffect: "non-scaling-stroke"
 		                }
 		              ),
-		              accentSlashColor && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("polygon", { points: "0,4 5.5,2 4,98 0,96", fill: accentSlashColor }),
-		              cornerCutWhite && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("polygon", { points: "88,93 98,74 96.8,93.5", fill: "#ffffff", opacity: "0.92" })
+		              accentSlashColor && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("polygon", { points: "0,4 5.5,2 4,98 0,96", fill: accentSlashColor }),
+		              cornerCutWhite && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("polygon", { points: "88,93 98,74 96.8,93.5", fill: "#ffffff", opacity: "0.92" })
 		            ]
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { position: "relative", zIndex: 1 }, children })
+		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { position: "relative", zIndex: 1 }, children })
 		      ]
 		    }
 		  );
@@ -12501,8 +13991,8 @@ window.__ModuleLoader__.load({
 		}
 		function createP5SidebarComponents(ctx) {
 		  const P5HeaderLeadingToggle = () => {
-		    const [hovered, setHovered] = (0, import_react14.useState)(false);
-		    return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		    const [hovered, setHovered] = (0, import_react15.useState)(false);
+		    return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		      "button",
 		      {
 		        type: "button",
@@ -12527,7 +14017,7 @@ window.__ModuleLoader__.load({
 		          transform: hovered ? "translate(-1px, -1px) scale(1.03)" : "none",
 		          transition: "transform 100ms ease"
 		        },
-		        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		          "div",
 		          {
 		            style: {
@@ -12542,7 +14032,7 @@ window.__ModuleLoader__.load({
 		              transition: "background 110ms ease, box-shadow 110ms ease"
 		            },
 		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                "span",
 		                {
 		                  style: {
@@ -12558,7 +14048,7 @@ window.__ModuleLoader__.load({
 		                  children: "\u25B6"
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                "span",
 		                {
 		                  style: {
@@ -12582,16 +14072,16 @@ window.__ModuleLoader__.load({
 		  const P5PhantomSidebar = (props) => {
 		    const collapsed = Boolean(props?.collapsed);
 		    const renderSlot = props?.renderSlot;
-		    const [, setTick] = (0, import_react14.useState)(0);
-		    const [charId, setCharId] = (0, import_react14.useState)(getStoredCharacterId);
-		    const [activeStageId, setActiveStageId] = (0, import_react14.useState)(getActiveStageSessionId);
-		    const [query, setQuery] = (0, import_react14.useState)("");
-		    const [collapsedGroups, setCollapsedGroups] = (0, import_react14.useState)({});
-		    const [expandedAllInGroup, setExpandedAllInGroup] = (0, import_react14.useState)({});
-		    const [hoveredSessionId, setHoveredSessionId] = (0, import_react14.useState)(null);
-		    const [editingSessionId, setEditingSessionId] = (0, import_react14.useState)(null);
-		    const [editingDraft, setEditingDraft] = (0, import_react14.useState)("");
-		    const [localTitleOverrides, setLocalTitleOverrides] = (0, import_react14.useState)(() => {
+		    const [, setTick] = (0, import_react15.useState)(0);
+		    const [charId, setCharId] = (0, import_react15.useState)(getStoredCharacterId);
+		    const [activeStageId, setActiveStageId] = (0, import_react15.useState)(getActiveStageSessionId);
+		    const [query, setQuery] = (0, import_react15.useState)("");
+		    const [collapsedGroups, setCollapsedGroups] = (0, import_react15.useState)({});
+		    const [expandedAllInGroup, setExpandedAllInGroup] = (0, import_react15.useState)({});
+		    const [hoveredSessionId, setHoveredSessionId] = (0, import_react15.useState)(null);
+		    const [editingSessionId, setEditingSessionId] = (0, import_react15.useState)(null);
+		    const [editingDraft, setEditingDraft] = (0, import_react15.useState)("");
+		    const [localTitleOverrides, setLocalTitleOverrides] = (0, import_react15.useState)(() => {
 		      try {
 		        const raw = window.localStorage.getItem("bigfish.sessionCustomTitles");
 		        return raw ? JSON.parse(raw) : {};
@@ -12599,8 +14089,8 @@ window.__ModuleLoader__.load({
 		        return {};
 		      }
 		    });
-		    const hiddenSettingsRef = (0, import_react14.useRef)(null);
-		    (0, import_react14.useEffect)(() => {
+		    const hiddenSettingsRef = (0, import_react15.useRef)(null);
+		    (0, import_react15.useEffect)(() => {
 		      void preloadCharacterPacks();
 		      const disposers = [];
 		      disposers.push(subscribeCharacterPacks(() => setTick((v) => v + 1)));
@@ -12627,7 +14117,7 @@ window.__ModuleLoader__.load({
 		      };
 		    }, []);
 		    const activePanelId = ctx.layout?.panelInfo?.getSnapshot?.()?.activePanelId ?? null;
-		    const globalPanels = (0, import_react14.useMemo)(() => {
+		    const globalPanels = (0, import_react15.useMemo)(() => {
 		      const rawEntries = ctx.slots?.entriesOfSlot?.("sidebar.panellist") ?? [];
 		      const seen = /* @__PURE__ */ new Set();
 		      const items = [];
@@ -12686,15 +14176,15 @@ window.__ModuleLoader__.load({
 		      archivedSessionIds: [],
 		      pinnedSessionIds: []
 		    };
-		    const archivedSet = (0, import_react14.useMemo)(
+		    const archivedSet = (0, import_react15.useMemo)(
 		      () => new Set(workspacesSnap.archivedSessionIds ?? []),
 		      [workspacesSnap.archivedSessionIds]
 		    );
-		    const pinnedSet = (0, import_react14.useMemo)(
+		    const pinnedSet = (0, import_react15.useMemo)(
 		      () => new Set(workspacesSnap.pinnedSessionIds ?? []),
 		      [workspacesSnap.pinnedSessionIds]
 		    );
-		    const selectedSessionId = (0, import_react14.useMemo)(() => {
+		    const selectedSessionId = (0, import_react15.useMemo)(() => {
 		      if (activeStageId && sessionsSnap.byId?.[activeStageId]) {
 		        return activeStageId;
 		      }
@@ -12706,7 +14196,7 @@ window.__ModuleLoader__.load({
 		      }
 		      return activeStageId;
 		    }, [activeStageId, sessionsSnap]);
-		    const groups = (0, import_react14.useMemo)(() => {
+		    const groups = (0, import_react15.useMemo)(() => {
 		      const needle = query.trim().toLowerCase();
 		      const claimed = /* @__PURE__ */ new Set();
 		      const out = [];
@@ -12757,7 +14247,7 @@ window.__ModuleLoader__.load({
 		      }
 		      return out;
 		    }, [workspacesSnap, sessionsSnap, archivedSet, selectedSessionId, query, localTitleOverrides]);
-		    const currentWorkspaceId = (0, import_react14.useMemo)(() => {
+		    const currentWorkspaceId = (0, import_react15.useMemo)(() => {
 		      if (selectedSessionId) {
 		        const found = (workspacesSnap.items ?? []).find(
 		          (ws) => (ws.sessionIds ?? []).includes(selectedSessionId)
@@ -12824,7 +14314,7 @@ window.__ModuleLoader__.load({
 		      }
 		    };
 		    if (collapsed) {
-		      return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		      return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		        "aside",
 		        {
 		          className: "p5-phantom-sidebar is-collapsed",
@@ -12841,8 +14331,8 @@ window.__ModuleLoader__.load({
 		            padding: "12px 6px"
 		          },
 		          children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }, children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }, children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                "button",
 		                {
 		                  type: "button",
@@ -12852,7 +14342,7 @@ window.__ModuleLoader__.load({
 		                  },
 		                  title: "\u5C55\u5F00\u4F1A\u8BDD\u6863\u6848\u680F",
 		                  style: { background: "transparent", border: "none", padding: 0, cursor: "pointer" },
-		                  children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                  children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                    P5PolyBox,
 		                    {
 		                      points: "10,0 100,10 90,100 0,90",
@@ -12861,19 +14351,19 @@ window.__ModuleLoader__.load({
 		                      strokeWidth: 2,
 		                      shadow: "3px 3px 0 #000000",
 		                      style: { width: 36, height: 36, display: "grid", placeItems: "center" },
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#fff", fontSize: 13, fontWeight: 900 }, children: "\u25B6" })
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#fff", fontSize: 13, fontWeight: 900 }, children: "\u25B6" })
 		                    }
 		                  )
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                "button",
 		                {
 		                  type: "button",
 		                  onClick: () => handleNewSession(),
 		                  title: "\u65B0\u5EFA\u821E\u53F0\u4F1A\u8BDD",
 		                  style: { background: "transparent", border: "none", padding: 0, cursor: "pointer" },
-		                  children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                  children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                    P5PolyBox,
 		                    {
 		                      points: "0,10 92,0 100,90 8,100",
@@ -12882,7 +14372,7 @@ window.__ModuleLoader__.load({
 		                      strokeWidth: 1.8,
 		                      shadow: "3px 3px 0 #000000",
 		                      style: { width: 36, height: 36, display: "grid", placeItems: "center" },
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#e60012", fontSize: 18, fontWeight: 900 }, children: "\uFF0B" })
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#e60012", fontSize: 18, fontWeight: 900 }, children: "\uFF0B" })
 		                    }
 		                  )
 		                }
@@ -12890,14 +14380,14 @@ window.__ModuleLoader__.load({
 		              globalPanels.map((panel) => {
 		                const isActive = activePanelId === panel.id;
 		                const shortGlyph = panel.id === "plugins" ? "\u{1F9E9}" : panel.id.includes("schedule") || panel.id.includes("cron") ? "\u23F1" : "\u25C8";
-		                return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
 		                    onClick: () => handleOpenPanel(panel.id),
 		                    title: panel.label,
 		                    style: { background: "transparent", border: "none", padding: 0, cursor: "pointer" },
-		                    children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      P5PolyBox,
 		                      {
 		                        points: "8,0 100,8 92,100 0,92",
@@ -12906,7 +14396,7 @@ window.__ModuleLoader__.load({
 		                        strokeWidth: isActive ? 2 : 1.6,
 		                        shadow: "3px 3px 0 #000000",
 		                        style: { width: 36, height: 36, display: "grid", placeItems: "center" },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#ffffff", fontSize: 14, fontWeight: 900 }, children: shortGlyph })
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#ffffff", fontSize: 14, fontWeight: 900 }, children: shortGlyph })
 		                      }
 		                    )
 		                  },
@@ -12914,15 +14404,15 @@ window.__ModuleLoader__.load({
 		                );
 		              })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }, children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }, children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                "button",
 		                {
 		                  type: "button",
 		                  onClick: handleOpenNativeSettings,
 		                  title: "\u6253\u5F00 DSH \u539F\u751F\u8BBE\u7F6E\u4E0E\u8D26\u53F7",
 		                  style: { background: "transparent", border: "none", padding: 0, cursor: "pointer" },
-		                  children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                  children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                    P5PolyBox,
 		                    {
 		                      points: "0,8 94,0 100,92 6,100",
@@ -12931,12 +14421,12 @@ window.__ModuleLoader__.load({
 		                      strokeWidth: 1.6,
 		                      shadow: "3px 3px 0 #000000",
 		                      style: { width: 36, height: 36, display: "grid", placeItems: "center" },
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#fde047", fontSize: 14, fontWeight: 900 }, children: "\u2699" })
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#fde047", fontSize: 14, fontWeight: 900 }, children: "\u2699" })
 		                    }
 		                  )
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                "div",
 		                {
 		                  ref: hiddenSettingsRef,
@@ -12960,7 +14450,7 @@ window.__ModuleLoader__.load({
 		      );
 		    }
 		    let globalCardIdx = 0;
-		    return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		    return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		      "aside",
 		      {
 		        className: "p5-phantom-sidebar",
@@ -12979,7 +14469,7 @@ window.__ModuleLoader__.load({
 		          fontFamily: '"Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif'
 		        },
 		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		            "svg",
 		            {
 		              viewBox: "0 0 280 900",
@@ -12994,9 +14484,9 @@ window.__ModuleLoader__.load({
 		                zIndex: 0
 		              },
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("defs", { children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("pattern", { id: "p5-sb-dots", width: "10", height: "10", patternUnits: "userSpaceOnUse", children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("circle", { cx: "2", cy: "2", r: "1.15", fill: "rgba(230, 0, 18, 0.28)" }) }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("defs", { children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("pattern", { id: "p5-sb-dots", width: "10", height: "10", patternUnits: "userSpaceOnUse", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("circle", { cx: "2", cy: "2", r: "1.15", fill: "rgba(230, 0, 18, 0.28)" }) }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                    "pattern",
 		                    {
 		                      id: "p5-sb-stripes",
@@ -13004,21 +14494,21 @@ window.__ModuleLoader__.load({
 		                      height: "14",
 		                      patternUnits: "userSpaceOnUse",
 		                      patternTransform: "rotate(-42)",
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("rect", { width: "3", height: "14", fill: "rgba(255, 255, 255, 0.018)" })
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("rect", { width: "3", height: "14", fill: "rgba(255, 255, 255, 0.018)" })
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("rect", { width: "280", height: "900", fill: "url(#p5-sb-stripes)" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("polygon", { points: "0,0 280,0 280,96 0,148", fill: "rgba(230, 0, 18, 0.16)" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("polygon", { points: "0,0 190,0 95,128 0,128", fill: "url(#p5-sb-dots)" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("polygon", { points: "90,900 280,795 280,900", fill: "rgba(230, 0, 18, 0.14)" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("polygon", { points: "140,900 280,820 280,900", fill: "url(#p5-sb-dots)" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("line", { x1: "278.5", y1: "0", x2: "278.5", y2: "900", stroke: "#e60012", strokeWidth: "3" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("line", { x1: "275", y1: "0", x2: "275", y2: "900", stroke: "rgba(255,255,255,0.22)", strokeWidth: "1" })
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("rect", { width: "280", height: "900", fill: "url(#p5-sb-stripes)" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("polygon", { points: "0,0 280,0 280,96 0,148", fill: "rgba(230, 0, 18, 0.16)" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("polygon", { points: "0,0 190,0 95,128 0,128", fill: "url(#p5-sb-dots)" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("polygon", { points: "90,900 280,795 280,900", fill: "rgba(230, 0, 18, 0.14)" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("polygon", { points: "140,900 280,820 280,900", fill: "url(#p5-sb-dots)" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("line", { x1: "278.5", y1: "0", x2: "278.5", y2: "900", stroke: "#e60012", strokeWidth: "3" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("line", { x1: "275", y1: "0", x2: "275", y2: "900", stroke: "rgba(255,255,255,0.22)", strokeWidth: "1" })
 		              ]
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		            "div",
 		            {
 		              "aria-hidden": "true",
@@ -13037,7 +14527,7 @@ window.__ModuleLoader__.load({
 		              children: "STAGE LOG"
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		            "div",
 		            {
 		              className: "p5-sb-header-zone",
@@ -13052,8 +14542,8 @@ window.__ModuleLoader__.load({
 		                gap: 8
 		              },
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }, children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }, children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                    P5PolyBox,
 		                    {
 		                      points: "8,0 100,10 92,100 0,90",
@@ -13062,7 +14552,7 @@ window.__ModuleLoader__.load({
 		                      strokeWidth: 2,
 		                      shadow: "3px 3px 0 #000000",
 		                      style: { width: 34, height: 34, flexShrink: 0, padding: 2 },
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                        "img",
 		                        {
 		                          src: portraitUrl,
@@ -13078,7 +14568,7 @@ window.__ModuleLoader__.load({
 		                      )
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                    P5PolyBox,
 		                    {
 		                      points: "0,10 98,0 100,88 3,100",
@@ -13087,8 +14577,8 @@ window.__ModuleLoader__.load({
 		                      strokeWidth: 2,
 		                      shadow: "4px 4px 0 #e60012",
 		                      style: { padding: "4px 10px 4px 9px", flex: 1, minWidth: 0 },
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                          "span",
 		                          {
 		                            style: {
@@ -13104,7 +14594,7 @@ window.__ModuleLoader__.load({
 		                            children: "LOG"
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                          "span",
 		                          {
 		                            style: {
@@ -13124,7 +14614,7 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -13142,7 +14632,7 @@ window.__ModuleLoader__.load({
 		                      flexShrink: 0,
 		                      WebkitAppRegion: "no-drag"
 		                    },
-		                    children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      P5PolyBox,
 		                      {
 		                        points: "12,0 100,10 88,100 0,90",
@@ -13151,7 +14641,7 @@ window.__ModuleLoader__.load({
 		                        strokeWidth: 1.8,
 		                        shadow: "3px 3px 0 #000000",
 		                        style: { width: 30, height: 30, display: "grid", placeItems: "center" },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#ffffff", fontSize: 11, fontWeight: 900 }, children: "\u25C0" })
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#ffffff", fontSize: 11, fontWeight: 900 }, children: "\u25C0" })
 		                      }
 		                    )
 		                  }
@@ -13159,7 +14649,7 @@ window.__ModuleLoader__.load({
 		              ]
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { position: "relative", zIndex: 2, padding: "4px 14px 10px 12px" }, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { position: "relative", zIndex: 2, padding: "4px 14px 10px 12px" }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -13174,7 +14664,7 @@ window.__ModuleLoader__.load({
 		                cursor: "pointer",
 		                textAlign: "left"
 		              },
-		              children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		              children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                P5PolyBox,
 		                {
 		                  points: "2.5,9 100,0 97,89 0,100",
@@ -13184,7 +14674,7 @@ window.__ModuleLoader__.load({
 		                  shadow: "5px 5px 0 #000000",
 		                  cornerCutWhite: true,
 		                  style: { padding: "9px 14px" },
-		                  children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                  children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                    "div",
 		                    {
 		                      style: {
@@ -13194,7 +14684,7 @@ window.__ModuleLoader__.load({
 		                        gap: 8
 		                      },
 		                      children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                          "span",
 		                          {
 		                            style: {
@@ -13208,7 +14698,7 @@ window.__ModuleLoader__.load({
 		                              textShadow: "1.5px 1.5px 0 #000000"
 		                            },
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                "span",
 		                                {
 		                                  style: {
@@ -13226,7 +14716,7 @@ window.__ModuleLoader__.load({
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                          "span",
 		                          {
 		                            style: {
@@ -13245,7 +14735,7 @@ window.__ModuleLoader__.load({
 		              )
 		            }
 		          ) }),
-		          globalPanels.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		          globalPanels.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		            "div",
 		            {
 		              "data-testid": "p5-sb-global-panels",
@@ -13261,7 +14751,7 @@ window.__ModuleLoader__.load({
 		                const isActive = activePanelId === panel.id;
 		                const badge = panel.id === "plugins" ? "MOD" : panel.id.includes("schedule") || panel.id.includes("cron") ? "JOB" : "SYS";
 		                const poly = pIdx % 2 === 0 ? "3,10 100,0 97,90 0,100" : "0,0 97,10 100,100 3,90";
-		                return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -13277,7 +14767,7 @@ window.__ModuleLoader__.load({
 		                      cursor: "pointer",
 		                      textAlign: "left"
 		                    },
-		                    children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      P5PolyBox,
 		                      {
 		                        points: poly,
@@ -13287,7 +14777,7 @@ window.__ModuleLoader__.load({
 		                        shadow: "3px 3px 0 #000000",
 		                        accentSlashColor: isActive ? "#090910" : "#e60012",
 		                        style: { padding: "6px 9px 6px 11px" },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                          "div",
 		                          {
 		                            style: {
@@ -13298,7 +14788,7 @@ window.__ModuleLoader__.load({
 		                              minWidth: 0
 		                            },
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                                "span",
 		                                {
 		                                  style: {
@@ -13315,7 +14805,7 @@ window.__ModuleLoader__.load({
 		                                    textOverflow: "ellipsis"
 		                                  },
 		                                  children: [
-		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                      "span",
 		                                      {
 		                                        style: {
@@ -13331,7 +14821,7 @@ window.__ModuleLoader__.load({
 		                                        children: badge
 		                                      }
 		                                    ),
-		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                      "span",
 		                                      {
 		                                        style: {
@@ -13344,7 +14834,7 @@ window.__ModuleLoader__.load({
 		                                  ]
 		                                }
 		                              ),
-		                              isActive && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                              isActive && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                "span",
 		                                {
 		                                  style: {
@@ -13368,7 +14858,7 @@ window.__ModuleLoader__.load({
 		              })
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		            "div",
 		            {
 		              style: {
@@ -13380,7 +14870,7 @@ window.__ModuleLoader__.load({
 		                gap: 8
 		              },
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                  P5PolyBox,
 		                  {
 		                    points: "0,6 99,0 100,93 1.5,100",
@@ -13389,9 +14879,9 @@ window.__ModuleLoader__.load({
 		                    strokeWidth: 1.6,
 		                    shadow: "3px 3px 0 #000000",
 		                    style: { flex: 1, minWidth: 0, padding: "5px 10px" },
-		                    children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { fontSize: 11, color: "#e60012", fontWeight: 900 }, children: "\u2315" }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { fontSize: 11, color: "#e60012", fontWeight: 900 }, children: "\u2315" }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                        "input",
 		                        {
 		                          type: "text",
@@ -13410,7 +14900,7 @@ window.__ModuleLoader__.load({
 		                          }
 		                        }
 		                      ),
-		                      query && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                      query && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                        "button",
 		                        {
 		                          type: "button",
@@ -13430,7 +14920,7 @@ window.__ModuleLoader__.load({
 		                    ] })
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -13444,7 +14934,7 @@ window.__ModuleLoader__.load({
 		                      cursor: "pointer",
 		                      flexShrink: 0
 		                    },
-		                    children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      P5PolyBox,
 		                      {
 		                        points: "8,0 100,9 92,100 0,91",
@@ -13453,7 +14943,7 @@ window.__ModuleLoader__.load({
 		                        strokeWidth: 1.6,
 		                        shadow: "3px 3px 0 #000000",
 		                        style: { padding: "5px 8px" },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                          "span",
 		                          {
 		                            style: {
@@ -13472,7 +14962,7 @@ window.__ModuleLoader__.load({
 		              ]
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		            "div",
 		            {
 		              className: "p5-sb-scroll",
@@ -13493,9 +14983,9 @@ window.__ModuleLoader__.load({
 		                const showAll = Boolean(expandedAllInGroup[group.id]) || Boolean(query.trim());
 		                const visibleSessions = showAll ? group.sessions : group.sessions.slice(0, 6);
 		                const hiddenCount = Math.max(0, group.sessions.length - visibleSessions.length);
-		                return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 7 }, children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 7 }, children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -13515,7 +15005,7 @@ window.__ModuleLoader__.load({
 		                          cursor: "pointer",
 		                          textAlign: "left"
 		                        },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                          P5PolyBox,
 		                          {
 		                            points: "0,14 97,0 100,86 2.5,100",
@@ -13525,7 +15015,7 @@ window.__ModuleLoader__.load({
 		                            shadow: "3px 3px 0 #000000",
 		                            accentSlashColor: "#e60012",
 		                            style: { padding: "4px 10px 4px 12px" },
-		                            children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                            children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                              "div",
 		                              {
 		                                style: {
@@ -13535,7 +15025,7 @@ window.__ModuleLoader__.load({
 		                                  gap: 6
 		                                },
 		                                children: [
-		                                  /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                                  /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                                    "span",
 		                                    {
 		                                      style: {
@@ -13552,12 +15042,12 @@ window.__ModuleLoader__.load({
 		                                        whiteSpace: "nowrap"
 		                                      },
 		                                      children: [
-		                                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#e60012", fontSize: 10 }, children: isGroupCollapsed ? "\u25B6" : "\u25BC" }),
-		                                        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: group.title })
+		                                        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#e60012", fontSize: 10 }, children: isGroupCollapsed ? "\u25B6" : "\u25BC" }),
+		                                        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: group.title })
 		                                      ]
 		                                    }
 		                                  ),
-		                                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                    "span",
 		                                    {
 		                                      style: {
@@ -13581,7 +15071,7 @@ window.__ModuleLoader__.load({
 		                        )
 		                      }
 		                    ),
-		                    group.workspaceId && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    group.workspaceId && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      "button",
 		                      {
 		                        type: "button",
@@ -13595,7 +15085,7 @@ window.__ModuleLoader__.load({
 		                          cursor: "pointer",
 		                          flexShrink: 0
 		                        },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                          P5PolyBox,
 		                          {
 		                            points: "12,0 100,12 88,100 0,88",
@@ -13604,7 +15094,7 @@ window.__ModuleLoader__.load({
 		                            strokeWidth: 1.5,
 		                            shadow: "2px 2px 0 #000000",
 		                            style: { width: 24, height: 24, display: "grid", placeItems: "center" },
-		                            children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#ffffff", fontSize: 12, fontWeight: 900 }, children: "\uFF0B" })
+		                            children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#ffffff", fontSize: 12, fontWeight: 900 }, children: "\uFF0B" })
 		                          }
 		                        )
 		                      }
@@ -13616,7 +15106,7 @@ window.__ModuleLoader__.load({
 		                    const isHovered = s.id === hoveredSessionId;
 		                    const isPinned = pinnedSet.has(s.id);
 		                    const polyPoints = idx % 2 === 0 ? "1.6,7 100,0 98,92 0,100" : "0,0 98.4,8 100,100 1.8,92";
-		                    return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      "div",
 		                      {
 		                        role: "button",
@@ -13651,7 +15141,7 @@ window.__ModuleLoader__.load({
 		                          transform: isSelected ? "translateX(2px)" : isHovered ? "translateX(3px) translateY(-1px)" : "none",
 		                          transition: "transform 0.12s ease"
 		                        },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                          P5PolyBox,
 		                          {
 		                            points: polyPoints,
@@ -13662,7 +15152,7 @@ window.__ModuleLoader__.load({
 		                            accentSlashColor: isSelected ? "#090910" : isHovered ? "#e60012" : "rgba(230,0,18,0.65)",
 		                            cornerCutWhite: isSelected,
 		                            style: { padding: "7px 10px 7px 12px" },
-		                            children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                            children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                              "div",
 		                              {
 		                                style: {
@@ -13672,7 +15162,7 @@ window.__ModuleLoader__.load({
 		                                  gap: 6
 		                                },
 		                                children: [
-		                                  /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                                  /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                                    "div",
 		                                    {
 		                                      style: {
@@ -13683,7 +15173,7 @@ window.__ModuleLoader__.load({
 		                                        flex: 1
 		                                      },
 		                                      children: [
-		                                        (isSelected || s.running) && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                        (isSelected || s.running) && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                          "span",
 		                                          {
 		                                            style: {
@@ -13699,8 +15189,8 @@ window.__ModuleLoader__.load({
 		                                            children: s.running ? "ACT" : "NOW"
 		                                          }
 		                                        ),
-		                                        isPinned && !isSelected && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#fbbf24", fontSize: 10, flexShrink: 0 }, children: "\u2605" }),
-		                                        editingSessionId === s.id ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                        isPinned && !isSelected && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#fbbf24", fontSize: 10, flexShrink: 0 }, children: "\u2605" }),
+		                                        editingSessionId === s.id ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                          "input",
 		                                          {
 		                                            type: "text",
@@ -13735,7 +15225,7 @@ window.__ModuleLoader__.load({
 		                                              outline: "none"
 		                                            }
 		                                          }
-		                                        ) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                        ) : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                          "span",
 		                                          {
 		                                            title: "\u53CC\u51FB\u6216\u70B9\u51FB\u53F3\u4FA7 \u270E \u91CD\u547D\u540D\u4F1A\u8BDD",
@@ -13754,8 +15244,8 @@ window.__ModuleLoader__.load({
 		                                      ]
 		                                    }
 		                                  ),
-		                                  editingSessionId === s.id ? null : isHovered && !s.blank ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }, children: [
-		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                  editingSessionId === s.id ? null : isHovered && !s.blank ? /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }, children: [
+		                                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                      "button",
 		                                      {
 		                                        type: "button",
@@ -13774,7 +15264,7 @@ window.__ModuleLoader__.load({
 		                                        children: "\u270E"
 		                                      }
 		                                    ),
-		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                      "button",
 		                                      {
 		                                        type: "button",
@@ -13793,7 +15283,7 @@ window.__ModuleLoader__.load({
 		                                        children: "\u2715"
 		                                      }
 		                                    )
-		                                  ] }) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                                  ] }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                    "span",
 		                                    {
 		                                      style: {
@@ -13815,7 +15305,7 @@ window.__ModuleLoader__.load({
 		                      s.id
 		                    );
 		                  }),
-		                  !isGroupCollapsed && hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                  !isGroupCollapsed && hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -13828,7 +15318,7 @@ window.__ModuleLoader__.load({
 		                        padding: 0,
 		                        cursor: "pointer"
 		                      },
-		                      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                        P5PolyBox,
 		                        {
 		                          points: "4,0 100,8 96,100 0,92",
@@ -13837,7 +15327,7 @@ window.__ModuleLoader__.load({
 		                          strokeWidth: 1.3,
 		                          shadow: "2px 2px 0 #000000",
 		                          style: { padding: "3px 10px" },
-		                          children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                          children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                            "span",
 		                            {
 		                              style: {
@@ -13861,7 +15351,7 @@ window.__ModuleLoader__.load({
 		              })
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		            "div",
 		            {
 		              style: {
@@ -13872,7 +15362,7 @@ window.__ModuleLoader__.load({
 		                alignItems: "center"
 		              },
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -13887,7 +15377,7 @@ window.__ModuleLoader__.load({
 		                      cursor: "pointer",
 		                      textAlign: "left"
 		                    },
-		                    children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                      P5PolyBox,
 		                      {
 		                        points: "0,9 98.5,0 100,91 1.5,100",
@@ -13897,7 +15387,7 @@ window.__ModuleLoader__.load({
 		                        shadow: "4px 4px 0 #000000",
 		                        accentSlashColor: "#22c55e",
 		                        style: { padding: "8px 11px 8px 13px", flex: 1, minWidth: 0 },
-		                        children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                          "div",
 		                          {
 		                            style: {
@@ -13907,7 +15397,7 @@ window.__ModuleLoader__.load({
 		                              gap: 6
 		                            },
 		                            children: [
-		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                                "span",
 		                                {
 		                                  style: {
@@ -13922,7 +15412,7 @@ window.__ModuleLoader__.load({
 		                                  children: "BIGFISH STAGE \xD7 DSH"
 		                                }
 		                              ),
-		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		                              /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
 		                                "span",
 		                                {
 		                                  style: {
@@ -13938,8 +15428,8 @@ window.__ModuleLoader__.load({
 		                                    flexShrink: 0
 		                                  },
 		                                  children: [
-		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "\u25CF LOCAL" }),
-		                                    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { color: "#fde047", fontSize: 13 }, children: "\u2699" })
+		                                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: "\u25CF LOCAL" }),
+		                                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: "#fde047", fontSize: 13 }, children: "\u2699" })
 		                                  ]
 		                                }
 		                              )
@@ -13950,7 +15440,7 @@ window.__ModuleLoader__.load({
 		                    )
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
 		                  "div",
 		                  {
 		                    ref: hiddenSettingsRef,
@@ -13979,7 +15469,7 @@ window.__ModuleLoader__.load({
 		}
 		
 		// packages/dsh-client-ui-p5stage/src/client/index.tsx
-		var import_jsx_runtime17 = require("react/jsx-runtime");
+		var import_jsx_runtime18 = require("react/jsx-runtime");
 		var inject = [
 		  "slots",
 		  "sessions",
@@ -21994,6 +23484,421 @@ window.__ModuleLoader__.load({
 		  justify-content: flex-end;
 		  padding-top: 2px;
 		}
+		
+		
+		.p5-sys-panel-head--split {
+		  display: flex;
+		  align-items: center;
+		  justify-content: space-between;
+		  gap: 14px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-diy-open-creator-btn {
+		  background: var(--p5-red, #e60012);
+		  color: #ffffff;
+		  border: 2px solid #ffffff;
+		  padding: 6px 15px;
+		  font-size: 13px;
+		  font-weight: 900;
+		  letter-spacing: 0.05em;
+		  cursor: pointer;
+		  transform: skewX(-10deg);
+		  box-shadow: 4px 4px 0 #000000;
+		  flex-shrink: 0;
+		  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+		}
+		
+		.p5-diy-open-creator-btn:hover {
+		  background: var(--p5-yellow, #fde047);
+		  color: #090910;
+		  transform: skewX(-10deg) translate(-1px, -1px);
+		  box-shadow: 5px 5px 0 var(--p5-red, #e60012);
+		}
+		
+		.p5-char-diy-pill {
+		  background: rgba(250, 204, 21, 0.18);
+		  color: var(--p5-yellow, #fde047);
+		  border: 1px solid var(--p5-yellow, #fde047);
+		  padding: 1px 7px;
+		  font-size: 11px;
+		  font-weight: 900;
+		}
+		
+		.p5-char-persona-bar {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 8px;
+		  padding-top: 7px;
+		  border-top: 1px dashed rgba(255, 255, 255, 0.22);
+		}
+		
+		.p5-char-persona-row {
+		  display: flex;
+		  align-items: center;
+		  justify-content: space-between;
+		  gap: 8px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-char-persona-status {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		  min-width: 0;
+		}
+		
+		.p5-persona-file-pill {
+		  display: inline-flex;
+		  align-items: center;
+		  gap: 4px;
+		  font-family: var(--font-mono, monospace);
+		  font-size: 11px;
+		  font-weight: 800;
+		  padding: 2px 8px;
+		  background: #111522;
+		  color: #94a3b8;
+		  border: 1px solid #334155;
+		  max-width: 220px;
+		  overflow: hidden;
+		  text-overflow: ellipsis;
+		  white-space: nowrap;
+		}
+		
+		.p5-persona-file-pill.is-custom {
+		  background: rgba(230, 0, 18, 0.2);
+		  color: #fde047;
+		  border-color: #fde047;
+		}
+		
+		.p5-char-persona-actions {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-mini-action-btn--danger {
+		  background: var(--p5-red, #e60012) !important;
+		  color: #ffffff !important;
+		  border-color: #ffffff !important;
+		}
+		
+		.p5-diy-inline-notice {
+		  font-size: 11.5px;
+		  font-weight: 800;
+		  padding: 4px 9px;
+		  border-left: 3px solid #ffffff;
+		}
+		
+		.p5-diy-inline-notice.is-ok {
+		  background: rgba(16, 185, 129, 0.16);
+		  border-left-color: #10b981;
+		  color: #a7f3d0;
+		}
+		
+		.p5-diy-inline-notice.is-err {
+		  background: rgba(239, 68, 68, 0.18);
+		  border-left-color: #ef4444;
+		  color: #fecaca;
+		}
+		
+		.p5-persona-inline-editor {
+		  background: #080a12;
+		  border: 1.5px solid rgba(250, 204, 21, 0.55);
+		  border-left: 4px solid var(--p5-yellow, #fde047);
+		  padding: 10px 12px;
+		  display: flex;
+		  flex-direction: column;
+		  gap: 8px;
+		}
+		
+		.p5-diy-grid-2 {
+		  display: grid;
+		  grid-template-columns: repeat(2, minmax(0, 1fr));
+		  gap: 10px;
+		}
+		
+		.p5-diy-grid-3 {
+		  display: grid;
+		  grid-template-columns: repeat(3, minmax(0, 1fr));
+		  gap: 8px;
+		}
+		
+		@media (max-width: 780px) {
+		  .p5-diy-grid-2,
+		  .p5-diy-grid-3 {
+		    grid-template-columns: 1fr;
+		  }
+		}
+		
+		.p5-diy-field {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 4px;
+		  min-width: 0;
+		}
+		
+		.p5-diy-textarea {
+		  width: 100%;
+		  background: #05070d;
+		  color: #f8fafc;
+		  border: 1.5px solid #475569;
+		  padding: 7px 10px;
+		  font-family: var(--font-sans, 'Noto Sans SC', sans-serif);
+		  font-size: 12px;
+		  line-height: 1.5;
+		  resize: vertical;
+		  min-height: 82px;
+		}
+		
+		.p5-diy-textarea:focus {
+		  outline: none;
+		  border-color: var(--p5-yellow, #fde047);
+		}
+		
+		.p5-diy-editor-foot {
+		  display: flex;
+		  align-items: center;
+		  gap: 8px;
+		}
+		
+		
+		.p5-diy-creator-card {
+		  background: linear-gradient(135deg, #130b14 0%, #0b0e18 100%);
+		  border: 2px solid #ffffff;
+		  border-left: 6px solid var(--p5-red, #e60012);
+		  box-shadow: 6px 6px 0 #000000, 9px 9px 0 rgba(230, 0, 18, 0.65);
+		  padding: 14px 16px;
+		  display: flex;
+		  flex-direction: column;
+		  gap: 12px;
+		}
+		
+		.p5-diy-creator-head {
+		  display: flex;
+		  align-items: flex-start;
+		  justify-content: space-between;
+		  gap: 12px;
+		}
+		
+		.p5-diy-kicker {
+		  display: inline-block;
+		  font-family: 'Anton', var(--font-mono, monospace);
+		  font-size: 11px;
+		  letter-spacing: 0.12em;
+		  background: var(--p5-red, #e60012);
+		  color: #ffffff;
+		  padding: 1px 8px;
+		  transform: skewX(-10deg);
+		  margin-bottom: 3px;
+		}
+		
+		.p5-diy-creator-head h4 {
+		  margin: 0;
+		  font-size: 16px;
+		  font-weight: 900;
+		  color: #ffffff;
+		}
+		
+		.p5-diy-creator-head p {
+		  margin: 2px 0 0;
+		  font-size: 12px;
+		  color: #cbd5e1;
+		}
+		
+		.p5-diy-main-layout {
+		  display: grid;
+		  grid-template-columns: 168px minmax(0, 1fr);
+		  gap: 14px;
+		  align-items: start;
+		}
+		
+		@media (max-width: 720px) {
+		  .p5-diy-main-layout {
+		    grid-template-columns: 1fr;
+		  }
+		}
+		
+		.p5-diy-standee-box {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 7px;
+		}
+		
+		.p5-diy-standee-preview {
+		  width: 100%;
+		  aspect-ratio: 3 / 4;
+		  background: radial-gradient(
+		      circle at 50% 35%,
+		      color-mix(in srgb, var(--diy-theme, #e60012) 32%, transparent),
+		      transparent 70%
+		    ),
+		    #070910;
+		  border: 2px dashed rgba(255, 255, 255, 0.5);
+		  display: flex;
+		  align-items: center;
+		  justify-content: center;
+		  overflow: hidden;
+		  cursor: pointer;
+		  position: relative;
+		  transition: border-color 0.12s ease, transform 0.12s ease;
+		}
+		
+		.p5-diy-standee-preview:hover {
+		  border-color: var(--p5-yellow, #fde047);
+		  border-style: solid;
+		}
+		
+		.p5-diy-standee-preview img {
+		  width: 100%;
+		  height: 100%;
+		  object-fit: contain;
+		}
+		
+		.p5-diy-standee-placeholder {
+		  display: flex;
+		  flex-direction: column;
+		  align-items: center;
+		  text-align: center;
+		  gap: 4px;
+		  padding: 10px;
+		  color: #cbd5e1;
+		  font-size: 11px;
+		}
+		
+		.p5-diy-plus {
+		  font-size: 26px;
+		  font-weight: 900;
+		  color: var(--p5-yellow, #fde047);
+		  line-height: 1;
+		}
+		
+		.p5-diy-upload-trigger {
+		  width: 100%;
+		  text-align: center;
+		  justify-content: center;
+		}
+		
+		.p5-diy-fields-col {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 9px;
+		  min-width: 0;
+		}
+		
+		.p5-diy-color-row {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		  min-height: 28px;
+		}
+		
+		.p5-diy-swatch {
+		  width: 22px;
+		  height: 22px;
+		  border: 2px solid rgba(255, 255, 255, 0.45);
+		  cursor: pointer;
+		  transform: skewX(-8deg);
+		  padding: 0;
+		}
+		
+		.p5-diy-swatch.is-selected {
+		  border-color: #ffffff;
+		  box-shadow: 0 0 0 2px var(--p5-yellow, #fde047);
+		  transform: skewX(-8deg) scale(1.12);
+		}
+		
+		.p5-diy-color-picker {
+		  width: 28px;
+		  height: 24px;
+		  padding: 0;
+		  border: 1px solid #64748b;
+		  background: transparent;
+		  cursor: pointer;
+		}
+		
+		.p5-diy-inline-btns {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-diy-source-tag {
+		  margin-left: 8px;
+		  padding: 1px 6px;
+		  font-size: 10.5px;
+		  background: rgba(250, 204, 21, 0.18);
+		  color: var(--p5-yellow, #fde047);
+		  border: 1px solid rgba(250, 204, 21, 0.6);
+		}
+		
+		.p5-diy-advanced-box {
+		  background: rgba(6, 8, 15, 0.85);
+		  border: 1px solid #334155;
+		  border-left: 3px solid var(--p5-cyan, #38bdf8);
+		  padding: 10px 12px;
+		  display: flex;
+		  flex-direction: column;
+		  gap: 9px;
+		}
+		
+		.p5-diy-emotion-grid {
+		  display: grid;
+		  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+		  gap: 6px;
+		}
+		
+		.p5-diy-emo-slot {
+		  display: flex;
+		  align-items: center;
+		  justify-content: center;
+		  padding: 5px 8px;
+		  background: #111625;
+		  border: 1px dashed #475569;
+		  color: #cbd5e1;
+		  font-size: 11px;
+		  font-weight: 800;
+		  cursor: pointer;
+		  text-align: center;
+		}
+		
+		.p5-diy-emo-slot:hover {
+		  border-color: var(--p5-yellow, #fde047);
+		  color: #ffffff;
+		}
+		
+		.p5-diy-emo-slot.is-set {
+		  border-style: solid;
+		  border-color: #10b981;
+		  background: rgba(16, 185, 129, 0.16);
+		  color: #a7f3d0;
+		}
+		
+		.p5-diy-creator-foot {
+		  display: flex;
+		  align-items: center;
+		  gap: 10px;
+		  padding-top: 6px;
+		  border-top: 1px solid rgba(255, 255, 255, 0.15);
+		}
+		
+		.p5-diy-submit-btn {
+		  background: var(--p5-red, #e60012);
+		  color: #ffffff;
+		  border: 2px solid #ffffff;
+		  font-weight: 900;
+		  padding: 6px 18px;
+		}
+		
+		.p5-diy-submit-btn:hover {
+		  background: var(--p5-yellow, #fde047);
+		  color: #090910;
+		}
+		
 		
 		
 		
@@ -30181,6 +32086,421 @@ window.__ModuleLoader__.load({
 		}
 		
 		
+		.p5-sys-panel-head--split {
+		  display: flex;
+		  align-items: center;
+		  justify-content: space-between;
+		  gap: 14px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-diy-open-creator-btn {
+		  background: var(--p5-red, #e60012);
+		  color: #ffffff;
+		  border: 2px solid #ffffff;
+		  padding: 6px 15px;
+		  font-size: 13px;
+		  font-weight: 900;
+		  letter-spacing: 0.05em;
+		  cursor: pointer;
+		  transform: skewX(-10deg);
+		  box-shadow: 4px 4px 0 #000000;
+		  flex-shrink: 0;
+		  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+		}
+		
+		.p5-diy-open-creator-btn:hover {
+		  background: var(--p5-yellow, #fde047);
+		  color: #090910;
+		  transform: skewX(-10deg) translate(-1px, -1px);
+		  box-shadow: 5px 5px 0 var(--p5-red, #e60012);
+		}
+		
+		.p5-char-diy-pill {
+		  background: rgba(250, 204, 21, 0.18);
+		  color: var(--p5-yellow, #fde047);
+		  border: 1px solid var(--p5-yellow, #fde047);
+		  padding: 1px 7px;
+		  font-size: 11px;
+		  font-weight: 900;
+		}
+		
+		.p5-char-persona-bar {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 8px;
+		  padding-top: 7px;
+		  border-top: 1px dashed rgba(255, 255, 255, 0.22);
+		}
+		
+		.p5-char-persona-row {
+		  display: flex;
+		  align-items: center;
+		  justify-content: space-between;
+		  gap: 8px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-char-persona-status {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		  min-width: 0;
+		}
+		
+		.p5-persona-file-pill {
+		  display: inline-flex;
+		  align-items: center;
+		  gap: 4px;
+		  font-family: var(--font-mono, monospace);
+		  font-size: 11px;
+		  font-weight: 800;
+		  padding: 2px 8px;
+		  background: #111522;
+		  color: #94a3b8;
+		  border: 1px solid #334155;
+		  max-width: 220px;
+		  overflow: hidden;
+		  text-overflow: ellipsis;
+		  white-space: nowrap;
+		}
+		
+		.p5-persona-file-pill.is-custom {
+		  background: rgba(230, 0, 18, 0.2);
+		  color: #fde047;
+		  border-color: #fde047;
+		}
+		
+		.p5-char-persona-actions {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-mini-action-btn--danger {
+		  background: var(--p5-red, #e60012) !important;
+		  color: #ffffff !important;
+		  border-color: #ffffff !important;
+		}
+		
+		.p5-diy-inline-notice {
+		  font-size: 11.5px;
+		  font-weight: 800;
+		  padding: 4px 9px;
+		  border-left: 3px solid #ffffff;
+		}
+		
+		.p5-diy-inline-notice.is-ok {
+		  background: rgba(16, 185, 129, 0.16);
+		  border-left-color: #10b981;
+		  color: #a7f3d0;
+		}
+		
+		.p5-diy-inline-notice.is-err {
+		  background: rgba(239, 68, 68, 0.18);
+		  border-left-color: #ef4444;
+		  color: #fecaca;
+		}
+		
+		.p5-persona-inline-editor {
+		  background: #080a12;
+		  border: 1.5px solid rgba(250, 204, 21, 0.55);
+		  border-left: 4px solid var(--p5-yellow, #fde047);
+		  padding: 10px 12px;
+		  display: flex;
+		  flex-direction: column;
+		  gap: 8px;
+		}
+		
+		.p5-diy-grid-2 {
+		  display: grid;
+		  grid-template-columns: repeat(2, minmax(0, 1fr));
+		  gap: 10px;
+		}
+		
+		.p5-diy-grid-3 {
+		  display: grid;
+		  grid-template-columns: repeat(3, minmax(0, 1fr));
+		  gap: 8px;
+		}
+		
+		@media (max-width: 780px) {
+		  .p5-diy-grid-2,
+		  .p5-diy-grid-3 {
+		    grid-template-columns: 1fr;
+		  }
+		}
+		
+		.p5-diy-field {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 4px;
+		  min-width: 0;
+		}
+		
+		.p5-diy-textarea {
+		  width: 100%;
+		  background: #05070d;
+		  color: #f8fafc;
+		  border: 1.5px solid #475569;
+		  padding: 7px 10px;
+		  font-family: var(--font-sans, 'Noto Sans SC', sans-serif);
+		  font-size: 12px;
+		  line-height: 1.5;
+		  resize: vertical;
+		  min-height: 82px;
+		}
+		
+		.p5-diy-textarea:focus {
+		  outline: none;
+		  border-color: var(--p5-yellow, #fde047);
+		}
+		
+		.p5-diy-editor-foot {
+		  display: flex;
+		  align-items: center;
+		  gap: 8px;
+		}
+		
+		
+		.p5-diy-creator-card {
+		  background: linear-gradient(135deg, #130b14 0%, #0b0e18 100%);
+		  border: 2px solid #ffffff;
+		  border-left: 6px solid var(--p5-red, #e60012);
+		  box-shadow: 6px 6px 0 #000000, 9px 9px 0 rgba(230, 0, 18, 0.65);
+		  padding: 14px 16px;
+		  display: flex;
+		  flex-direction: column;
+		  gap: 12px;
+		}
+		
+		.p5-diy-creator-head {
+		  display: flex;
+		  align-items: flex-start;
+		  justify-content: space-between;
+		  gap: 12px;
+		}
+		
+		.p5-diy-kicker {
+		  display: inline-block;
+		  font-family: 'Anton', var(--font-mono, monospace);
+		  font-size: 11px;
+		  letter-spacing: 0.12em;
+		  background: var(--p5-red, #e60012);
+		  color: #ffffff;
+		  padding: 1px 8px;
+		  transform: skewX(-10deg);
+		  margin-bottom: 3px;
+		}
+		
+		.p5-diy-creator-head h4 {
+		  margin: 0;
+		  font-size: 16px;
+		  font-weight: 900;
+		  color: #ffffff;
+		}
+		
+		.p5-diy-creator-head p {
+		  margin: 2px 0 0;
+		  font-size: 12px;
+		  color: #cbd5e1;
+		}
+		
+		.p5-diy-main-layout {
+		  display: grid;
+		  grid-template-columns: 168px minmax(0, 1fr);
+		  gap: 14px;
+		  align-items: start;
+		}
+		
+		@media (max-width: 720px) {
+		  .p5-diy-main-layout {
+		    grid-template-columns: 1fr;
+		  }
+		}
+		
+		.p5-diy-standee-box {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 7px;
+		}
+		
+		.p5-diy-standee-preview {
+		  width: 100%;
+		  aspect-ratio: 3 / 4;
+		  background: radial-gradient(
+		      circle at 50% 35%,
+		      color-mix(in srgb, var(--diy-theme, #e60012) 32%, transparent),
+		      transparent 70%
+		    ),
+		    #070910;
+		  border: 2px dashed rgba(255, 255, 255, 0.5);
+		  display: flex;
+		  align-items: center;
+		  justify-content: center;
+		  overflow: hidden;
+		  cursor: pointer;
+		  position: relative;
+		  transition: border-color 0.12s ease, transform 0.12s ease;
+		}
+		
+		.p5-diy-standee-preview:hover {
+		  border-color: var(--p5-yellow, #fde047);
+		  border-style: solid;
+		}
+		
+		.p5-diy-standee-preview img {
+		  width: 100%;
+		  height: 100%;
+		  object-fit: contain;
+		}
+		
+		.p5-diy-standee-placeholder {
+		  display: flex;
+		  flex-direction: column;
+		  align-items: center;
+		  text-align: center;
+		  gap: 4px;
+		  padding: 10px;
+		  color: #cbd5e1;
+		  font-size: 11px;
+		}
+		
+		.p5-diy-plus {
+		  font-size: 26px;
+		  font-weight: 900;
+		  color: var(--p5-yellow, #fde047);
+		  line-height: 1;
+		}
+		
+		.p5-diy-upload-trigger {
+		  width: 100%;
+		  text-align: center;
+		  justify-content: center;
+		}
+		
+		.p5-diy-fields-col {
+		  display: flex;
+		  flex-direction: column;
+		  gap: 9px;
+		  min-width: 0;
+		}
+		
+		.p5-diy-color-row {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		  min-height: 28px;
+		}
+		
+		.p5-diy-swatch {
+		  width: 22px;
+		  height: 22px;
+		  border: 2px solid rgba(255, 255, 255, 0.45);
+		  cursor: pointer;
+		  transform: skewX(-8deg);
+		  padding: 0;
+		}
+		
+		.p5-diy-swatch.is-selected {
+		  border-color: #ffffff;
+		  box-shadow: 0 0 0 2px var(--p5-yellow, #fde047);
+		  transform: skewX(-8deg) scale(1.12);
+		}
+		
+		.p5-diy-color-picker {
+		  width: 28px;
+		  height: 24px;
+		  padding: 0;
+		  border: 1px solid #64748b;
+		  background: transparent;
+		  cursor: pointer;
+		}
+		
+		.p5-diy-inline-btns {
+		  display: flex;
+		  align-items: center;
+		  gap: 6px;
+		  flex-wrap: wrap;
+		}
+		
+		.p5-diy-source-tag {
+		  margin-left: 8px;
+		  padding: 1px 6px;
+		  font-size: 10.5px;
+		  background: rgba(250, 204, 21, 0.18);
+		  color: var(--p5-yellow, #fde047);
+		  border: 1px solid rgba(250, 204, 21, 0.6);
+		}
+		
+		.p5-diy-advanced-box {
+		  background: rgba(6, 8, 15, 0.85);
+		  border: 1px solid #334155;
+		  border-left: 3px solid var(--p5-cyan, #38bdf8);
+		  padding: 10px 12px;
+		  display: flex;
+		  flex-direction: column;
+		  gap: 9px;
+		}
+		
+		.p5-diy-emotion-grid {
+		  display: grid;
+		  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+		  gap: 6px;
+		}
+		
+		.p5-diy-emo-slot {
+		  display: flex;
+		  align-items: center;
+		  justify-content: center;
+		  padding: 5px 8px;
+		  background: #111625;
+		  border: 1px dashed #475569;
+		  color: #cbd5e1;
+		  font-size: 11px;
+		  font-weight: 800;
+		  cursor: pointer;
+		  text-align: center;
+		}
+		
+		.p5-diy-emo-slot:hover {
+		  border-color: var(--p5-yellow, #fde047);
+		  color: #ffffff;
+		}
+		
+		.p5-diy-emo-slot.is-set {
+		  border-style: solid;
+		  border-color: #10b981;
+		  background: rgba(16, 185, 129, 0.16);
+		  color: #a7f3d0;
+		}
+		
+		.p5-diy-creator-foot {
+		  display: flex;
+		  align-items: center;
+		  gap: 10px;
+		  padding-top: 6px;
+		  border-top: 1px solid rgba(255, 255, 255, 0.15);
+		}
+		
+		.p5-diy-submit-btn {
+		  background: var(--p5-red, #e60012);
+		  color: #ffffff;
+		  border: 2px solid #ffffff;
+		  font-weight: 900;
+		  padding: 6px 18px;
+		}
+		
+		.p5-diy-submit-btn:hover {
+		  background: var(--p5-yellow, #fde047);
+		  color: #090910;
+		}
+		
+		
+		
 		
 		[class*="sidebarCol"] {
 		  background-color: #07080e !important;
@@ -30422,11 +32742,11 @@ window.__ModuleLoader__.load({
 		    const sessionId = String(
 		      props?.sessionId ?? props?.session?.sessionId ?? "dsh_session"
 		    );
-		    (0, import_react15.useEffect)(() => {
+		    (0, import_react16.useEffect)(() => {
 		      ensureStageStylesMounted();
 		    }, []);
-		    const source = (0, import_react15.useMemo)(() => new DshStageSource(ctx, sessionId), [sessionId]);
-		    return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "p5-dsh-host", "data-testid": "p5-dsh-host", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		    const source = (0, import_react16.useMemo)(() => new DshStageSource(ctx, sessionId), [sessionId]);
+		    return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "p5-dsh-host", "data-testid": "p5-dsh-host", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		      StageApp,
 		      {
 		        sessionKey: sessionId,
@@ -30445,7 +32765,7 @@ window.__ModuleLoader__.load({
 		    const sessionId = String(
 		      props?.sessionId ?? sessionSnap?.sessionId ?? "dsh_blank_session"
 		    );
-		    return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "p5-dsh-blank-stage", "data-testid": "p5-dsh-blank-stage", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(StageView, { sessionId }) });
+		    return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "p5-dsh-blank-stage", "data-testid": "p5-dsh-blank-stage", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(StageView, { sessionId }) });
 		  };
 		}
 		function apply(ctx) {
@@ -30675,7 +32995,7 @@ window.__ModuleLoader__.load({
 		      "conversation.hero.brand.mark",
 		      () => ctx.slots.register(
 		        { name: "conversation.hero.brand.mark", priority: -100 },
-		        ({ size = 34 }) => import_react15.default.createElement("img", {
+		        ({ size = 34 }) => import_react16.default.createElement("img", {
 		          src: "/characters/deepseek-v4-pro/art/portrait.png",
 		          alt: "\u5927\u80A5\u9C7C",
 		          style: {
