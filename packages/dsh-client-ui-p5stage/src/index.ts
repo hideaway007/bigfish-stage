@@ -79,6 +79,25 @@ function createStaticPrefixResource(mountPrefix: string, rootDir: string) {
   };
 }
 
+/**
+ * 兼容两代 DSH webServer 路由契约：
+ * - 新版（host-webserver ≥0.2.2，dsh CLI）：`resource(request: Request) => Response`
+ * - 旧版（0.2.1，DSH 桌面版内置）：`handler(req: IncomingMessage, res: ServerResponse)`
+ * 旧版只调 handler；缺了它会抛错并被转成 400，导致立绘/音效全部加载失败。
+ */
+function dualRoute(path: string, resource: (request: Request) => Promise<Response>) {
+  const handler = async (req: any, res: any) => {
+    const request = new Request(new URL(req.url ?? '/', 'http://127.0.0.1'), { method: req.method ?? 'GET' });
+    const response = await resource(request);
+    const headers: Record<string, string> = {};
+    response.headers.forEach((v, k) => { headers[k] = v; });
+    res.writeHead(response.status, headers);
+    if (request.method === 'HEAD' || !response.body) { res.end(); return; }
+    res.end(Buffer.from(await response.arrayBuffer()));
+  };
+  return { kind: 'prefix' as const, path, resource, handler };
+}
+
 export const name = 'ui-p5stage-host';
 export const inject = ['webServer'];
 
@@ -95,19 +114,11 @@ export function apply(ctx: any): void {
   const sfxDir = join(repoPublicDir, 'sfx');
 
   ctx.effect(() =>
-    ctx.webServer.register({
-      kind: 'prefix',
-      path: '/characters',
-      resource: createStaticPrefixResource('/characters', charactersDir),
-    })
+    ctx.webServer.register(dualRoute('/characters', createStaticPrefixResource('/characters', charactersDir)) as any)
   );
 
   ctx.effect(() =>
-    ctx.webServer.register({
-      kind: 'prefix',
-      path: '/sfx',
-      resource: createStaticPrefixResource('/sfx', sfxDir),
-    })
+    ctx.webServer.register(dualRoute('/sfx', createStaticPrefixResource('/sfx', sfxDir)) as any)
   );
 
   ctx.on('webserver/index-inject', (table: Array<Record<string, unknown>>) => {

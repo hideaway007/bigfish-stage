@@ -70,6 +70,23 @@ function createStaticPrefixResource(mountPrefix, rootDir) {
     }
   };
 }
+function dualRoute(path, resource) {
+  const handler = async (req, res) => {
+    const request = new Request(new URL(req.url ?? "/", "http://127.0.0.1"), { method: req.method ?? "GET" });
+    const response = await resource(request);
+    const headers = {};
+    response.headers.forEach((v, k) => {
+      headers[k] = v;
+    });
+    res.writeHead(response.status, headers);
+    if (request.method === "HEAD" || !response.body) {
+      res.end();
+      return;
+    }
+    res.end(Buffer.from(await response.arrayBuffer()));
+  };
+  return { kind: "prefix", path, resource, handler };
+}
 var name = "ui-p5stage-host";
 var inject = ["webServer"];
 var HEAD_FONT_LINKS = [
@@ -82,18 +99,10 @@ function apply(ctx) {
   const charactersDir = join(repoPublicDir, "characters");
   const sfxDir = join(repoPublicDir, "sfx");
   ctx.effect(
-    () => ctx.webServer.register({
-      kind: "prefix",
-      path: "/characters",
-      resource: createStaticPrefixResource("/characters", charactersDir)
-    })
+    () => ctx.webServer.register(dualRoute("/characters", createStaticPrefixResource("/characters", charactersDir)))
   );
   ctx.effect(
-    () => ctx.webServer.register({
-      kind: "prefix",
-      path: "/sfx",
-      resource: createStaticPrefixResource("/sfx", sfxDir)
-    })
+    () => ctx.webServer.register(dualRoute("/sfx", createStaticPrefixResource("/sfx", sfxDir)))
   );
   ctx.on("webserver/index-inject", (table) => {
     table.push({
