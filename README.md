@@ -1,11 +1,11 @@
-# BigFish Stage · 肥鱼舞台
+# BigFish Stage · 大肥鱼工作台
 
 <p align="center">
   <strong>把硬核 AI 编程引擎，变成高反差红黑波普漫画风的实时角色演出舞台！</strong><br/>
   <sub>原生支持 <b>DeepSeek Harness (DSH) 一键插件换肤</b> · <b>Electron 独立桌面端</b> · <b>本地 Web 工作台</b> · <b>离线剧本演示</b></sub>
 </p>
 
-![BigFish Stage · 肥鱼舞台全站视图](./docs/screenshots/hero-dsh-stage.webp)
+![BigFish Stage · 大肥鱼工作台全站视图](./docs/screenshots/hero-dsh-stage.webp)
 
 ---
 
@@ -13,7 +13,7 @@
 
 传统的 AI Coding 工具（终端 CLI、普通左右分栏聊天框）生产力强但枯燥冰冷；而市面上的二次元桌面伴侣又大多只是“陪聊花瓶”，无法真正深入本地工程目录读写代码。
 
-**BigFish Stage · 肥鱼舞台** 将两者合二为一：以工业级的 **DeepSeek Harness (DSH)**（及本地多适配器服务）作为真实执行内核，采用原创的 **高反差红黑斜切波普漫画分镜 HUD（Pop-Art Comic Stage）** 重构了整套人机协作体验——让**读文件、改代码、审 Diff、批权限、多模型换手接力**变成各家大模型看板娘在舞台上的实时演出。
+**BigFish Stage · 大肥鱼工作台** 将两者合二为一：以工业级的 **DeepSeek Harness (DSH)**（及本地多适配器服务）作为真实执行内核，采用原创的 **高反差红黑斜切波普漫画分镜 HUD（Pop-Art Comic Stage）** 重构了整套人机协作体验——让**读文件、改代码、审 Diff、批权限、多模型换手接力**变成各家大模型看板娘在舞台上的实时演出。
 
 ---
 
@@ -24,9 +24,9 @@
 1. 打开 DeepSeek Harness 左侧栏的 **「插件」** 页面，点击右上角 **「＋ 添加插件」**；
 2. 在弹窗输入框中直接粘贴本仓库地址：
    ```text
-   https://github.com/hideaway007/p5-agent-stage
+   https://github.com/hideaway007/bigfish-stage
    ```
-3. 点击 **「安装」**，整个客户端即刻切换为 **肥鱼舞台全站红黑皮肤 + 舞台会话档案栏**，自动复用你现有的全部工作区、历史会话与模型凭证！
+3. 点击 **「安装」**，整个客户端即刻切换为 **大肥鱼工作台全站红黑皮肤 + 舞台会话档案栏**，自动复用你现有的全部工作区、历史会话与模型凭证！
 
 > **随时无损切回**：左侧舞台会话档案栏内置了 **`MOD 插件`**、**`JOB 自动化任务`** 与底部 **`⚙ 原生设置`** 入口；在插件页关闭开关即可通过 HMR 实时恢复原版界面，无需重启。
 
@@ -74,10 +74,10 @@
 同一个仓库同时支持 **DSH 插件、独立桌面应用、本地 Web 服务、纯静态演示** 四种模式：
 
 ### 方式一：作为 DeepSeek Harness 插件安装（推荐）
-直接在 DeepSeek Harness 插件页添加 `https://github.com/hideaway007/p5-agent-stage`，或通过命令行安装到指定 Profile：
+直接在 DeepSeek Harness 插件页添加 `https://github.com/hideaway007/bigfish-stage`，或通过命令行安装到指定 Profile：
 
 ```bash
-dsh plugin --profile web add https://github.com/hideaway007/p5-agent-stage
+dsh plugin --profile web add https://github.com/hideaway007/bigfish-stage
 ```
 
 ### 方式二：作为 Electron 独立桌面客户端运行 / 打包
@@ -133,7 +133,7 @@ npm run dev
 | 按住 `Ctrl` | 快进舞台演出节奏 |
 | `L` | 打开 / 关闭 **Backlog 对话与工具历史回看** |
 | `H` | 打开 / 关闭会话快速切换面板 |
-| `` ` ``（反引号） | 一键切换 **肥鱼舞台视图 ⇄ 极客工程视图** |
+| `` ` ``（反引号） | 一键切换 **大肥鱼工作台视图 ⇄ 极客工程视图** |
 | `Esc` / `Cmd+,` | 关闭当前弹层，或打开 **设置中心** |
 | `Cmd+B` / `Ctrl+B` | 展开 / 收起左侧 **舞台会话档案栏**（DSH 模式） |
 | `?` | 打开舞台快捷键帮助面板 |
@@ -149,7 +149,7 @@ bigfish-stage/
 ├── packages/
 │   └── dsh-client-ui-p5stage/       # DSH 原生客户端插件源码（DshStageSource 桥接 + 会话档案侧边栏）
 ├── src/
-│   ├── stage/                       # 肥鱼舞台核心 UI（立绘视差、锯齿台词框、权限决断、设置中心）
+│   ├── stage/                       # 大肥鱼工作台核心 UI（立绘视差、锯齿台词框、权限决断、设置中心）
 │   ├── demo/                        # 离线可交互演示剧本播放器
 │   └── shared/                      # 前后端与角色包共享 TypeScript 契约
 ├── public/

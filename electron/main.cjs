@@ -245,7 +245,7 @@ function buildLoadingDataUrl() {
 <body>
   <div class="card">
     <div class="kicker">BIGFISH STAGE × DSH</div>
-    <h1>肥鱼舞台启动中…</h1>
+    <h1>大肥鱼工作台启动中…</h1>
     <p>正在唤醒本机 DeepSeek Harness 原生运行时</p>
   </div>
 </body>
@@ -256,7 +256,7 @@ function buildLoadingDataUrl() {
 function createMainWindow() {
   const isMac = process.platform === 'darwin';
   mainWindow = new BrowserWindow({
-    title: '肥鱼舞台 // BIGFISH STAGE',
+    title: 'BigFish Stage · 大肥鱼工作台',
     width: 1520,
     height: 940,
     minWidth: 1080,
@@ -314,9 +314,9 @@ function setupMenu() {
     ...(isMac
       ? [
           {
-            label: '肥鱼舞台',
+            label: '大肥鱼工作台',
             submenu: [
-              { role: 'about', label: '关于肥鱼舞台 (BigFish Stage)' },
+              { role: 'about', label: '关于 BigFish Stage · 大肥鱼工作台' },
               { type: 'separator' },
               { role: 'services', label: '服务' },
               { type: 'separator' },
