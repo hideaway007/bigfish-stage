@@ -4,7 +4,14 @@ import type {
   Reaction,
   ReactionKey,
 } from '../shared/character-pack';
+import {
+  isCustomCharacterId,
+  mergeCharacterWithOverride,
+  type CharacterPersonaOverride,
+  type DiySnapshotPayload,
+} from '../shared/diy-character';
 import type { Emotion, StageEvent } from '../shared/stage-events';
+import { fetchDiySnapshotClient } from './diyClient';
 
 export const DEFAULT_CHARACTER_ID = 'deepseek-v4-pro';
 
@@ -23,20 +30,30 @@ export function resolveCharacterAssetUrl(
   relPath?: string | null
 ): string | null {
   if (!relPath) return null;
-  if (relPath.startsWith('/') || relPath.startsWith('http://') || relPath.startsWith('https://')) {
+  if (
+    relPath.startsWith('data:') ||
+    relPath.startsWith('blob:') ||
+    relPath.startsWith('/') ||
+    relPath.startsWith('http://') ||
+    relPath.startsWith('https://')
+  ) {
     return relPath;
   }
   const cleanRel = relPath.replace(/^\.\//, '');
-  return `/characters/${characterId}/${cleanRel}`;
+  const ver = diyOverrides.get(characterId)?.updatedAt;
+  const suffix = isCustomCharacterId(characterId) && ver ? `?v=${ver}` : '';
+  return `/characters/${characterId}/${cleanRel}${suffix}`;
 }
 
 export function toCharacterSummary(pack: CharacterPack): CharacterSummary {
+  const portraitRel =
+    pack.art.portrait ?? (pack.art.renderer === 'sprites' ? pack.art.emotions.idle : undefined);
   return {
     id: pack.id,
     name: pack.name,
     codename: pack.codename,
     themeColor: pack.themeColor,
-    portraitUrl: resolveCharacterAssetUrl(pack.id, pack.art.portrait),
+    portraitUrl: resolveCharacterAssetUrl(pack.id, portraitRel),
     renderer: pack.art.renderer,
   };
 }
@@ -189,6 +206,9 @@ const BOOTSTRAP_FALLBACK_PACK: CharacterPack = {
 };
 
 const packCache = new Map<string, CharacterPack>();
+const diyCustomPacks = new Map<string, CharacterPack>();
+const diyOverrides = new Map<string, CharacterPersonaOverride>();
+let diyHydrated = false;
 const inFlight = new Map<string, Promise<CharacterPack | null>>();
 const listeners = new Set<() => void>();
 
@@ -196,6 +216,66 @@ function notifyListeners() {
   for (const fn of listeners) {
     fn();
   }
+}
+
+export function applyDiySnapshot(snapshot: DiySnapshotPayload): void {
+  diyOverrides.clear();
+  for (const [id, ov] of Object.entries(snapshot.overrides ?? {})) {
+    if (ov) diyOverrides.set(id, ov);
+  }
+  // Remove previous custom packs from packCache before refreshing
+  for (const existingCustomId of diyCustomPacks.keys()) {
+    packCache.delete(existingCustomId);
+  }
+  diyCustomPacks.clear();
+  for (const pack of snapshot.customPacks ?? []) {
+    if (pack && pack.id) {
+      diyCustomPacks.set(pack.id, pack);
+      packCache.set(pack.id, pack);
+    }
+  }
+  diyHydrated = true;
+  notifyListeners();
+}
+
+export function isDiyHydrated(): boolean {
+  return diyHydrated;
+}
+
+export function getDiyPersonaOverride(characterId: string): CharacterPersonaOverride | undefined {
+  return diyOverrides.get(characterId);
+}
+
+export function getRawCharacterPack(characterId: string): CharacterPack | undefined {
+  return diyCustomPacks.get(characterId) ?? packCache.get(characterId);
+}
+
+export function getAllCharacterIds(): string[] {
+  const customIds = Array.from(diyCustomPacks.keys()).sort();
+  return [...KNOWN_CHARACTER_IDS, ...customIds.filter((id) => !(KNOWN_CHARACTER_IDS as readonly string[]).includes(id))];
+}
+
+export function mergeWithDiyCharacterSummaries(baseSummaries: CharacterSummary[]): CharacterSummary[] {
+  const byId = new Map<string, CharacterSummary>();
+  for (const s of baseSummaries) {
+    // Only keep custom-* entries from baseSummaries if they haven't been deleted locally
+    if (isCustomCharacterId(s.id) && diyHydrated && !diyCustomPacks.has(s.id)) {
+      continue;
+    }
+    const effective = getCachedCharacterPack(s.id);
+    byId.set(s.id, {
+      ...s,
+      name: effective.name,
+      codename: effective.codename,
+      themeColor: effective.themeColor,
+      portraitUrl: toCharacterSummary(effective).portraitUrl ?? s.portraitUrl,
+    });
+  }
+  for (const [customId, customPack] of diyCustomPacks.entries()) {
+    const merged = mergeCharacterWithOverride(customPack, diyOverrides.get(customId));
+    byId.set(customId, toCharacterSummary(merged));
+  }
+  return Array.from(byId.values());
 }
 
 export function subscribeCharacterPacks(listener: () => void): () => void {
@@ -208,8 +288,11 @@ export function subscribeCharacterPacks(listener: () => void): () => void {
 export async function fetchCharacterPack(
   characterId: string
 ): Promise<CharacterPack | null> {
+  const custom = diyCustomPacks.get(characterId);
+  if (custom) return mergeCharacterWithOverride(custom, diyOverrides.get(characterId));
+
   const cached = packCache.get(characterId);
-  if (cached) return cached;
+  if (cached) return mergeCharacterWithOverride(cached, diyOverrides.get(characterId));
 
   const existing = inFlight.get(characterId);
   if (existing) return existing;
@@ -224,7 +307,7 @@ export async function fetchCharacterPack(
       if (data && data.schemaVersion === 1 && data.id) {
         packCache.set(data.id, data);
         notifyListeners();
-        return data;
+        return mergeCharacterWithOverride(data, diyOverrides.get(data.id));
       }
       return null;
     } catch {
@@ -241,12 +324,21 @@ export async function fetchCharacterPack(
 export async function preloadCharacterPacks(
   ids: readonly string[] = KNOWN_CHARACTER_IDS
 ): Promise<Record<string, CharacterPack>> {
-  const results = await Promise.all(ids.map((id) => fetchCharacterPack(id)));
+  const [results, diySnap] = await Promise.all([
+    Promise.all(ids.map((id) => fetchCharacterPack(id))),
+    fetchDiySnapshotClient().catch(() => null),
+  ]);
+  if (diySnap) {
+    applyDiySnapshot(diySnap);
+  }
   const map: Record<string, CharacterPack> = {};
   for (const pack of results) {
     if (pack) {
-      map[pack.id] = pack;
+      map[pack.id] = mergeCharacterWithOverride(pack, diyOverrides.get(pack.id));
     }
+  }
+  for (const [cid, cpack] of diyCustomPacks.entries()) {
+    map[cid] = mergeCharacterWithOverride(cpack, diyOverrides.get(cid));
   }
   return map;
 }
@@ -286,14 +378,21 @@ const BOOTSTRAP_META: Record<
 };
 
 export function getCachedCharacterPack(characterId: string): CharacterPack {
+  const customHit = diyCustomPacks.get(characterId);
+  if (customHit) {
+    return mergeCharacterWithOverride(customHit, diyOverrides.get(characterId));
+  }
+
   const hit = packCache.get(characterId);
-  if (hit) return hit;
+  if (hit) {
+    return mergeCharacterWithOverride(hit, diyOverrides.get(characterId));
+  }
 
   // Kick off async fetch if not yet in cache
   void fetchCharacterPack(characterId);
 
   const meta = BOOTSTRAP_META[characterId] ?? BOOTSTRAP_META[DEFAULT_CHARACTER_ID];
-  return {
+  const fallback: CharacterPack = {
     ...BOOTSTRAP_FALLBACK_PACK,
     id: characterId,
     name: meta.name,
@@ -310,6 +409,7 @@ export function getCachedCharacterPack(characterId: string): CharacterPack {
       uiCopy: undefined,
     } : {}),
   };
+  return mergeCharacterWithOverride(fallback, diyOverrides.get(characterId));
 }
 
 export function getAllCachedCharacterPacks(): Record<string, CharacterPack> {

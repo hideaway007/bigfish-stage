@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import {
   DEFAULT_CHARACTER_ID,
+  getAllCharacterIds,
   getCachedCharacterPack,
+  isDiyHydrated,
+  mergeWithDiyCharacterSummaries,
   preloadCharacterPacks,
   subscribeCharacterPacks,
 } from './characterLoader';
+import { isCustomCharacterId } from '../shared/diy-character';
 import {
   computeDiffStats,
   createInitialStageState,
@@ -289,14 +293,27 @@ export const StageApp: React.FC<StageAppProps> = ({
     createInitialStageState
   );
 
-  // Force re-render when character pack JSONs finish loading
-  const [, setPackVersion] = useState(0);
+  // Force re-render when character pack JSONs or DIY overrides finish loading
+  const [packVersion, setPackVersion] = useState(0);
   useEffect(() => {
     void preloadCharacterPacks();
     return subscribeCharacterPacks(() => {
       setPackVersion((v) => v + 1);
     });
   }, []);
+
+  const effectiveCharacters = mergeWithDiyCharacterSummaries(state.characters);
+
+  useEffect(() => {
+    if (
+      isDiyHydrated() &&
+      isCustomCharacterId(state.characterId) &&
+      !getAllCharacterIds().includes(state.characterId)
+    ) {
+      dispatch({ type: 'SET_CHARACTER', characterId: DEFAULT_CHARACTER_ID });
+      sourceRef.current?.switchCharacter(DEFAULT_CHARACTER_ID);
+    }
+  }, [packVersion, state.characterId]);
 
   const [connStatus, setConnStatus] = useState<ConnectionStatus>({
     state: externalSource || sourceMode === 'demo' ? 'connected' : 'connecting',
@@ -1875,7 +1892,7 @@ export const StageApp: React.FC<StageAppProps> = ({
               </div>
 
               <div className="p5-party-medals" data-testid="party-bar">
-                {state.characters.map((ch) => {
+                {effectiveCharacters.map((ch) => {
                   const isActive = ch.id === character.id;
                   const shortLabel = ch.name.split('（')[0];
                   return (
@@ -2741,7 +2758,7 @@ export const StageApp: React.FC<StageAppProps> = ({
         themeColor={character.themeColor}
         accentColor={character.accentColor}
         portraitUrl={
-          state.characters.find((c) => c.id === character.id)?.portraitUrl
+          effectiveCharacters.find((c) => c.id === character.id)?.portraitUrl
         }
       />
 
@@ -2787,7 +2804,7 @@ export const StageApp: React.FC<StageAppProps> = ({
         characterId={character.id}
         characterName={shortNickname}
         portraitUrl={
-          state.characters.find((c) => c.id === character.id)?.portraitUrl
+          effectiveCharacters.find((c) => c.id === character.id)?.portraitUrl
         }
         onSelectChoice={(choice) =>
           dispatch({ type: 'SET_PERMISSION_CHOICE', choice })
@@ -2798,7 +2815,7 @@ export const StageApp: React.FC<StageAppProps> = ({
       <BatonPassModal
         open={batonModalOpen}
         activeCharacterId={character.id}
-        characters={state.characters}
+        characters={effectiveCharacters}
         settings={state.serverSettings}
         onClose={() => setBatonModalOpen(false)}
         onConfirm={handleConfirmBatonPass}
@@ -2836,7 +2853,7 @@ export const StageApp: React.FC<StageAppProps> = ({
         settings={state.serverSettings}
         settingsSyncedAt={state.settingsSyncedAt}
         currentSessionId={state.sessionInfo?.sessionId ?? state.sessionId}
-        characters={state.characters}
+        characters={effectiveCharacters}
         workerAdapters={state.workerAdapters}
         workerModels={state.workerModels}
         voiceModels={state.voiceModels}

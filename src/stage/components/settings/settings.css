@@ -1248,3 +1248,420 @@
   padding-top: 2px;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   DIY CHARACTER WORKSHOP & PERSONA FILE OVERRIDES
+   ══════════════════════════════════════════════════════════════════════════ */
+.p5-sys-panel-head--split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.p5-diy-open-creator-btn {
+  background: var(--p5-red, #e60012);
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  padding: 6px 15px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transform: skewX(-10deg);
+  box-shadow: 4px 4px 0 #000000;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.p5-diy-open-creator-btn:hover {
+  background: var(--p5-yellow, #fde047);
+  color: #090910;
+  transform: skewX(-10deg) translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--p5-red, #e60012);
+}
+
+.p5-char-diy-pill {
+  background: rgba(250, 204, 21, 0.18);
+  color: var(--p5-yellow, #fde047);
+  border: 1px solid var(--p5-yellow, #fde047);
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.p5-char-persona-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.22);
+}
+
+.p5-char-persona-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.p5-char-persona-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.p5-persona-file-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  background: #111522;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p5-persona-file-pill.is-custom {
+  background: rgba(230, 0, 18, 0.2);
+  color: #fde047;
+  border-color: #fde047;
+}
+
+.p5-char-persona-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.p5-mini-action-btn--danger {
+  background: var(--p5-red, #e60012) !important;
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+}
+
+.p5-diy-inline-notice {
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-left: 3px solid #ffffff;
+}
+
+.p5-diy-inline-notice.is-ok {
+  background: rgba(16, 185, 129, 0.16);
+  border-left-color: #10b981;
+  color: #a7f3d0;
+}
+
+.p5-diy-inline-notice.is-err {
+  background: rgba(239, 68, 68, 0.18);
+  border-left-color: #ef4444;
+  color: #fecaca;
+}
+
+.p5-persona-inline-editor {
+  background: #080a12;
+  border: 1.5px solid rgba(250, 204, 21, 0.55);
+  border-left: 4px solid var(--p5-yellow, #fde047);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.p5-diy-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.p5-diy-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 780px) {
+  .p5-diy-grid-2,
+  .p5-diy-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.p5-diy-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.p5-diy-textarea {
+  width: 100%;
+  background: #05070d;
+  color: #f8fafc;
+  border: 1.5px solid #475569;
+  padding: 7px 10px;
+  font-family: var(--font-sans, 'Noto Sans SC', sans-serif);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 82px;
+}
+
+.p5-diy-textarea:focus {
+  outline: none;
+  border-color: var(--p5-yellow, #fde047);
+}
+
+.p5-diy-editor-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── DIY Character Creator Workshop Card ── */
+.p5-diy-creator-card {
+  background: linear-gradient(135deg, #130b14 0%, #0b0e18 100%);
+  border: 2px solid #ffffff;
+  border-left: 6px solid var(--p5-red, #e60012);
+  box-shadow: 6px 6px 0 #000000, 9px 9px 0 rgba(230, 0, 18, 0.65);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.p5-diy-creator-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.p5-diy-kicker {
+  display: inline-block;
+  font-family: 'Anton', var(--font-mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  background: var(--p5-red, #e60012);
+  color: #ffffff;
+  padding: 1px 8px;
+  transform: skewX(-10deg);
+  margin-bottom: 3px;
+}
+
+.p5-diy-creator-head h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.p5-diy-creator-head p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.p5-diy-main-layout {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .p5-diy-main-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.p5-diy-standee-box {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.p5-diy-standee-preview {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: radial-gradient(
+      circle at 50% 35%,
+      color-mix(in srgb, var(--diy-theme, #e60012) 32%, transparent),
+      transparent 70%
+    ),
+    #070910;
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+
+.p5-diy-standee-preview:hover {
+  border-color: var(--p5-yellow, #fde047);
+  border-style: solid;
+}
+
+.p5-diy-standee-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.p5-diy-standee-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 10px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.p5-diy-plus {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--p5-yellow, #fde047);
+  line-height: 1;
+}
+
+.p5-diy-upload-trigger {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
+}
+
+.p5-diy-fields-col {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.p5-diy-color-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 28px;
+}
+
+.p5-diy-swatch {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transform: skewX(-8deg);
+  padding: 0;
+}
+
+.p5-diy-swatch.is-selected {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px var(--p5-yellow, #fde047);
+  transform: skewX(-8deg) scale(1.12);
+}
+
+.p5-diy-color-picker {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #64748b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.p5-diy-inline-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.p5-diy-source-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  background: rgba(250, 204, 21, 0.18);
+  color: var(--p5-yellow, #fde047);
+  border: 1px solid rgba(250, 204, 21, 0.6);
+}
+
+.p5-diy-advanced-box {
+  background: rgba(6, 8, 15, 0.85);
+  border: 1px solid #334155;
+  border-left: 3px solid var(--p5-cyan, #38bdf8);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.p5-diy-emotion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 6px;
+}
+
+.p5-diy-emo-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
+  background: #111625;
+  border: 1px dashed #475569;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: center;
+}
+
+.p5-diy-emo-slot:hover {
+  border-color: var(--p5-yellow, #fde047);
+  color: #ffffff;
+}
+
+.p5-diy-emo-slot.is-set {
+  border-style: solid;
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.16);
+  color: #a7f3d0;
+}
+
+.p5-diy-creator-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.p5-diy-submit-btn {
+  background: var(--p5-red, #e60012);
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  font-weight: 900;
+  padding: 6px 18px;
+}
+
+.p5-diy-submit-btn:hover {
+  background: var(--p5-yellow, #fde047);
+  color: #090910;
+}
+
+

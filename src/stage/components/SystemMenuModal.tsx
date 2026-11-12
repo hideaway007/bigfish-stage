@@ -8,9 +8,14 @@ import {
   type WorkerAdapterInfo,
 } from '../../shared/settings';
 import { getCachedCharacterPack } from '../characterLoader';
+import { isCustomCharacterId } from '../../shared/diy-character';
 import { CHARACTER_ROLE_META } from '../touchReactions';
 import { ModelPicker } from './settings/ModelPicker';
 import { ConnectionTestResult } from './settings/ConnectionTestResult';
+import {
+  CharacterPersonaCardBar,
+  DiyCharacterCreatorDrawer,
+} from './settings/DiyCharacterPanel';
 import './settings/settings.css';
 import type {
   ConnectionTestState,
@@ -176,6 +181,8 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   const [imageSaveError, setImageSaveError] = useState<string | null>(null);
   const [showVoiceAdvanced, setShowVoiceAdvanced] = useState(false);
   const [dirPickError, setDirPickError] = useState<string | null>(null);
+  const [diyCreatorOpen, setDiyCreatorOpen] = useState(false);
+  const [editingCustomCharId, setEditingCustomCharId] = useState<string | null>(null);
   const [customPresets, setCustomPresets] = useState<AgentPresetInfo[]>([]);
   const [presetGuideOpen, setPresetGuideOpen] = useState<
     Record<string, 'details' | 'usage' | 'source' | null>
@@ -370,12 +377,44 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                 className="p5-sys-panel"
                 data-testid="system-panel-characters"
               >
-                <div className="p5-sys-panel-head">
-                  <h3>角色与独立大脑</h3>
-                  <p>
-                    每位角色拥有「独立大脑与专属房间」：单独记住各自的模型与对话历史，切换角色不串记忆。
-                  </p>
+                <div className="p5-sys-panel-head p5-sys-panel-head--split">
+                  <div>
+                    <h3>角色与独立大脑</h3>
+                    <p>
+                      每位角色拥有「独立大脑与专属房间」，并支持导入 <code>.md / .txt</code> 性格定位文件或 DIY 自建新角色。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="p5-diy-open-creator-btn"
+                    data-testid="open-diy-creator-btn"
+                    onClick={() => {
+                      setEditingCustomCharId(null);
+                      setDiyCreatorOpen((prev) => !prev);
+                    }}
+                  >
+                    {diyCreatorOpen && !editingCustomCharId
+                      ? '▴ 收起捏人工作台'
+                      : '＋ DIY 新建角色'}
+                  </button>
                 </div>
+
+                <DiyCharacterCreatorDrawer
+                  open={diyCreatorOpen}
+                  editingCharacterId={editingCustomCharId}
+                  onClose={() => {
+                    setDiyCreatorOpen(false);
+                    setEditingCustomCharId(null);
+                  }}
+                  onCreatedOrUpdated={(charId, rolePromptText) => {
+                    onUpdateSettings({
+                      characterBrains: {
+                        [charId]: { rolePrompt: rolePromptText },
+                      },
+                    });
+                    onSwitchCharacter(charId);
+                  }}
+                />
 
                 <div className="p5-char-grid">
                   {characters.map((ch) => {
@@ -388,6 +427,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                       Boolean(charBrain?.activeSessionId) ||
                       (isCurrent && Boolean(currentSessionId));
                     const roleMeta = CHARACTER_ROLE_META[ch.id];
+                    const isCustomChar = isCustomCharacterId(ch.id);
 
                     const pillCandidates = Array.from(
                       new Set([
@@ -434,6 +474,11 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           <div className="p5-char-card-titles">
                             <div className="p5-char-card-name-row">
                               <h4 className="p5-char-card-name">{shortName}</h4>
+                              {isCustomChar && (
+                                <span className="p5-char-diy-pill">
+                                  ★ DIY 自建
+                                </span>
+                              )}
                               {roleMeta && (
                                 <span className="p5-char-specialty-pill">
                                   {roleMeta.specialtyTag}
@@ -497,6 +542,19 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                             })}
                           </div>
                         </div>
+
+                        {/* 第 3 层：DIY 角色性格与定位文件配置 */}
+                        <CharacterPersonaCardBar
+                          characterId={ch.id}
+                          pack={pack}
+                          activeCharacterId={settings.activeCharacterId}
+                          onUpdateSettings={onUpdateSettings}
+                          onSwitchCharacter={onSwitchCharacter}
+                          onEditCustomCharacter={(targetId) => {
+                            setEditingCustomCharId(targetId);
+                            setDiyCreatorOpen(true);
+                          }}
+                        />
                       </div>
                     );
                   })}
