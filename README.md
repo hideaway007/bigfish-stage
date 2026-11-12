@@ -1,4 +1,4 @@
-# BigFish Stage · 肥鱼舞台
+# BigFish Stage · 大肥鱼舞台
 
 <p align="center">
   <strong>把硬核 AI 编程引擎，变成高反差红黑波普漫画风的实时角色演出舞台！</strong><br/>
