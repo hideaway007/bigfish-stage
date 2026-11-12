@@ -19,7 +19,7 @@ export function eventFact(event: StageEvent): string | undefined {
     case 'steer_acked': return '执行 Agent 服务端已接收插话；不代表模型已经处理。';
     case 'interrupted': return '当前任务已打断。';
     case 'context_compacted': return `已完成记忆凝炼，释放约 ${event.freedTokens} Tokens。`;
-    case 'baton_pass': return `怪盗团换手接力：交由新角色继续推进。`;
+    case 'baton_pass': return `角色换手接力：交由新角色继续推进。`;
     case 'turn_done': return event.ok ? '收到本轮完成信号：执行 Agent 报告成功。' : '本轮结束但未成功完成。';
     case 'error': return '发生执行错误；任务未确认成功。';
   }

@@ -160,11 +160,11 @@ export const ArchiveModal: React.FC<ArchiveModalProps> = ({
         <div className="p5-archive-header">
           <div className="p5-archive-title-group">
             <span className="p5-archive-kicker">
-              PHANTOM TROPHY & ARCHIVE // 战利品与行动档案
+              STAGE DIFF & ARCHIVE // 代码变更与行动档案
             </span>
             <h2 className="p5-archive-title">
               {activeTab === 'git' ? (
-                <>工作区总变更审查 (Git Trophy)</>
+                <>工作区总变更审查 (Git Diff)</>
               ) : card ? (
                 <>
                   {characterName} 发动 {card.tool.toUpperCase()} ▶{' '}

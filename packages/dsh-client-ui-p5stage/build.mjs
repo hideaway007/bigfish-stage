@@ -44,7 +44,7 @@ combinedCss = combinedCss
   .replace(/html,\s*body,\s*#root\s*\{/g, '.p5-dsh-host {');
 
 combinedCss += `
-/* ── P5 Phantom Sidebar & Top Session Header Shell Overrides ── */
+/* ── BigFish Stage Sidebar & Top Session Header Shell Overrides ── */
 [class*="sidebarCol"] {
   background-color: #07080e !important;
   border-right: none !important;
@@ -310,7 +310,7 @@ async function buildWrappedClient(packageId, outPath) {
     },
     external: ['react', 'react-dom', 'react/jsx-runtime'],
     define: {
-      __P5_STAGE_CSS__: JSON.stringify(combinedCss),
+      __P5_STAGE_CSS__: JSON.stringify(combinedCss.replace(/\/\*[\s\S]*?\*\//g, '')),
       __P5_PACKAGE_ID__: JSON.stringify(packageId),
     },
     write: false,

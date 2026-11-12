@@ -603,7 +603,7 @@ export class SessionController {
 
     if (hasProject && this.worker && (instruction?.trim() || briefParts.length > 0)) {
       const handoffPrompt = [
-        `【怪盗团 Baton Pass 换手交接】上一棒队友：${fromPack?.name ?? fromCharacterId}`,
+        `【角色换手交接 · Agent Relay】上一棒队友：${fromPack?.name ?? fromCharacterId}`,
         ...briefParts,
         `本棒请重点执行：${instruction?.trim() || '审查上述改动与结论，指出潜在问题或继续完善实现。'}`,
       ].join('\n');
