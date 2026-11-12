@@ -1,8 +1,8 @@
 {
-  "name": "p5-agent-stage",
+  "name": "bigfish-stage",
   "version": "0.2.0",
   "private": true,
-  "description": "BigFish Stage · 肥鱼舞台 — High-contrast pop-art comic stage for DeepSeek Harness & AI character agents",
+  "description": "BigFish Stage · 大肥鱼工作台 — High-contrast pop-art comic stage for DeepSeek Harness & AI character agents",
   "type": "module",
   "main": "electron/main.cjs",
   "icon": "./dsh-bundle/icon.svg",

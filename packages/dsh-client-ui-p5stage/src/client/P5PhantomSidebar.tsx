@@ -877,7 +877,7 @@ export function createP5SidebarComponents(ctx: any) {
                   data-testid={`p5-sb-panel-${panel.id}`}
                   onClick={() => handleOpenPanel(panel.id)}
                   onMouseEnter={() => playSfx('hover')}
-                  title={isActive ? `返回肥鱼舞台` : `打开 ${panel.label}`}
+                  title={isActive ? `返回大肥鱼工作台` : `打开 ${panel.label}`}
                   style={{
                     width: '100%',
                     background: 'transparent',

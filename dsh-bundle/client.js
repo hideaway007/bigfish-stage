@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-	id: "p5-agent-stage",
+	id: "bigfish-stage",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -13268,7 +13268,7 @@ window.__ModuleLoader__.load({
 		                    "data-testid": `p5-sb-panel-${panel.id}`,
 		                    onClick: () => handleOpenPanel(panel.id),
 		                    onMouseEnter: () => playSfx("hover"),
-		                    title: isActive ? `\u8FD4\u56DE\u80A5\u9C7C\u821E\u53F0` : `\u6253\u5F00 ${panel.label}`,
+		                    title: isActive ? `\u8FD4\u56DE\u5927\u80A5\u9C7C\u5DE5\u4F5C\u53F0` : `\u6253\u5F00 ${panel.label}`,
 		                    style: {
 		                      width: "100%",
 		                      background: "transparent",
@@ -13999,8 +13999,8 @@ window.__ModuleLoader__.load({
 		  "theme",
 		  "locale"
 		];
-		var PLUGIN_OWNER_ID = "p5-agent-stage" ? "p5-agent-stage" : "@bigfish/dsh-client-ui-p5stage";
-		var STANDALONE_PRODUCT_TITLE = "\u80A5\u9C7C\u821E\u53F0 // BIGFISH STAGE";
+		var PLUGIN_OWNER_ID = "bigfish-stage" ? "bigfish-stage" : "@bigfish/dsh-client-ui-p5stage";
+		var STANDALONE_PRODUCT_TITLE = "BigFish Stage \xB7 \u5927\u80A5\u9C7C\u5DE5\u4F5C\u53F0";
 		var SIDEBAR_SLOT_CHILDREN = {
 		  "sidebar.brand.mark": { kind: "single", scope: "root" },
 		  "sidebar.brand.name": { kind: "single", scope: "root" },

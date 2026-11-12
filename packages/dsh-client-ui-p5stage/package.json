@@ -2,7 +2,7 @@
   "name": "@bigfish/dsh-client-ui-p5stage",
   "version": "0.0.1",
   "private": true,
-  "description": "BigFish Stage · 肥鱼舞台 — Pop-art comic character stage plugin for DeepSeek Harness",
+  "description": "BigFish Stage · 大肥鱼工作台 — Pop-art comic character stage plugin for DeepSeek Harness",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
