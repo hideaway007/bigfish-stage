@@ -13,4 +13,3 @@ bridge/protocol/
 electron/engine/
 packages/dsh-client-ui-p5stage/lib/
 .claude/
-dsh-bundle/
