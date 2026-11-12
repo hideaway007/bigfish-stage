@@ -43,6 +43,8 @@ body,
   position: relative;
   width: 100vw;
   height: 100vh;
+  container-type: inline-size;
+  container-name: stage;
   overflow: clip;
   display: flex;
   flex-direction: column;
@@ -4221,4 +4223,304 @@ body,
   font-weight: 800;
   padding: 3px 8px;
   transform: skewX(-8deg);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CONTAINER-QUERY RESPONSIVE ADAPTATION (Medium 2-Col & Narrow Half-Screen)
+   Responds to actual stage width (whether resized window or open sidebars)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Tier A: Medium-Compact 2-Column Stage (921px ~ 1180px) — Zero overlap! */
+@container stage (max-width: 1180px) {
+  .p5-session-badge,
+  .p5-workspace-header-right .p5-pill-btn kbd {
+    display: none;
+  }
+
+  .p5-workspace-header {
+    gap: 6px;
+  }
+
+  .p5-workspace-header-right {
+    gap: 5px;
+  }
+
+  .p5-pill-btn {
+    padding: 4px 8px;
+    font-size: 11.5px;
+  }
+
+  .p5-left-column {
+    padding: 12px 10px 12px 18px;
+  }
+
+  .p5-center-stage {
+    padding: 12px 16px 14px 10px;
+  }
+
+  .p5-brand-tag {
+    font-size: 17px;
+    padding: 4px 10px;
+    letter-spacing: 1px;
+  }
+
+  .p5-live-pill {
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+
+  .p5-char-name-pill {
+    width: 100%;
+    padding: 5px 8px 5px 10px;
+    gap: 5px;
+  }
+
+  .p5-char-name-main {
+    font-size: 13px;
+    letter-spacing: 0.3px;
+  }
+
+  .p5-bottom-left-dock {
+    gap: 6px;
+    padding-right: 0;
+  }
+
+  .p5-context-radar {
+    padding: 3px 6px 3px 5px;
+    gap: 5px;
+    margin-left: 0;
+  }
+
+  .p5-radar-dial-wrap {
+    width: 34px;
+    height: 34px;
+  }
+
+  .p5-radar-pct {
+    font-size: 11px;
+  }
+
+  .p5-radar-kicker {
+    display: none;
+  }
+
+  .p5-radar-tokens {
+    font-size: 10px;
+  }
+
+  .p5-compaction-trigger-btn {
+    font-size: 10px;
+    padding: 1px 5px;
+  }
+
+  .p5-party-medals {
+    gap: 4px;
+  }
+
+  .p5-medal-ring {
+    width: 38px;
+    height: 38px;
+    border-width: 2.5px;
+  }
+
+  .p5-medal-item.is-active .p5-medal-ring {
+    width: 42px;
+    height: 42px;
+    border-width: 3px;
+  }
+
+  .p5-medal-name {
+    font-size: 9.5px;
+    padding: 1px 4px;
+  }
+}
+
+/* Tier B: Narrow / Half-Screen Split Stage (<= 920px)
+   Transforms from cramped skinny 2-column into a sleek P5 Top Hero Deck + Full-Width Workspace! */
+@container stage (max-width: 920px) {
+  .p5-bg-crimson-wedge {
+    width: 100%;
+    height: 252px;
+    clip-path: polygon(0 0, 100% 0, 100% 68%, 0 96%);
+  }
+
+  .p5-bg-halftone {
+    height: 252px;
+    clip-path: polygon(0 0, 68% 0, 44% 100%, 0 100%);
+  }
+
+  .p5-bg-vertical-watermark {
+    font-size: 34px;
+    top: 46px;
+    opacity: 0.42;
+  }
+
+  .p5-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .p5-left-column {
+    height: auto;
+    display: grid;
+    grid-template-columns: 164px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 14px;
+    row-gap: 6px;
+    align-items: center;
+    justify-content: stretch;
+    padding: 10px 18px 8px 18px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .p5-brand-strip {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .p5-portrait-stage {
+    grid-column: 1;
+    grid-row: 2;
+    width: 164px;
+    height: 164px;
+    flex: none;
+  }
+
+  .p5-char-tilted-card {
+    width: 90%;
+    height: 88%;
+    right: 3%;
+    top: 6%;
+    border-width: 3.5px;
+    box-shadow: 7px 8px 0 rgba(0, 0, 0, 0.72);
+  }
+
+  .p5-char-tilted-card::before {
+    font-size: 24px;
+    bottom: 8px;
+  }
+
+  .p5-portrait-img {
+    max-height: 168px;
+    transform: translate(2px, 4px) scale(1.06);
+  }
+
+  .p5-voice-eq-badge {
+    right: 4%;
+    top: 12%;
+    transform: skewX(-12deg) rotate(-4deg) scale(0.82);
+  }
+
+  .p5-char-info-cluster {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: 0;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .p5-char-codename-giant {
+    font-size: 26px;
+  }
+
+  .p5-char-name-pill {
+    width: 100%;
+    max-width: 460px;
+    padding: 5px 10px;
+    gap: 6px;
+  }
+
+  .p5-char-name-main {
+    font-size: 14px;
+  }
+
+  .p5-bottom-left-dock {
+    margin-top: 3px;
+    justify-content: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .p5-party-medals {
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  .p5-center-stage {
+    height: auto;
+    min-height: 0;
+    padding: 8px 18px 14px 18px;
+    gap: 8px;
+  }
+
+  .p5-workspace-header {
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .p5-workspace-header::-webkit-scrollbar {
+    display: none;
+  }
+
+  .p5-dialogue-tail-svg {
+    display: none;
+  }
+
+  .p5-comic-bubble-wrap {
+    margin-top: 12px;
+  }
+
+  .p5-speaker-sticker {
+    top: -15px;
+    left: 20px;
+    font-size: 16px;
+    padding: 2px 14px;
+  }
+
+  .p5-dialogue-box {
+    min-height: 104px;
+    max-height: min(32vh, 220px) !important;
+    padding: 26px 30px 18px 22px;
+  }
+
+  .p5-dialogue-box .p5-dialogue-text {
+    max-height: calc(min(32vh, 220px) - 44px) !important;
+    font-size: 16px;
+  }
+}
+
+/* Tier C: Ultra-Narrow Window (<= 620px) */
+@container stage (max-width: 620px) {
+  .p5-left-column {
+    grid-template-columns: 120px minmax(0, 1fr);
+    column-gap: 10px;
+    padding: 8px 12px 6px 12px;
+  }
+
+  .p5-portrait-stage {
+    width: 120px;
+    height: 132px;
+  }
+
+  .p5-portrait-img {
+    max-height: 134px;
+  }
+
+  .p5-char-codename-giant {
+    font-size: 22px;
+  }
+
+  .p5-char-name-pill {
+    flex-wrap: wrap;
+    border-radius: 6px 18px 18px 6px;
+  }
+
+  .p5-radar-info {
+    display: none;
+  }
+
+  .p5-center-stage {
+    padding: 6px 12px 10px 12px;
+  }
 }

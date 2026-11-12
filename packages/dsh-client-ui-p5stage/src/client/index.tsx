@@ -148,9 +148,15 @@ export function apply(ctx: any): () => void {
 
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     const syncFullscreenAttr = () => {
+      // When inside Official DSH Desktop (data-platform present), DSH preload natively sets [data-fullscreen]
+      if (document.documentElement.hasAttribute('data-platform')) {
+        document.documentElement.removeAttribute('data-bigfish-fullscreen');
+        return;
+      }
       const isDocFs = Boolean(document.fullscreenElement);
       const isScreenFs =
         window.screen &&
+        window.screen.width > 900 &&
         window.innerWidth >= window.screen.width - 2 &&
         window.innerHeight >= window.screen.height - 2;
       if (isDocFs || isScreenFs) {
