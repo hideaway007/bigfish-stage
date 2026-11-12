@@ -49,9 +49,6 @@ export function validateCharacter(value: unknown, directoryId: string): Characte
       }
     }
   }
-  if (c.defaultVoice !== undefined && (typeof c.defaultVoice !== 'string' || !c.defaultVoice.trim())) {
-    throw new Error(`角色默认声线无效: ${directoryId}`);
-  }
   if (!c.art || (c.art.renderer !== 'sprites' && c.art.renderer !== 'live2d')) throw new Error(`角色立绘格式无效: ${directoryId}`);
   if (c.art.portrait !== undefined && !safeAsset(c.art.portrait)) throw new Error('角色头像路径无效');
   if (c.art.renderer === 'sprites') {

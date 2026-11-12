@@ -44,12 +44,6 @@ import {
 } from './components/P5Cutins';
 import { playSfx } from './sfx';
 import { pickCharacterTouchReaction } from './touchReactions';
-import {
-  TtsMuteButton,
-  hasStoredTtsMutePreference,
-  playTtsAudioFrame,
-  setTtsMuted,
-} from './ttsPlayer';
 import { OnboardingCard } from './components/OnboardingCard';
 import type {
   CharacterTouchZone,
@@ -266,7 +260,7 @@ export function renderFormattedText(text: string): React.ReactNode {
 
 function formatStageModelBanner(modelName: string | undefined, fallbackCodename: string): string {
   const raw = (modelName || '').trim();
-  if (!raw || raw === 'dsh/default' || raw === 'dsh/magpie') {
+  if (!raw || raw === 'dsh/default' || raw === 'dsh/auto') {
     return fallbackCodename;
   }
   const parts = raw.split('/').filter(Boolean);
@@ -352,6 +346,15 @@ export const StageApp: React.FC<StageAppProps> = ({
   };
   const [typedLength, setTypedLength] = useState<number>(0);
   const [fadeReplaceKey, setFadeReplaceKey] = useState<number>(0);
+  const dialogueBoxRef = useRef<HTMLDivElement | null>(null);
+  const dialogueTextRef = useRef<HTMLDivElement | null>(null);
+  const scrollDragRef = useRef<{ startY: number; startScrollTop: number } | null>(null);
+  const [dlgSize, setDlgSize] = useState<{ w: number; h: number }>({ w: 820, h: 190 });
+  const [dlgScroll, setDlgScroll] = useState<{
+    canScroll: boolean;
+    ratio: number;
+    thumbFrac: number;
+  }>({ canScroll: false, ratio: 0, thumbFrac: 1 });
   const [inlinePreviewId, setInlinePreviewId] = useState<string | null>(null);
   const [stageModelPickerOpen, setStageModelPickerOpen] = useState(false);
   const [stageModelQuery, setStageModelQuery] = useState('');
@@ -434,25 +437,56 @@ export const StageApp: React.FC<StageAppProps> = ({
     setNaviCutinData(null);
   }, []);
 
+  const syncDialogueScroll = useCallback(() => {
+    const el = dialogueTextRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    const canScroll = maxScroll > 3;
+    const ratio = canScroll ? Math.min(1, Math.max(0, el.scrollTop / maxScroll)) : 0;
+    const thumbFrac = canScroll
+      ? Math.min(0.86, Math.max(0.14, el.clientHeight / Math.max(1, el.scrollHeight)))
+      : 1;
+    setDlgScroll((prev) => {
+      if (
+        prev.canScroll === canScroll &&
+        Math.abs(prev.ratio - ratio) < 0.002 &&
+        Math.abs(prev.thumbFrac - thumbFrac) < 0.002
+      ) {
+        return prev;
+      }
+      return { canScroll, ratio, thumbFrac };
+    });
+  }, []);
+
+  useEffect(() => {
+    const boxEl = dialogueBoxRef.current;
+    if (!boxEl || typeof ResizeObserver === 'undefined') return;
+    const updateSize = () => {
+      const rect = boxEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const w = Math.round(rect.width);
+        const h = Math.round(rect.height);
+        setDlgSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+      }
+      syncDialogueScroll();
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(boxEl);
+    if (dialogueTextRef.current) {
+      ro.observe(dialogueTextRef.current);
+    }
+    return () => ro.disconnect();
+  }, [syncDialogueScroll, state.engineeringView, fadeReplaceKey]);
+
+  useEffect(() => {
+    syncDialogueScroll();
+  }, [typedLength, state.currentLine?.text, syncDialogueScroll]);
+
   // Connect data source on mount
   useEffect(() => {
     const callbacks: StageDataSourceCallbacks = {
       onServerMessage: (message: ServerMessage) => {
-        if (message.type === 'tts_audio') {
-          void playTtsAudioFrame(message);
-          return;
-        }
-
-        if (message.type === 'welcome' && message.settings?.tts) {
-          if (!hasStoredTtsMutePreference()) {
-            setTtsMuted(!message.settings.tts.enabled, false);
-          }
-        } else if (message.type === 'settings' && message.settings?.tts) {
-          if (!hasStoredTtsMutePreference()) {
-            setTtsMuted(!message.settings.tts.enabled, false);
-          }
-        }
-
         if (
           message.type === 'command_error' &&
           message.commandType === 'interact_character' &&
@@ -914,17 +948,9 @@ export const StageApp: React.FC<StageAppProps> = ({
     sourceRef.current?.listModels(target);
   };
 
-  const handleTestConnection = (target: 'worker' | 'voice' | 'tts') => {
+  const handleTestConnection = (target: 'worker' | 'voice') => {
     dispatch({ type: 'MARK_CONN_TESTING', target });
     sourceRef.current?.testConnection(target);
-  };
-
-  const handleSynthesizeTts = (charId: string, text: string) => {
-    sourceRef.current?.synthesizeTts?.(
-      charId,
-      text,
-      `audition_${Date.now()}`
-    );
   };
 
   const handleTouchCharacterZone = (zone: CharacterTouchZone) => {
@@ -1915,13 +1941,6 @@ export const StageApp: React.FC<StageAppProps> = ({
 
             <div className="p5-workspace-header-right">
               <SfxMuteButton />
-              {state.serverSettings.tts?.enabled && (
-                <TtsMuteButton
-                  onToggleServerSync={(enabled) =>
-                    handleUpdateSettings({ tts: { enabled } })
-                  }
-                />
-              )}
 
               <button
                 type="button"
@@ -2058,105 +2077,213 @@ export const StageApp: React.FC<StageAppProps> = ({
                 )}
               </div>
 
-              <div
-                className="p5-dialogue-box"
-                onClick={skipTypewriter}
-                data-testid="dialogue-box"
-                role="region"
-                aria-label="角色当前台词"
-                title="点击对话框或按 Space 立即显示整句"
-              >
-                {/* Main slanted quadrilateral box (inset: 0, non-scaling stroke) */}
-                <svg
-                  className="p5-dialogue-svg-bg"
-                  viewBox="0 0 1000 250"
-                  preserveAspectRatio="none"
-                  aria-hidden="true"
-                >
-                  <polygon
-                    points="8,24 990,10 968,236 16,242"
-                    fill="#07070c"
-                    stroke="#07070c"
-                    strokeWidth="14"
-                    strokeLinejoin="miter"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <polygon
-                    points="8,24 990,10 968,236 16,242"
-                    fill="#09090f"
-                    stroke="#ffffff"
-                    strokeWidth="6"
-                    strokeLinejoin="miter"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </svg>
+              {(() => {
+                const boxW = Math.max(260, dlgSize.w);
+                const boxH = Math.max(130, dlgSize.h);
+                // Constant pixel slant so top/bottom borders NEVER cut through text when box grows tall
+                const polyPts = `8,22 ${boxW - 8},8 ${boxW - 28},${boxH - 12} 16,${boxH - 8}`;
 
-                {/* Fixed-aspect cross-column P5 single-Z lightning tail piercing into left character frame */}
-                <svg
-                  className="p5-dialogue-tail-svg"
-                  viewBox="0 0 180 84"
-                  preserveAspectRatio="none"
-                  aria-hidden="true"
-                >
-                  <polygon
-                    points="180,12 82,34 106,18 4,52 108,42 84,60 180,66"
-                    fill="#09090f"
-                  />
-                  <polyline
-                    points="170,13 82,34 106,18 4,52 108,42 84,60 170,65"
-                    fill="none"
-                    stroke="#07070c"
-                    strokeWidth="13"
-                    strokeLinejoin="miter"
-                    strokeMiterlimit="10"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <polyline
-                    points="172,13 82,34 106,18 4,52 108,42 84,60 172,65"
-                    fill="none"
-                    stroke="#ffffff"
-                    strokeWidth="5.5"
-                    strokeLinejoin="miter"
-                    strokeMiterlimit="10"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </svg>
+                // Right slanted scrollbar geometry — strictly parallel to right border (boxW-8,8) -> (boxW-28,boxH-12)
+                const trackX1 = boxW - 20;
+                const trackY1 = 24;
+                const trackX2 = boxW - 37;
+                const trackY2 = Math.max(trackY1 + 36, boxH - 26);
+                const lerpX = (t: number) => trackX1 + (trackX2 - trackX1) * t;
+                const lerpY = (t: number) => trackY1 + (trackY2 - trackY1) * t;
 
-                <div
-                  key={fadeReplaceKey}
-                  className={`p5-dialogue-text ${
-                    isLongDialogue ? 'is-long-text' : ''
-                  } ${
-                    fadeReplaceKey > 0 ? 'p5-dialogue-text--fade-replace' : ''
-                  }`}
-                  data-testid="dialogue-line-text"
-                >
-                  {isTypingLine
-                    ? stripTypingMarkdown(displayedText)
-                    : renderFormattedText(displayedText)}
-                </div>
+                const t0 = dlgScroll.ratio * (1 - dlgScroll.thumbFrac);
+                const t1 = Math.min(1, t0 + dlgScroll.thumbFrac);
+                const trackPts = `${trackX1 - 3.5},${trackY1 + 0.5} ${trackX1 + 3.5},${trackY1 - 0.5} ${trackX2 + 3.5},${trackY2 - 0.5} ${trackX2 - 3.5},${trackY2 + 0.5}`;
+                const thumbPts = `${lerpX(t0) - 4.5},${lerpY(t0) + 0.6} ${lerpX(t0) + 4.5},${lerpY(t0) - 0.6} ${lerpX(t1) + 4.5},${lerpY(t1) - 0.6} ${lerpX(t1) - 4.5},${lerpY(t1) + 0.6}`;
 
-                {/* Authentic P5 giant tilted white wedge cursor on bottom-right */}
-                <span
-                  className={`p5-dialogue-cursor p5-cursor-wedge ${
-                    isTypingLine ? 'is-typing' : 'is-ready'
-                  }`}
-                  aria-hidden="true"
-                />
+                return (
+                  <div
+                    ref={dialogueBoxRef}
+                    className={`p5-dialogue-box${dlgScroll.canScroll ? ' is-scrollable' : ''}`}
+                    onClick={skipTypewriter}
+                    data-testid="dialogue-box"
+                    role="region"
+                    aria-label="角色当前台词"
+                    title="点击对话框或按 Space 立即显示整句"
+                  >
+                    {/* Main slanted quadrilateral box (1:1 pixel coordinates, constant top/bottom bevel) */}
+                    <svg
+                      className="p5-dialogue-svg-bg"
+                      viewBox={`0 0 ${boxW} ${boxH}`}
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
+                      <polygon
+                        points={polyPts}
+                        fill="#07070c"
+                        stroke="#07070c"
+                        strokeWidth="14"
+                        strokeLinejoin="miter"
+                      />
+                      <polygon
+                        points={polyPts}
+                        fill="#09090f"
+                        stroke="#ffffff"
+                        strokeWidth="5.5"
+                        strokeLinejoin="miter"
+                      />
+                    </svg>
 
-                <button
-                  type="button"
-                  className="p5-skip-sr-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    skipTypewriter();
-                  }}
-                  data-testid="skip-line-btn"
-                  tabIndex={-1}
-                >
-                  跳过打字
-                </button>
-              </div>
+                    {/* Fixed-aspect cross-column P5 single-Z lightning tail piercing into left character frame */}
+                    <svg
+                      className="p5-dialogue-tail-svg"
+                      viewBox="0 0 180 84"
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
+                      <polygon
+                        points="180,12 82,34 106,18 4,52 108,42 84,60 180,66"
+                        fill="#09090f"
+                      />
+                      <polyline
+                        points="170,13 82,34 106,18 4,52 108,42 84,60 170,65"
+                        fill="none"
+                        stroke="#07070c"
+                        strokeWidth="13"
+                        strokeLinejoin="miter"
+                        strokeMiterlimit="10"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <polyline
+                        points="172,13 82,34 106,18 4,52 108,42 84,60 172,65"
+                        fill="none"
+                        stroke="#ffffff"
+                        strokeWidth="5.5"
+                        strokeLinejoin="miter"
+                        strokeMiterlimit="10"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </svg>
+
+                    <div
+                      key={fadeReplaceKey}
+                      ref={dialogueTextRef}
+                      onScroll={syncDialogueScroll}
+                      className={`p5-dialogue-text ${
+                        isLongDialogue ? 'is-long-text' : ''
+                      } ${
+                        fadeReplaceKey > 0 ? 'p5-dialogue-text--fade-replace' : ''
+                      }`}
+                      data-testid="dialogue-line-text"
+                    >
+                      <span className="p5-dialogue-right-slope-spacer" aria-hidden="true" />
+                      {isTypingLine
+                        ? stripTypingMarkdown(displayedText)
+                        : renderFormattedText(displayedText)}
+                    </div>
+
+                    {/* Slanted P5 Scrollbar running strictly along the rightmost diagonal edge */}
+                    {dlgScroll.canScroll && (
+                      <svg
+                        className="p5-dialogue-slant-scrollbar"
+                        viewBox={`0 0 ${boxW} ${boxH}`}
+                        preserveAspectRatio="none"
+                        data-testid="dialogue-slant-scrollbar"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {/* Clickable wider hit area + visible slanted track */}
+                        <polygon
+                          points={`${trackX1 - 10},${trackY1} ${trackX1 + 10},${trackY1} ${trackX2 + 10},${trackY2} ${trackX2 - 10},${trackY2}`}
+                          fill="transparent"
+                          style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const el = dialogueTextRef.current;
+                            const box = dialogueBoxRef.current;
+                            if (!el || !box) return;
+                            const rect = box.getBoundingClientRect();
+                            const clickY = e.clientY - rect.top;
+                            const frac = Math.min(
+                              1,
+                              Math.max(0, (clickY - trackY1) / Math.max(1, trackY2 - trackY1))
+                            );
+                            el.scrollTop = frac * (el.scrollHeight - el.clientHeight);
+                            syncDialogueScroll();
+                          }}
+                        />
+                        <polygon
+                          points={trackPts}
+                          fill="rgba(255, 255, 255, 0.12)"
+                          stroke="rgba(255, 255, 255, 0.28)"
+                          strokeWidth="1"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        {/* Draggable crimson-white slanted P5 thumb */}
+                        <polygon
+                          points={thumbPts}
+                          fill="#e60012"
+                          stroke="#ffffff"
+                          strokeWidth="1.5"
+                          className="p5-dialogue-slant-thumb"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const el = dialogueTextRef.current;
+                            if (!el) return;
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            scrollDragRef.current = {
+                              startY: e.clientY,
+                              startScrollTop: el.scrollTop,
+                            };
+                          }}
+                          onPointerMove={(e) => {
+                            const drag = scrollDragRef.current;
+                            const el = dialogueTextRef.current;
+                            if (!drag || !el) return;
+                            const usableTrack = Math.max(
+                              1,
+                              (trackY2 - trackY1) * (1 - dlgScroll.thumbFrac)
+                            );
+                            const dy = e.clientY - drag.startY;
+                            const maxScroll = el.scrollHeight - el.clientHeight;
+                            el.scrollTop = Math.min(
+                              maxScroll,
+                              Math.max(0, drag.startScrollTop + (dy / usableTrack) * maxScroll)
+                            );
+                            syncDialogueScroll();
+                          }}
+                          onPointerUp={(e) => {
+                            if (scrollDragRef.current) {
+                              scrollDragRef.current = null;
+                              try {
+                                e.currentTarget.releasePointerCapture(e.pointerId);
+                              } catch {
+                                // ignore
+                              }
+                            }
+                          }}
+                        />
+                      </svg>
+                    )}
+
+                    {/* Authentic P5 giant tilted white wedge cursor on bottom-right */}
+                    <span
+                      className={`p5-dialogue-cursor p5-cursor-wedge ${
+                        isTypingLine ? 'is-typing' : 'is-ready'
+                      } ${dlgScroll.canScroll ? 'is-compact-corner' : ''}`}
+                      aria-hidden="true"
+                    />
+
+                    <button
+                      type="button"
+                      className="p5-skip-sr-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        skipTypewriter();
+                      }}
+                      data-testid="skip-line-btn"
+                      tabIndex={-1}
+                    >
+                      跳过打字
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </section>
 
@@ -2715,7 +2842,6 @@ export const StageApp: React.FC<StageAppProps> = ({
         voiceModels={state.voiceModels}
         workerConnTest={state.workerConnTest}
         voiceConnTest={state.voiceConnTest}
-        ttsConnTest={state.ttsConnTest}
         onSelectTab={(tab: SystemMenuTab) =>
           dispatch({ type: 'SET_SYSTEM_TAB', tab })
         }
@@ -2724,7 +2850,6 @@ export const StageApp: React.FC<StageAppProps> = ({
         onUpdateSettings={handleUpdateSettings}
         onListModels={handleListModels}
         onTestConnection={handleTestConnection}
-        onSynthesizeTts={handleSynthesizeTts}
         onStartNewSessionWithDir={handleStartNewSessionWithDir}
       />
 

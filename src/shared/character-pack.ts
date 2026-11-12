@@ -1,5 +1,5 @@
 /**
- * 角色包格式（Phase 2 契约：支持分部位触摸互动反应与默认 TTS 声线）
+ * 角色包格式（Phase 2 契约：支持分部位触摸互动反应）
  */
 import type { CharacterTouchZone, Emotion, StageEventType, ToolKind } from './stage-events';
 
@@ -59,8 +59,6 @@ export interface CharacterPack {
   tagline: string;
   themeColor: string;
   accentColor?: string;
-  /** 角色默认 Google Cloud TTS 声线，如 cmn-CN-Chirp3-HD-Leda */
-  defaultVoice?: string;
   persona: {
     systemPrompt: string;
     speechStyle: string;

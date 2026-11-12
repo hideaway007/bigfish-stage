@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,10 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const pkgDir = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const repoPublicDir = resolve(pkgDir, '../../public');
+const repoPublicDir =
+  [resolve(pkgDir, 'public'), resolve(pkgDir, '../../public')].find((dir) =>
+    existsSync(join(dir, 'characters'))
+  ) ?? resolve(pkgDir, 'public');
 
 function createStaticPrefixResource(mountPrefix: string, rootDir: string) {
   const normalizedRoot = resolve(rootDir);

@@ -33,24 +33,9 @@ export interface FriendlyConnectionDiagnosis {
  */
 export function mapConnectionFailure(
   rawMessage: string,
-  target: 'worker' | 'voice' | 'tts' = 'worker'
+  target: 'worker' | 'voice' = 'worker'
 ): FriendlyConnectionDiagnosis {
   const raw = (rawMessage || '').trim() || '未知连接错误';
-
-  if (
-    target === 'tts' &&
-    /gcloud|ADC|application-default|凭据|Google\s*Cloud|texttospeech/i.test(raw)
-  ) {
-    return {
-      category: 'auth_failed',
-      title: '尚未检测到 Google Cloud 语音凭据',
-      explanation:
-        '本机 Google TTS 需要有效的 gcloud 默认登录状态或语音 API Key 才能合成实时人声。',
-      nextStep:
-        '可在终端执行 `gcloud auth application-default login`，或在下方展开「高级语音凭据」填入 API Key 后重试。',
-      rawMessage: raw,
-    };
-  }
 
   // 1. Codex CLI executable missing / ENOENT
   if (
@@ -222,8 +207,6 @@ export function mapConnectionFailure(
     title:
       target === 'voice'
         ? '台词模型连接测试未通过'
-        : target === 'tts'
-        ? '角色语音 (TTS) 连通测试未通过'
         : '执行 Agent 连接测试未通过',
     explanation:
       '测试请求未能成功完成，可能是接口地址、模型名称或本机运行环境配置不匹配。',

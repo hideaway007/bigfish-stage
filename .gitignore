@@ -12,3 +12,5 @@ bridge/protocol/
 .alma-snapshots
 electron/engine/
 packages/dsh-client-ui-p5stage/lib/
+.claude/
+dsh-bundle/

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import type { CharacterSummary } from '../../shared/character-pack';
 import {
   BUILTIN_AGENT_PRESETS,
-  DEFAULT_CHARACTER_VOICES,
   type AgentPresetInfo,
   type PublicSettings,
   type SettingsPatch,
@@ -10,7 +9,6 @@ import {
 } from '../../shared/settings';
 import { getCachedCharacterPack } from '../characterLoader';
 import { CHARACTER_ROLE_META } from '../touchReactions';
-import { setTtsMuted } from '../ttsPlayer';
 import { ModelPicker } from './settings/ModelPicker';
 import { ConnectionTestResult } from './settings/ConnectionTestResult';
 import './settings/settings.css';
@@ -32,14 +30,12 @@ interface SystemMenuModalProps {
   voiceModels?: ModelListState;
   workerConnTest?: ConnectionTestState;
   voiceConnTest?: ConnectionTestState;
-  ttsConnTest?: ConnectionTestState;
   onSelectTab: (tab: SystemMenuTab) => void;
   onClose: () => void;
   onSwitchCharacter: (characterId: string) => void;
   onUpdateSettings: (patch: SettingsPatch) => void;
   onListModels: (target: 'worker' | 'voice') => void;
-  onTestConnection: (target: 'worker' | 'voice' | 'tts') => void;
-  onSynthesizeTts?: (characterId: string, text: string) => void;
+  onTestConnection: (target: 'worker' | 'voice') => void;
   onStartNewSessionWithDir?: (projectDir: string) => void;
 }
 
@@ -62,9 +58,40 @@ interface BigfishPresetsBridge {
   startCreatorMode?: () => void;
 }
 
+interface BigfishProviderRow {
+  route: string;
+  displayName: string;
+  api?: string;
+  baseURL?: string;
+  apiKeyEnv: string;
+  keyConfigured: boolean;
+  models: Array<{ id: string; name?: string; input?: string[] }>;
+  isBuiltin: boolean;
+}
+
+interface BigfishProvidersBridge {
+  listProviders?: () => Promise<BigfishProviderRow[]>;
+  saveProvider?: (input: {
+    route: string;
+    displayName?: string;
+    api?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+    baseURL?: string;
+    apiKey?: string;
+    models?: Array<{ id: string; name?: string; input?: string[] }>;
+  }) => Promise<void>;
+  removeProvider?: (route: string) => Promise<void>;
+  discoverModels?: (probe: {
+    provider?: string;
+    baseURL?: string;
+    api?: string;
+    apiKey?: string;
+  }) => Promise<Array<{ id: string; name?: string; input?: string[] }>>;
+}
+
 declare global {
   interface Window {
     __BIGFISH_PRESETS__?: BigfishPresetsBridge;
+    __BIGFISH_PROVIDERS__?: BigfishProvidersBridge;
   }
 }
 
@@ -72,20 +99,9 @@ const TABS: Array<{ id: SystemMenuTab; zh: string }> = [
   { id: 'characters', zh: '角色与模型' },
   { id: 'presets', zh: 'Agent 预设' },
   { id: 'worker', zh: 'AI 引擎' },
-  { id: 'voice', zh: '台词与语音' },
+  { id: 'voice', zh: '互动台词' },
   { id: 'pond', zh: '工作文件夹' },
   { id: 'performance', zh: '显示速度' },
-];
-
-const CHIRP3_HD_FEMALE_VOICES: Array<{ value: string; label: string }> = [
-  { value: 'Leda', label: 'Leda · 日系元气萌妹音（大肥鱼推荐）' },
-  { value: 'Autonoe', label: 'Autonoe · 傲娇甜酷少女音（哈基米推荐）' },
-  { value: 'Laomedeia', label: 'Laomedeia · 清雅温柔大小姐音（Claude娘推荐）' },
-  { value: 'Zephyr', label: 'Zephyr · 空灵高洁龙女御姐音（白龙娘推荐）' },
-  { value: 'Despina', label: 'Despina · 超甜软萌萝莉音' },
-  { value: 'Callirrhoe', label: 'Callirrhoe · 轻柔三无文学音' },
-  { value: 'Aoede', label: 'Aoede · 成熟利落学姐音' },
-  { value: 'Kore', label: 'Kore · 沉稳知性女声' },
 ];
 
 function formatAdapterDisplayName(ad: WorkerAdapterInfo): string {
@@ -110,21 +126,18 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   voiceModels = DEFAULT_MODEL_LIST,
   workerConnTest = DEFAULT_CONN_TEST,
   voiceConnTest = DEFAULT_CONN_TEST,
-  ttsConnTest = DEFAULT_CONN_TEST,
   onSelectTab,
   onClose,
   onSwitchCharacter,
   onUpdateSettings,
   onListModels,
   onTestConnection,
-  onSynthesizeTts,
   onStartNewSessionWithDir,
 }) => {
   const safeWorkerModels = workerModels ?? DEFAULT_MODEL_LIST;
   const safeVoiceModels = voiceModels ?? DEFAULT_MODEL_LIST;
   const safeWorkerConn = workerConnTest ?? DEFAULT_CONN_TEST;
   const safeVoiceConn = voiceConnTest ?? DEFAULT_CONN_TEST;
-  const safeTtsConn = ttsConnTest ?? DEFAULT_CONN_TEST;
 
   const [workerModelDraft, setWorkerModelDraft] = useState(
     settings.worker.model
@@ -140,16 +153,6 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     settings.voice.endpoint.model
   );
   const [voiceApiKeyDraft, setVoiceApiKeyDraft] = useState('');
-  const [ttsRateDraft, setTtsRateDraft] = useState(
-    settings.tts?.speakingRate ?? 1.04
-  );
-  const [ttsBaseUrlDraft, setTtsBaseUrlDraft] = useState(
-    settings.tts?.endpoint?.baseUrl ?? 'https://texttospeech.googleapis.com'
-  );
-  const [ttsApiKeyDraft, setTtsApiKeyDraft] = useState('');
-  const [ttsGcpProjectDraft, setTtsGcpProjectDraft] = useState(
-    settings.tts?.gcpProject ?? ''
-  );
   const [projectDirDraft, setProjectDirDraft] = useState(
     settings.projectDir ?? ''
   );
@@ -172,7 +175,6 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
   const [imageSaving, setImageSaving] = useState(false);
   const [imageSaveError, setImageSaveError] = useState<string | null>(null);
   const [showVoiceAdvanced, setShowVoiceAdvanced] = useState(false);
-  const [showTtsAdvanced, setShowTtsAdvanced] = useState(false);
   const [dirPickError, setDirPickError] = useState<string | null>(null);
   const [customPresets, setCustomPresets] = useState<AgentPresetInfo[]>([]);
   const [presetGuideOpen, setPresetGuideOpen] = useState<
@@ -182,16 +184,75 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
     Record<string, string>
   >({});
 
+  // DSH Native Multi-Provider Setup (GPT / Claude / Custom Gateway)
+  const providersBridge =
+    typeof window !== 'undefined' ? window.__BIGFISH_PROVIDERS__ : undefined;
+  const [extProviders, setExtProviders] = useState<BigfishProviderRow[]>([]);
+  const [provMode, setProvMode] = useState<'openai' | 'anthropic' | 'custom'>('openai');
+  const [provRoute, setProvRoute] = useState('openai');
+  const [provDisplayName, setProvDisplayName] = useState('OpenAI (GPT)');
+  const [provApi, setProvApi] = useState<
+    'openai-completions' | 'openai-responses' | 'anthropic-messages'
+  >('openai-completions');
+  const [provBaseUrl, setProvBaseUrl] = useState('');
+  const [provApiKey, setProvApiKey] = useState('');
+  const [provModelsText, setProvModelsText] = useState('');
+  const [provBusy, setProvBusy] = useState(false);
+  const [provProbing, setProvProbing] = useState(false);
+  const [provNotice, setProvNotice] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+
+  const reloadExtProviders = () => {
+    if (!providersBridge?.listProviders) return;
+    void providersBridge
+      .listProviders()
+      .then((rows) => setExtProviders(rows))
+      .catch(() => {});
+  };
+
+  const applyProviderPresetTemplate = (
+    mode: 'openai' | 'anthropic' | 'custom'
+  ) => {
+    setProvMode(mode);
+    setProvNotice(null);
+    setProvApiKey('');
+    const existing = extProviders.find((r) => r.route === mode);
+    if (mode === 'openai') {
+      setProvRoute('openai');
+      setProvDisplayName('OpenAI (GPT)');
+      setProvApi('openai-responses');
+      setProvBaseUrl(existing?.baseURL ?? '');
+      setProvModelsText(
+        existing?.models?.length
+          ? existing.models.map((m) => m.id).join(', ')
+          : ''
+      );
+    } else if (mode === 'anthropic') {
+      setProvRoute('anthropic');
+      setProvDisplayName('Anthropic (Claude)');
+      setProvApi('anthropic-messages');
+      setProvBaseUrl(existing?.baseURL ?? '');
+      setProvModelsText(
+        existing?.models?.length
+          ? existing.models.map((m) => m.id).join(', ')
+          : ''
+      );
+    } else {
+      setProvRoute('custom-gateway');
+      setProvDisplayName('自定义模型网关');
+      setProvApi('openai-completions');
+      setProvBaseUrl('');
+      setProvModelsText('');
+    }
+  };
+
   useEffect(() => {
     setWorkerModelDraft(settings.worker.model);
     setWorkerBaseUrlDraft(settings.worker.endpoint.baseUrl);
     setVoiceBaseUrlDraft(settings.voice.endpoint.baseUrl);
     setVoiceModelDraft(settings.voice.endpoint.model);
-    setTtsRateDraft(settings.tts?.speakingRate ?? 1.04);
-    setTtsBaseUrlDraft(
-      settings.tts?.endpoint?.baseUrl ?? 'https://texttospeech.googleapis.com'
-    );
-    setTtsGcpProjectDraft(settings.tts?.gcpProject ?? '');
     setProjectDirDraft(settings.projectDir ?? '');
     setTypingSpeedDraft(settings.performance.typingCharsPerSec);
   }, [settings, settingsSyncedAt]);
@@ -227,6 +288,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
       }
     } else if (activeTab === 'worker') {
       onListModels('worker');
+      reloadExtProviders();
     } else if (
       activeTab === 'voice' &&
       safeVoiceModels.models.length === 0 &&
@@ -793,173 +855,572 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                     {imageSaveError && <p className="p5-pond-dir-error">{imageSaveError}</p>}
                   </div>
 
-                  {/* Test Connection */}
-                  <div className="p5-form-group p5-conn-test-row">
-                    <button
-                      type="button"
-                      className="p5-apply-btn p5-apply-btn--test"
-                      data-testid="worker-test-conn-btn"
-                      onClick={() => onTestConnection('worker')}
-                      disabled={safeWorkerConn.testing}
+                  {/* ── DSH 原生：接入 GPT / Claude / 第三方模型服务商 ── */}
+                  {providersBridge ? (
+                    <div
+                      className="p5-provider-hub-card"
+                      data-testid="dsh-provider-hub"
                     >
-                      {safeWorkerConn.testing ? '正在检测…' : '检测连接状态'}
-                    </button>
-
-                    <ConnectionTestResult
-                      target="worker"
-                      state={safeWorkerConn}
-                    />
-                  </div>
-
-                  {/* Collapsible Advanced Settings */}
-                  <div>
-                    <button
-                      type="button"
-                      className="p5-mini-action-btn"
-                      onClick={() => setShowWorkerAdvanced((v) => !v)}
-                    >
-                      {showWorkerAdvanced
-                        ? '▾ 收起高级接口设置'
-                        : '▸ 高级接口设置（一般无需修改）'}
-                    </button>
-                  </div>
-
-                  {showWorkerAdvanced && (
-                    <>
-                      <div className="p5-form-group">
-                        <label
-                          className="p5-form-label"
-                          htmlFor="worker-connection-select"
-                        >
-                          账号与接口来源
-                        </label>
-                        <select
-                          id="worker-connection-select"
-                          data-testid="worker-connection-select"
-                          className="p5-form-select"
-                          value={settings.worker.connection}
-                          onChange={(e) => {
-                            setWorkerApiKeyDraft('');
-                            onUpdateSettings({
-                              worker: {
-                                connection: e.target.value as
-                                  | 'endpoint'
-                                  | 'agent-default',
-                              },
-                            });
-                          }}
-                        >
-                          <option value="agent-default">
-                            直接使用本机已登录账号（推荐）
-                          </option>
-                          <option value="endpoint">自定义接口地址</option>
-                        </select>
+                      <div className="p5-provider-hub-head">
+                        <div>
+                          <h4 className="p5-tts-card-title">
+                            接入外部大模型（OpenAI GPT / Anthropic Claude / 兼容网关）
+                          </h4>
+                          <p className="p5-tts-card-sub">
+                            配置后模型会自动出现在舞台左下角模型选择器与上方默认模型列表中；密钥独立加密保存在本机凭证库。
+                          </p>
+                        </div>
                       </div>
 
-                      {settings.worker.connection === 'endpoint' && (
+                      {extProviders.length > 0 && (
+                        <div className="p5-provider-saved-list">
+                          {extProviders.map((row) => (
+                            <div
+                              key={row.route}
+                              className="p5-provider-saved-item"
+                              data-testid={`saved-provider-${row.route}`}
+                            >
+                              <div className="p5-provider-saved-main">
+                                <span className="p5-provider-saved-name">
+                                  {row.displayName}
+                                </span>
+                                <code className="p5-preset-code">
+                                  {row.route}
+                                </code>
+                                <span
+                                  className={`p5-provider-key-pill ${
+                                    row.keyConfigured ? 'is-ok' : 'is-warn'
+                                  }`}
+                                >
+                                  {row.keyConfigured ? '● 密钥已就绪' : '○ 待填密钥'}
+                                </span>
+                                <span className="p5-provider-model-count">
+                                  {row.models.length > 0
+                                    ? `${row.models.length} 个指定模型`
+                                    : '官方内置全系模型'}
+                                </span>
+                              </div>
+                              <div className="p5-provider-saved-actions">
+                                <button
+                                  type="button"
+                                  className="p5-mini-action-btn"
+                                  onClick={() => {
+                                    setProvNotice(null);
+                                    if (row.route === 'openai') {
+                                      setProvMode('openai');
+                                    } else if (row.route === 'anthropic') {
+                                      setProvMode('anthropic');
+                                    } else {
+                                      setProvMode('custom');
+                                    }
+                                    setProvRoute(row.route);
+                                    setProvDisplayName(row.displayName);
+                                    if (
+                                      row.api === 'openai-completions' ||
+                                      row.api === 'openai-responses' ||
+                                      row.api === 'anthropic-messages'
+                                    ) {
+                                      setProvApi(row.api);
+                                    }
+                                    setProvBaseUrl(row.baseURL ?? '');
+                                    setProvApiKey('');
+                                    setProvModelsText(
+                                      row.models.map((m) => m.id).join(', ')
+                                    );
+                                  }}
+                                >
+                                  编辑
+                                </button>
+                                <button
+                                  type="button"
+                                  className="p5-mini-action-btn p5-mini-action-btn--accent"
+                                  disabled={provBusy}
+                                  onClick={() => {
+                                    if (!providersBridge.removeProvider) return;
+                                    setProvBusy(true);
+                                    setProvNotice(null);
+                                    providersBridge
+                                      .removeProvider(row.route)
+                                      .then(() => {
+                                        reloadExtProviders();
+                                        onListModels('worker');
+                                        setProvNotice({
+                                          ok: true,
+                                          text: `已移除服务商「${row.displayName}」`,
+                                        });
+                                      })
+                                      .catch((err: unknown) =>
+                                        setProvNotice({
+                                          ok: false,
+                                          text:
+                                            err instanceof Error
+                                              ? err.message
+                                              : '移除失败',
+                                        })
+                                      )
+                                      .finally(() => setProvBusy(false));
+                                  }}
+                                >
+                                  移除
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 3 Preset Quick Templates */}
+                      <div className="p5-provider-template-bar">
+                        <button
+                          type="button"
+                          className={`p5-provider-tpl-btn ${
+                            provMode === 'openai' ? 'is-active' : ''
+                          }`}
+                          onClick={() => applyProviderPresetTemplate('openai')}
+                        >
+                          ＋ OpenAI (GPT 系列)
+                        </button>
+                        <button
+                          type="button"
+                          className={`p5-provider-tpl-btn ${
+                            provMode === 'anthropic' ? 'is-active' : ''
+                          }`}
+                          onClick={() =>
+                            applyProviderPresetTemplate('anthropic')
+                          }
+                        >
+                          ＋ Anthropic (Claude 系列)
+                        </button>
+                        <button
+                          type="button"
+                          className={`p5-provider-tpl-btn ${
+                            provMode === 'custom' ? 'is-active' : ''
+                          }`}
+                          onClick={() => applyProviderPresetTemplate('custom')}
+                        >
+                          ＋ 自定义中转 / 兼容网关
+                        </button>
+                      </div>
+
+                      <div className="p5-provider-form-grid">
+                        {provMode === 'custom' && (
+                          <>
+                            <div className="p5-provider-field">
+                              <label className="p5-form-label">
+                                服务商代号（英文标识）
+                              </label>
+                              <input
+                                type="text"
+                                className="p5-form-input"
+                                value={provRoute}
+                                onChange={(e) => setProvRoute(e.target.value)}
+                                placeholder="如 openrouter / company-gateway"
+                              />
+                            </div>
+                            <div className="p5-provider-field">
+                              <label className="p5-form-label">显示名称</label>
+                              <input
+                                type="text"
+                                className="p5-form-input"
+                                value={provDisplayName}
+                                onChange={(e) =>
+                                  setProvDisplayName(e.target.value)
+                                }
+                                placeholder="如 OpenRouter / 企业网关"
+                              />
+                            </div>
+                            <div className="p5-provider-field p5-provider-field--full">
+                              <label className="p5-form-label">接口协议</label>
+                              <select
+                                className="p5-form-select"
+                                value={provApi}
+                                onChange={(e) =>
+                                  setProvApi(
+                                    e.target.value as
+                                      | 'openai-completions'
+                                      | 'openai-responses'
+                                      | 'anthropic-messages'
+                                  )
+                                }
+                              >
+                                <option value="openai-completions">
+                                  OpenAI Chat Completions 兼容（/v1/chat/completions · 最通用）
+                                </option>
+                                <option value="openai-responses">
+                                  OpenAI Responses 协议（/v1/responses · GPT 新协议）
+                                </option>
+                                <option value="anthropic-messages">
+                                  Anthropic Messages 协议（/v1/messages · Claude 原生协议）
+                                </option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="p5-provider-field p5-provider-field--full">
+                          <label className="p5-form-label">
+                            接口地址 (Base URL)
+                            {provMode !== 'custom' && (
+                              <span className="p5-provider-opt-hint">
+                                （选填：留空直连官方接口，走代理可填代理地址）
+                              </span>
+                            )}
+                          </label>
+                          <input
+                            type="text"
+                            className="p5-form-input"
+                            value={provBaseUrl}
+                            onChange={(e) => setProvBaseUrl(e.target.value)}
+                            placeholder={
+                              provMode === 'openai'
+                                ? 'https://api.openai.com/v1（留空默认官方）'
+                                : provMode === 'anthropic'
+                                ? 'https://api.anthropic.com（留空默认官方）'
+                                : 'https://openrouter.ai/api/v1'
+                            }
+                          />
+                        </div>
+
+                        <div className="p5-provider-field p5-provider-field--full">
+                          <label className="p5-form-label">
+                            接口密钥 (API Key)
+                            {extProviders.find((r) => r.route === provRoute)
+                              ?.keyConfigured && (
+                              <span className="p5-provider-opt-hint is-green">
+                                （已保存密钥，不修改可留空）
+                              </span>
+                            )}
+                          </label>
+                          <input
+                            type="password"
+                            className="p5-form-input"
+                            value={provApiKey}
+                            onChange={(e) => setProvApiKey(e.target.value)}
+                            placeholder={
+                              provMode === 'anthropic'
+                                ? 'sk-ant-...'
+                                : 'sk-...'
+                            }
+                            autoComplete="off"
+                          />
+                        </div>
+
+                        <div className="p5-provider-field p5-provider-field--full">
+                          <div className="p5-form-label-row">
+                            <label className="p5-form-label">
+                              模型 ID 列表（逗号或换行分隔）
+                              {provMode !== 'custom' && (
+                                <span className="p5-provider-opt-hint">
+                                  （留空即自动载入官方全系 GPT/Claude 模型与推理强度档位）
+                                </span>
+                              )}
+                            </label>
+                            <button
+                              type="button"
+                              className="p5-mini-action-btn"
+                              disabled={provProbing || provBusy}
+                              onClick={() => {
+                                if (!providersBridge.discoverModels) return;
+                                setProvProbing(true);
+                                setProvNotice(null);
+                                providersBridge
+                                  .discoverModels({
+                                    provider:
+                                      provMode !== 'custom'
+                                        ? provRoute
+                                        : undefined,
+                                    baseURL: provBaseUrl.trim() || undefined,
+                                    api:
+                                      provMode === 'custom'
+                                        ? provApi
+                                        : undefined,
+                                    apiKey: provApiKey.trim() || undefined,
+                                  })
+                                  .then((found) => {
+                                    if (found.length === 0) {
+                                      setProvNotice({
+                                        ok: false,
+                                        text: '接口未返回模型列表，请手动填写模型 ID',
+                                      });
+                                      return;
+                                    }
+                                    setProvModelsText(
+                                      found.map((m) => m.id).join(', ')
+                                    );
+                                    setProvNotice({
+                                      ok: true,
+                                      text: `成功探测到 ${found.length} 个可用模型！点击下方保存即可载入。`,
+                                    });
+                                  })
+                                  .catch((err: unknown) =>
+                                    setProvNotice({
+                                      ok: false,
+                                      text:
+                                        err instanceof Error
+                                          ? err.message
+                                          : '自动探测失败，可手动输入模型 ID',
+                                    })
+                                  )
+                                  .finally(() => setProvProbing(false));
+                              }}
+                            >
+                              {provProbing ? '探测中…' : '↻ 从接口自动探测模型'}
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            className="p5-form-input"
+                            value={provModelsText}
+                            onChange={(e) => setProvModelsText(e.target.value)}
+                            placeholder={
+                              provMode === 'openai'
+                                ? '留空自动使用官方全系模型；或手填如 gpt-5, o3, gpt-4o'
+                                : provMode === 'anthropic'
+                                ? '留空自动使用官方全系模型；或手填如 claude-opus-4-6, claude-sonnet-4-6'
+                                : '必填，如 openai/gpt-4o, anthropic/claude-sonnet-4-5'
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      {provNotice && (
+                        <div
+                          className={`p5-provider-notice ${
+                            provNotice.ok ? 'is-ok' : 'is-err'
+                          }`}
+                        >
+                          {provNotice.text}
+                        </div>
+                      )}
+
+                      <div className="p5-provider-submit-row">
+                        <button
+                          type="button"
+                          className="p5-apply-btn"
+                          data-testid="save-dsh-provider-btn"
+                          disabled={provBusy}
+                          onClick={() => {
+                            if (!providersBridge.saveProvider) return;
+                            setProvBusy(true);
+                            setProvNotice(null);
+                            const parsedModels = provModelsText
+                              .split(/[,\n]+/)
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                              .map((id) => ({
+                                id,
+                                input: ['text', 'image'],
+                              }));
+                            providersBridge
+                              .saveProvider({
+                                route:
+                                  provMode === 'openai'
+                                    ? 'openai'
+                                    : provMode === 'anthropic'
+                                    ? 'anthropic'
+                                    : provRoute,
+                                displayName: provDisplayName,
+                                api: provApi,
+                                baseURL: provBaseUrl,
+                                apiKey: provApiKey,
+                                models: parsedModels,
+                              })
+                              .then(() => {
+                                setProvApiKey('');
+                                reloadExtProviders();
+                                onListModels('worker');
+                                setProvNotice({
+                                  ok: true,
+                                  text: '✓ 已保存并载入模型目录！现在可在上方默认模型或舞台左下角直接选择。',
+                                });
+                              })
+                              .catch((err: unknown) =>
+                                setProvNotice({
+                                  ok: false,
+                                  text:
+                                    err instanceof Error
+                                      ? err.message
+                                      : '保存失败',
+                                })
+                              )
+                              .finally(() => setProvBusy(false));
+                          }}
+                        >
+                          {provBusy ? '正在保存…' : '✦ 保存并载入外部模型'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Test Connection */}
+                      <div className="p5-form-group p5-conn-test-row">
+                        <button
+                          type="button"
+                          className="p5-apply-btn p5-apply-btn--test"
+                          data-testid="worker-test-conn-btn"
+                          onClick={() => onTestConnection('worker')}
+                          disabled={safeWorkerConn.testing}
+                        >
+                          {safeWorkerConn.testing ? '正在检测…' : '检测连接状态'}
+                        </button>
+
+                        <ConnectionTestResult
+                          target="worker"
+                          state={safeWorkerConn}
+                        />
+                      </div>
+
+                      {/* Collapsible Advanced Settings */}
+                      <div>
+                        <button
+                          type="button"
+                          className="p5-mini-action-btn"
+                          onClick={() => setShowWorkerAdvanced((v) => !v)}
+                        >
+                          {showWorkerAdvanced
+                            ? '▾ 收起高级接口设置'
+                            : '▸ 高级接口设置（一般无需修改）'}
+                        </button>
+                      </div>
+
+                      {showWorkerAdvanced && (
                         <>
                           <div className="p5-form-group">
                             <label
                               className="p5-form-label"
-                              htmlFor="worker-baseurl-input"
+                              htmlFor="worker-connection-select"
                             >
-                              接口地址
+                              账号与接口来源
                             </label>
-                            <div className="p5-input-inline-row">
-                              <input
-                                id="worker-baseurl-input"
-                                data-testid="worker-baseurl-input"
-                                type="text"
-                                className="p5-form-input"
-                                value={workerBaseUrlDraft}
-                                onChange={(e) =>
-                                  setWorkerBaseUrlDraft(e.target.value)
-                                }
-                                placeholder="https://api.deepseek.com/v1"
-                              />
-                              <button
-                                type="button"
-                                className="p5-apply-btn"
-                                data-testid="worker-baseurl-save-btn"
-                                onClick={() => {
-                                  const baseUrl = workerBaseUrlDraft.trim();
-                                  if (baseUrl)
-                                    onUpdateSettings({
-                                      worker: { endpoint: { baseUrl } },
-                                    });
-                                }}
-                              >
-                                保存
-                              </button>
-                            </div>
+                            <select
+                              id="worker-connection-select"
+                              data-testid="worker-connection-select"
+                              className="p5-form-select"
+                              value={settings.worker.connection}
+                              onChange={(e) => {
+                                setWorkerApiKeyDraft('');
+                                onUpdateSettings({
+                                  worker: {
+                                    connection: e.target.value as
+                                      | 'endpoint'
+                                      | 'agent-default',
+                                  },
+                                });
+                              }}
+                            >
+                              <option value="agent-default">
+                                直接使用本机已登录账号（推荐）
+                              </option>
+                              <option value="endpoint">自定义接口地址</option>
+                            </select>
                           </div>
 
-                          <div className="p5-form-group">
-                            <div className="p5-form-label-row">
-                              <label
-                                className="p5-form-label"
-                                htmlFor="worker-apikey-input"
-                              >
-                                接口密钥 (API Key)
-                              </label>
-                              <span
-                                className={`p5-apikey-status ${
-                                  settings.worker.endpoint.apiKeySet
-                                    ? 'is-set'
-                                    : 'is-unset'
-                                }`}
-                                data-testid="worker-apikey-status"
-                              >
-                                {settings.worker.endpoint.apiKeySet
-                                  ? '已设置'
-                                  : '未设置'}
-                              </span>
-                            </div>
-                            <div className="p5-input-inline-row">
-                              <input
-                                id="worker-apikey-input"
-                                data-testid="worker-apikey-input"
-                                type="password"
-                                className="p5-form-input"
-                                value={workerApiKeyDraft}
-                                onChange={(e) =>
-                                  setWorkerApiKeyDraft(e.target.value)
-                                }
-                                placeholder="无需密钥时可留空"
-                                autoComplete="off"
-                              />
-                              <button
-                                type="button"
-                                className="p5-apply-btn"
-                                data-testid="worker-apikey-save-btn"
-                                onClick={() => {
-                                  const apiKey = workerApiKeyDraft.trim();
-                                  if (!apiKey) return;
-                                  onUpdateSettings({
-                                    worker: { endpoint: { apiKey } },
-                                  });
-                                  setWorkerApiKeyDraft('');
-                                }}
-                              >
-                                保存
-                              </button>
-                              {settings.worker.endpoint.apiKeySet && (
-                                <button
-                                  type="button"
-                                  className="p5-apply-btn p5-apply-btn--danger"
-                                  data-testid="worker-apikey-clear-btn"
-                                  onClick={() => {
-                                    setWorkerApiKeyDraft('');
-                                    onUpdateSettings({
-                                      worker: { endpoint: { apiKey: '' } },
-                                    });
-                                  }}
+                          {settings.worker.connection === 'endpoint' && (
+                            <>
+                              <div className="p5-form-group">
+                                <label
+                                  className="p5-form-label"
+                                  htmlFor="worker-baseurl-input"
                                 >
-                                  清除密钥
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                                  接口地址
+                                </label>
+                                <div className="p5-input-inline-row">
+                                  <input
+                                    id="worker-baseurl-input"
+                                    data-testid="worker-baseurl-input"
+                                    type="text"
+                                    className="p5-form-input"
+                                    value={workerBaseUrlDraft}
+                                    onChange={(e) =>
+                                      setWorkerBaseUrlDraft(e.target.value)
+                                    }
+                                    placeholder="https://api.deepseek.com/v1"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="p5-apply-btn"
+                                    data-testid="worker-baseurl-save-btn"
+                                    onClick={() => {
+                                      const baseUrl = workerBaseUrlDraft.trim();
+                                      if (baseUrl)
+                                        onUpdateSettings({
+                                          worker: { endpoint: { baseUrl } },
+                                        });
+                                    }}
+                                  >
+                                    保存
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="p5-form-group">
+                                <div className="p5-form-label-row">
+                                  <label
+                                    className="p5-form-label"
+                                    htmlFor="worker-apikey-input"
+                                  >
+                                    接口密钥 (API Key)
+                                  </label>
+                                  <span
+                                    className={`p5-apikey-status ${
+                                      settings.worker.endpoint.apiKeySet
+                                        ? 'is-set'
+                                        : 'is-unset'
+                                    }`}
+                                    data-testid="worker-apikey-status"
+                                  >
+                                    {settings.worker.endpoint.apiKeySet
+                                      ? '已设置'
+                                      : '未设置'}
+                                  </span>
+                                </div>
+                                <div className="p5-input-inline-row">
+                                  <input
+                                    id="worker-apikey-input"
+                                    data-testid="worker-apikey-input"
+                                    type="password"
+                                    className="p5-form-input"
+                                    value={workerApiKeyDraft}
+                                    onChange={(e) =>
+                                      setWorkerApiKeyDraft(e.target.value)
+                                    }
+                                    placeholder="无需密钥时可留空"
+                                    autoComplete="off"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="p5-apply-btn"
+                                    data-testid="worker-apikey-save-btn"
+                                    onClick={() => {
+                                      const apiKey = workerApiKeyDraft.trim();
+                                      if (!apiKey) return;
+                                      onUpdateSettings({
+                                        worker: { endpoint: { apiKey } },
+                                      });
+                                      setWorkerApiKeyDraft('');
+                                    }}
+                                  >
+                                    保存
+                                  </button>
+                                  {settings.worker.endpoint.apiKeySet && (
+                                    <button
+                                      type="button"
+                                      className="p5-apply-btn p5-apply-btn--danger"
+                                      data-testid="worker-apikey-clear-btn"
+                                      onClick={() => {
+                                        setWorkerApiKeyDraft('');
+                                        onUpdateSettings({
+                                          worker: { endpoint: { apiKey: '' } },
+                                        });
+                                      }}
+                                    >
+                                      清除密钥
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
                     </>
@@ -968,362 +1429,15 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
               </div>
             )}
 
-            {/* ── TAB 3: 台词与语音 (VOICE & GOOGLE CLOUD TTS) ── */}
+            {/* ── TAB 3: 互动台词 (VOICE) ── */}
             {activeTab === 'voice' && (
               <div className="p5-sys-panel" data-testid="system-panel-voice">
                 <div className="p5-sys-panel-head">
-                  <h3>台词与语音设置</h3>
-                  <p>配置角色实时开口说话（Google TTS）与自由互动台词生成。</p>
+                  <h3>互动台词设置</h3>
+                  <p>配置角色在舞台事件与点击互动时的自由台词生成。</p>
                 </div>
 
                 <div className="p5-sys-form">
-                  {/* ── 角色语音 (Google TTS) ── */}
-                  <div
-                    className="p5-tts-settings-card"
-                    data-testid="tts-settings-section"
-                  >
-                    <div className="p5-tts-card-head">
-                      <div>
-                        <h4 className="p5-tts-card-title">
-                          角色语音 (Google TTS)
-                        </h4>
-                        <p className="p5-tts-card-sub">
-                          角色说出台词时实时播报中文女声，并驱动舞台口型与声波跳动。
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        data-testid="tts-enabled-toggle"
-                        className={`p5-toggle-btn ${
-                          settings.tts?.enabled ? 'is-on' : 'is-off'
-                        }`}
-                        onClick={() => {
-                          const nextEnabled = !settings.tts?.enabled;
-                          setTtsMuted(!nextEnabled, true);
-                          onUpdateSettings({
-                            tts: { enabled: nextEnabled },
-                          });
-                        }}
-                      >
-                        {settings.tts?.enabled ? '● 已开启' : '○ 已关闭'}
-                      </button>
-                    </div>
-
-                    {settings.tts?.enabled && (
-                      <div className="p5-tts-card-body">
-                        <div className="p5-sys-grid-2">
-                          <div className="p5-form-group">
-                            <label
-                              className="p5-form-label"
-                              htmlFor="tts-provider-select"
-                            >
-                              语音引擎
-                            </label>
-                            <select
-                              id="tts-provider-select"
-                              data-testid="tts-provider-select"
-                              className="p5-form-select"
-                              value={settings.tts.provider}
-                              onChange={(e) =>
-                                onUpdateSettings({
-                                  tts: {
-                                    provider: e.target.value as
-                                      | 'google-cloud'
-                                      | 'openai-tts',
-                                  },
-                                })
-                              }
-                            >
-                              <option value="google-cloud">
-                                Google Cloud · Gemini 3.8 Flash TTS（大模型情感配音 · 推荐）
-                              </option>
-                              <option value="openai-tts">
-                                OpenAI 兼容语音合成 (TTS)
-                              </option>
-                            </select>
-                          </div>
-
-                          <div className="p5-form-group">
-                            <label
-                              className="p5-form-label"
-                              htmlFor="tts-rate-slider"
-                            >
-                              播报语速：
-                              <strong>{ttsRateDraft.toFixed(2)}x</strong>
-                            </label>
-                            <input
-                              id="tts-rate-slider"
-                              data-testid="tts-rate-slider"
-                              type="range"
-                              min={0.7}
-                              max={1.4}
-                              step={0.02}
-                              className="p5-form-range"
-                              value={ttsRateDraft}
-                              onChange={(e) => {
-                                const nextRate = Number(e.target.value);
-                                setTtsRateDraft(nextRate);
-                                onUpdateSettings({
-                                  tts: { speakingRate: nextRate },
-                                });
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* 4 Character Gemini 3.8 TTS Voice Dropdowns */}
-                        <div className="p5-form-group">
-                          <span className="p5-form-label">
-                            各角色专属声线（Gemini 3.8 Flash TTS 情感女声）
-                          </span>
-                          <div className="p5-tts-voice-grid">
-                            {characters.map((ch) => {
-                              const shortName = ch.name.split('（')[0];
-                              const currentVoice =
-                                settings.tts.characterVoices?.[ch.id] ??
-                                DEFAULT_CHARACTER_VOICES[ch.id] ??
-                                'cmn-CN-Chirp3-HD-Leda';
-                              const hasPreset = CHIRP3_HD_FEMALE_VOICES.some(
-                                (v) => v.value === currentVoice
-                              );
-                              return (
-                                <div
-                                  key={ch.id}
-                                  className="p5-tts-voice-item"
-                                >
-                                  <label
-                                    htmlFor={`tts-voice-${ch.id}`}
-                                    className="p5-tts-voice-char"
-                                  >
-                                    {shortName}
-                                  </label>
-                                  <select
-                                    id={`tts-voice-${ch.id}`}
-                                    data-testid={`tts-voice-select-${ch.id}`}
-                                    className="p5-form-select"
-                                    value={currentVoice}
-                                    onChange={(e) =>
-                                      onUpdateSettings({
-                                        tts: {
-                                          characterVoices: {
-                                            ...settings.tts.characterVoices,
-                                            [ch.id]: e.target.value,
-                                          },
-                                        },
-                                      })
-                                    }
-                                  >
-                                    {!hasPreset && (
-                                      <option value={currentVoice}>
-                                        {currentVoice}
-                                      </option>
-                                    )}
-                                    {CHIRP3_HD_FEMALE_VOICES.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Test TTS Connection + Audition Button */}
-                        <div className="p5-form-group p5-conn-test-row">
-                          <div className="p5-conn-test-bar">
-                            <button
-                              type="button"
-                              className="p5-apply-btn p5-apply-btn--test"
-                              data-testid="tts-test-conn-btn"
-                              onClick={() => onTestConnection('tts')}
-                              disabled={safeTtsConn.testing}
-                            >
-                              {safeTtsConn.testing
-                                ? '正在检测…'
-                                : '测试语音连通'}
-                            </button>
-
-                            <button
-                              type="button"
-                              className="p5-apply-btn p5-tts-audition-btn"
-                              data-testid="tts-audition-btn"
-                              onClick={() => {
-                                setTtsMuted(false, true);
-                                const activeId = settings.activeCharacterId;
-                                const sample =
-                                  CHARACTER_ROLE_META[activeId]?.auditionLine ??
-                                  getCachedCharacterPack(activeId).persona
-                                    .catchphrases[0] ??
-                                  '你好呀，今天想一起完成什么任务？';
-                                onSynthesizeTts?.(activeId, sample);
-                              }}
-                            >
-                              ▶ 试听当前角色语音
-                            </button>
-                          </div>
-
-                          <ConnectionTestResult
-                            target="tts"
-                            state={safeTtsConn}
-                          />
-                        </div>
-
-                        <div>
-                          <button
-                            type="button"
-                            className="p5-mini-action-btn"
-                            onClick={() => setShowTtsAdvanced((v) => !v)}
-                          >
-                            {showTtsAdvanced
-                              ? '▾ 收起高级语音凭据设置'
-                              : '▸ 高级语音凭据设置（本机已配置 gcloud 时无需填写）'}
-                          </button>
-                        </div>
-
-                        {showTtsAdvanced && (
-                          <div className="p5-tts-adv-box">
-                            <div className="p5-form-group">
-                              <label
-                                className="p5-form-label"
-                                htmlFor="tts-baseurl-input"
-                              >
-                                语音服务地址
-                              </label>
-                              <div className="p5-input-inline-row">
-                                <input
-                                  id="tts-baseurl-input"
-                                  type="text"
-                                  className="p5-form-input"
-                                  value={ttsBaseUrlDraft}
-                                  onChange={(e) =>
-                                    setTtsBaseUrlDraft(e.target.value)
-                                  }
-                                  placeholder="https://texttospeech.googleapis.com"
-                                />
-                                <button
-                                  type="button"
-                                  className="p5-apply-btn"
-                                  onClick={() => {
-                                    const trimmed = ttsBaseUrlDraft.trim();
-                                    if (trimmed) {
-                                      onUpdateSettings({
-                                        tts: { endpoint: { baseUrl: trimmed } },
-                                      });
-                                    }
-                                  }}
-                                >
-                                  保存
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="p5-form-group">
-                              <label
-                                className="p5-form-label"
-                                htmlFor="tts-gcp-project-input"
-                              >
-                                配额项目 ID（可选，仅保存在本机）
-                              </label>
-                              <div className="p5-input-inline-row">
-                                <input
-                                  id="tts-gcp-project-input"
-                                  type="text"
-                                  className="p5-form-input"
-                                  value={ttsGcpProjectDraft}
-                                  onChange={(e) =>
-                                    setTtsGcpProjectDraft(e.target.value)
-                                  }
-                                  placeholder="留空则自动使用本机 gcloud 默认项目"
-                                />
-                                <button
-                                  type="button"
-                                  className="p5-apply-btn"
-                                  onClick={() =>
-                                    onUpdateSettings({
-                                      tts: {
-                                        gcpProject: ttsGcpProjectDraft.trim(),
-                                      },
-                                    })
-                                  }
-                                >
-                                  保存
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="p5-form-group">
-                              <div className="p5-form-label-row">
-                                <label
-                                  className="p5-form-label"
-                                  htmlFor="tts-apikey-input"
-                                >
-                                  语音接口密钥（可选 API Key）
-                                </label>
-                                <span
-                                  className={`p5-apikey-status ${
-                                    settings.tts.endpoint.apiKeySet
-                                      ? 'is-set'
-                                      : 'is-unset'
-                                  }`}
-                                >
-                                  {settings.tts.endpoint.apiKeySet
-                                    ? '已设置'
-                                    : '自动使用本机登录态'}
-                                </span>
-                              </div>
-                              <div className="p5-input-inline-row">
-                                <input
-                                  id="tts-apikey-input"
-                                  type="password"
-                                  className="p5-form-input"
-                                  value={ttsApiKeyDraft}
-                                  onChange={(e) =>
-                                    setTtsApiKeyDraft(e.target.value)
-                                  }
-                                  placeholder="无需密钥时留空即可"
-                                  autoComplete="off"
-                                />
-                                <button
-                                  type="button"
-                                  className="p5-apply-btn"
-                                  onClick={() => {
-                                    if (!ttsApiKeyDraft.trim()) return;
-                                    onUpdateSettings({
-                                      tts: {
-                                        endpoint: {
-                                          apiKey: ttsApiKeyDraft.trim(),
-                                        },
-                                      },
-                                    });
-                                    setTtsApiKeyDraft('');
-                                  }}
-                                >
-                                  保存
-                                </button>
-                                {settings.tts.endpoint.apiKeySet && (
-                                  <button
-                                    type="button"
-                                    className="p5-apply-btn p5-apply-btn--danger"
-                                    onClick={() => {
-                                      setTtsApiKeyDraft('');
-                                      onUpdateSettings({
-                                        tts: { endpoint: { apiKey: '' } },
-                                      });
-                                    }}
-                                  >
-                                    清除密钥
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
                   {/* ── AI 自由互动台词 ── */}
                   <div className="p5-form-group p5-form-group--inline">
                     <label className="p5-form-label">AI 自由互动台词</label>

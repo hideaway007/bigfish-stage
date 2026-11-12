@@ -10,7 +10,6 @@ import type { AdapterRegistry } from './adapters/registry';
 import { CharacterCatalog, findTouchReaction } from './characters';
 import { SettingsStore } from './settings-store';
 import { Voice } from './voice/voice';
-import { TtsService } from './voice/tts';
 import { endpointRequest, listEndpointModels, testEndpoint } from './voice/endpoint';
 import { commitGitAll, getGitStatus, revertGitFile } from './git-ops';
 
@@ -78,7 +77,7 @@ export function parseCommand(value: unknown): ClientCommand {
       if (c.target === 'worker' || c.target === 'voice') break;
       throw new Error('模型目标无效');
     case 'test_connection':
-      if (c.target === 'worker' || c.target === 'voice' || c.target === 'tts') break;
+      if (c.target === 'worker' || c.target === 'voice') break;
       throw new Error('连接测试目标无效');
     case 'baton_pass':
       if (text('toCharacterId', 120) && (c.instruction === undefined || typeof c.instruction === 'string')) break;
@@ -86,9 +85,6 @@ export function parseCommand(value: unknown): ClientCommand {
     case 'interact_character':
       if (text('characterId', 120) && typeof c.zone === 'string' && TOUCH_ZONES.has(c.zone as CharacterTouchZone)) break;
       throw new Error('角色互动参数无效');
-    case 'synthesize_tts':
-      if (text('characterId', 120) && text('text', 500)) break;
-      throw new Error('语音合成参数无效');
     case 'git_revert_file':
       if (text('path', 1000)) break;
       throw new Error('撤回文件路径无效');
@@ -106,8 +102,6 @@ export class SessionController {
   private info: SessionInfo | null = null;
   private history: StageEvent[] = [];
   private voice: Voice;
-  private tts: TtsService;
-  private autoTtsEnabled: boolean;
   private managementBusy = false;
   private stopPendingStart = false;
   private settingsQueue: Promise<void> = Promise.resolve();
@@ -123,17 +117,11 @@ export class SessionController {
     readonly store: SettingsStore,
     readonly characters: CharacterCatalog,
     readonly registry: AdapterRegistry,
-    private broadcast: (message: ServerMessage) => void,
-    options?: { tts?: TtsService; autoTts?: boolean }
+    private broadcast: (message: ServerMessage) => void
   ) {
     const baseDir = dirname(this.store.path);
     this.sessionsPath = join(baseDir, 'sessions.json');
     this.transcriptsDir = join(baseDir, 'transcripts');
-    this.tts = options?.tts ?? new TtsService();
-    this.autoTtsEnabled = options?.autoTts ?? (!process.env.NODE_TEST_CONTEXT || Boolean(options?.tts));
-    if (this.autoTtsEnabled && this.store.current.tts.enabled) {
-      this.tts.warmUp(this.store.current.tts.gcpProject);
-    }
     this.loadSessionsFromDisk();
     this.voice = new Voice(event => this.record(event));
     this.configureVoice();
@@ -198,7 +186,6 @@ export class SessionController {
     const secrets = [
       s.worker.endpoint.apiKey,
       s.voice.endpoint.apiKey,
-      s.tts.endpoint.apiKey,
       ...Object.values(s.characterBrains ?? {}).map(b => b.endpoint?.apiKey),
     ].filter((k): k is string => Boolean(k && k.length >= 4));
     if (!secrets.length) return event;
@@ -302,47 +289,10 @@ export class SessionController {
     return this.info ? { ...this.info, turnActive: this.worker?.turnActive ?? this.info.turnActive } : null;
   }
 
-  private maybeSynthesizeTts(characterId: string, text: string, lineId?: string, force = false) {
-    if (this.closed) return;
-    const settings = this.store.current;
-    if (!force && (!this.autoTtsEnabled || !settings.tts.enabled)) return;
-    const pack = this.characters.get(characterId);
-    void this.tts
-      .synthesize(text, characterId, settings.tts, pack?.defaultVoice)
-      .then(audio => {
-        if (!audio || this.closed) return;
-        this.broadcast({
-          type: 'tts_audio',
-          characterId,
-          lineId,
-          text,
-          audioBase64: audio.audioBase64,
-          mimeType: audio.mimeType,
-        });
-      })
-      .catch(error => {
-        if (force) {
-          this.broadcast({
-            type: 'tts_audio',
-            characterId,
-            lineId,
-            text,
-            audioBase64: '',
-            mimeType: 'audio/mpeg',
-            error: (error as Error).message,
-          });
-        }
-      });
-  }
-
   private record(event: StageEvent) {
     this.history.push(event);
     if (this.history.length > 2000) this.history.splice(0, this.history.length - 2000);
     this.broadcast({ type: 'event', event });
-
-    if (event.type === 'character_line' && event.text.trim()) {
-      this.maybeSynthesizeTts(event.characterId, event.text, event.lineId, false);
-    }
 
     if (this.info) {
       if (
@@ -800,10 +750,6 @@ export class SessionController {
           });
           break;
         }
-        case 'synthesize_tts': {
-          this.maybeSynthesizeTts(command.characterId, command.text, command.lineId, true);
-          break;
-        }
         case 'git_status': {
           const cwd = this.info?.cwd || this.store.current.projectDir;
           if (!cwd) {
@@ -837,11 +783,6 @@ export class SessionController {
         }
         case 'test_connection': {
           const settings = this.store.current;
-          if (command.target === 'tts') {
-            const result = await this.tts.testConnection(settings.tts);
-            reply({ type: 'connection_test', target: 'tts', ...result });
-            break;
-          }
           const eff = resolveEffectiveWorker(settings);
           const result = await (command.target === 'voice'
             ? testEndpoint(settings.voice.endpoint)
@@ -853,12 +794,6 @@ export class SessionController {
     } catch (error) {
       reply({ type: 'command_error', commandType: command.type, message: (error as Error).message });
     }
-  }
-
-  async synthesizeDirect(characterId: string, text: string) {
-    const settings = this.store.current;
-    const pack = this.characters.get(characterId);
-    return this.tts.synthesize(text, characterId, settings.tts, pack?.defaultVoice);
   }
 
   async close() {

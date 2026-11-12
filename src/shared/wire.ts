@@ -60,16 +60,14 @@ export type ClientCommand =
   | { type: 'update_settings'; patch: SettingsPatch }
   /** 列出某个接口可用的模型 */
   | { type: 'list_models'; target: 'worker' | 'voice' }
-  /** 发一个极小请求验证连通性（支持 worker / voice / tts） */
-  | { type: 'test_connection'; target: 'worker' | 'voice' | 'tts' }
+  /** 发一个极小请求验证连通性（支持 worker / voice） */
+  | { type: 'test_connection'; target: 'worker' | 'voice' }
   /** 真实上下文记忆蒸馏压缩（方向 3） */
   | { type: 'compact_session' }
   /** P5 怪盗团击掌换手接力：将本轮摘要与 diff 交接给目标角色的独立大脑 */
   | { type: 'baton_pass'; toCharacterId: string; instruction?: string }
   /** 触摸/点击角色立绘分部位彩蛋互动（方向 5） */
   | { type: 'interact_character'; characterId: string; zone: CharacterTouchZone }
-  /** 按需请求合成某句台词的 TTS 语音（如试听或重播） */
-  | { type: 'synthesize_tts'; characterId: string; text: string; lineId?: string }
   /** 怪盗战利品 Git 工作区变更查询、单文件撤回与快速提交（方向 6） */
   | { type: 'git_status' }
   | { type: 'git_revert_file'; path: string }
@@ -97,17 +95,7 @@ export type ServerMessage =
     }
   | { type: 'sessions'; sessions: SessionSummary[]; error?: string }
   | { type: 'models'; target: 'worker' | 'voice'; models: string[]; error?: string }
-  | { type: 'connection_test'; target: 'worker' | 'voice' | 'tts'; ok: boolean; message: string; latencyMs?: number }
-  /** 服务端合成好的角色 TTS 语音帧（跨 Web / Electron 原生通用） */
-  | {
-      type: 'tts_audio';
-      characterId: string;
-      lineId?: string;
-      text?: string;
-      audioBase64: string;
-      mimeType: string;
-      error?: string;
-    }
+  | { type: 'connection_test'; target: 'worker' | 'voice'; ok: boolean; message: string; latencyMs?: number }
   /** Git 工作区实时战利品状态与全量 Diff */
   | {
       type: 'git_status_result';

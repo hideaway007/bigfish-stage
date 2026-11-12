@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 const events = readFileSync(new URL('../samples/app-full.stage.jsonl', import.meta.url), 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(e => ['tool_end', 'permission_resolved', 'turn_done'].includes(e.type)).slice(-3);
 const started = Date.now(); let firstTextMs: number | undefined, text = '', buffer = '';
-const response = await fetch('http://127.0.0.1:3425/v1/chat/completions', {
+const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ model: process.env.BRIDGE_MODEL ?? 'gpt-6-luna', stream: true, messages: [
     { role: 'system', content: '你是大肥鱼，一条嘴馋但靠谱的鱼。根据真实进度用中文说一句简短播报，不编造事实。' },

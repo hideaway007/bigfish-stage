@@ -1,5 +1,5 @@
 /**
- * 设置项格式（Phase 2 契约：单平台 DeepSeek / DSH 底座 + 每角色独立大脑 + Google Cloud TTS）
+ * 设置项格式（Phase 2 契约：单平台 DeepSeek / DSH 底座 + 每角色独立大脑）
  *
  * 服务端把设置存在用户本机：~/.config/bigfish-stage/settings.json（权限 600），绝不写进仓库。
  * 发给 UI 的是 PublicSettings：所有 apiKey 都被替换成 apiKeySet: boolean。
@@ -7,7 +7,7 @@
 
 /** 任意 OpenAI / DeepSeek 兼容接口的连接信息 */
 export interface ProviderEndpoint {
-  /** 例如 https://api.deepseek.com/v1 或本机网关 http://127.0.0.1:3425/v1 */
+  /** 例如 https://api.deepseek.com/v1 或本机网关 http://127.0.0.1:11434/v1 */
   baseUrl: string;
   apiKey?: string;
 }
@@ -52,21 +52,6 @@ export interface VoiceSettings {
   maxLinesPerMinute: number;
 }
 
-/** 角色实时语音合成（TTS）设置，默认支持本机 Google Cloud Chirp3-HD 中文女声 */
-export interface TtsSettings {
-  /** 是否开启角色台词实时语音播报 */
-  enabled: boolean;
-  provider: 'google-cloud' | 'openai-tts';
-  /** 各角色对应的声线名称（如 cmn-CN-Chirp3-HD-Leda） */
-  characterVoices: Record<string, string>;
-  /** 可选：Google Cloud API Key 或 OpenAI TTS Endpoint Key；留空时自动探测本机 gcloud ADC */
-  endpoint: ProviderEndpoint;
-  /** 可选：Google Cloud Quota Project ID（仅存本机 settings.json，绝不入库） */
-  gcpProject?: string;
-  /** 语速倍率 0.7 ~ 1.4，默认 1.04 */
-  speakingRate: number;
-}
-
 export interface PerformanceSettings {
   /** 打字机速度：每秒字符数 */
   typingCharsPerSec: number;
@@ -82,7 +67,6 @@ export interface AppSettings {
   /** 每个角色的独立大脑与独立会话绑定 */
   characterBrains: Record<string, CharacterBrainSettings>;
   voice: VoiceSettings;
-  tts: TtsSettings;
   performance: PerformanceSettings;
 }
 
@@ -122,18 +106,7 @@ export type SettingsPatch = {
   voice?: Partial<Omit<VoiceSettings, 'endpoint'>> & {
     endpoint?: Partial<ModelEndpoint>;
   };
-  tts?: Partial<Omit<TtsSettings, 'endpoint' | 'characterVoices'>> & {
-    endpoint?: Partial<ProviderEndpoint>;
-    characterVoices?: Record<string, string>;
-  };
   performance?: Partial<PerformanceSettings>;
-};
-
-export const DEFAULT_CHARACTER_VOICES: Record<string, string> = {
-  'deepseek-v4-pro': 'Leda',
-  'gemini-4-argon': 'Autonoe',
-  'claude-opus-5-5': 'Laomedeia',
-  'codex-dragon': 'Zephyr',
 };
 
 export const DEFAULT_CHARACTER_BRAINS: Record<string, CharacterBrainSettings> = {
@@ -169,13 +142,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     enabled: true,
     endpoint: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
     maxLinesPerMinute: 6,
-  },
-  tts: {
-    enabled: false,
-    provider: 'google-cloud',
-    characterVoices: { ...DEFAULT_CHARACTER_VOICES },
-    endpoint: { baseUrl: 'https://texttospeech.googleapis.com' },
-    speakingRate: 1.04,
   },
   performance: { typingCharsPerSec: 40 },
 };

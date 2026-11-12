@@ -133,7 +133,6 @@ function startDshRuntime(projectRoot) {
   const env = {
     ...process.env,
     PATH: buildAugmentedPath(),
-    MAGPIE_GATEWAY_KEY: process.env.MAGPIE_GATEWAY_KEY || 'dummy',
   };
 
   return new Promise((resolve, reject) => {

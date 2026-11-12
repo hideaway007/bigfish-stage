@@ -118,9 +118,6 @@ function validateCharacterDir(dirName) {
   if (pack.accentColor !== undefined && !isNonEmptyString(pack.accentColor)) {
     errors.push(`accentColor must be a non-empty string when provided`);
   }
-  if (pack.defaultVoice !== undefined && !isNonEmptyString(pack.defaultVoice)) {
-    errors.push(`defaultVoice must be a non-empty string when provided`);
-  }
 
   if (!pack.persona || typeof pack.persona !== 'object') {
     errors.push(`persona must be an object`);
@@ -269,7 +266,7 @@ function main() {
       const reactionCount = Object.keys(res.pack.reactions).length;
       const touchCount = res.pack.touchReactions ? Object.keys(res.pack.touchReactions).length : 0;
       console.log(
-        `✓ Character pack [${dirName}] OK (${res.pack.codename} / ${res.pack.name}, voice=${res.pack.defaultVoice ?? 'default'}, sprites=${emotionCount}, reactions=${reactionCount}, touch=${touchCount})`
+        `✓ Character pack [${dirName}] OK (${res.pack.codename} / ${res.pack.name}, sprites=${emotionCount}, reactions=${reactionCount}, touch=${touchCount})`
       );
     }
   }

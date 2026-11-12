@@ -136,13 +136,13 @@ function createDefaultState() {
         model: 'gpt-6.1-sol',
         sandbox: 'workspace-write',
         connection: 'endpoint',
-        endpoint: { baseUrl: 'http://127.0.0.1:3425/v1', apiKeySet: false },
+        endpoint: { baseUrl: 'http://127.0.0.1:8080/v1', apiKeySet: false },
       },
       voice: {
         enabled: true,
         endpoint: {
-          baseUrl: 'http://127.0.0.1:3425/v1',
-          model: 'remote-magpie/antigravity/gemini-3.8-flash',
+          baseUrl: 'http://127.0.0.1:8080/v1',
+          model: 'gateway/gemini-3.8-flash',
           apiKeySet: false,
         },
         maxLinesPerMinute: 6,
@@ -265,8 +265,8 @@ const workerAdapters = [
 const availableModels = [
   'codex/gpt-6.1-sol',
   'codex/codex-mini-latest',
-  'remote-magpie/antigravity/gemini-3.8-flash',
-  'remote-magpie/antigravity/gemini-4-argon',
+  'gateway/gemini-3.8-flash',
+  'gateway/gemini-4-argon',
   'gpt-6.1-sol',
   'gpt-6-luna',
   'deepseek-v4-pro',
@@ -283,7 +283,7 @@ function resolveMockConnFailMessage(mode, target) {
       target === 'voice'
         ? serverState.settings.voice.endpoint.baseUrl
         : serverState.settings.worker.endpoint.baseUrl;
-    return `TypeError: fetch failed (connect ECONNREFUSED 127.0.0.1:3425 -> ${url}/chat/completions)`;
+    return `TypeError: fetch failed (connect ECONNREFUSED 127.0.0.1:8080 -> ${url}/chat/completions)`;
   }
   if (normalized === '401' || normalized === '403') {
     return `模型接口 HTTP ${normalized} Unauthorized: invalid_api_key`;
@@ -794,7 +794,7 @@ function handleClientCommand(socket, cmd) {
           models: [],
           error:
             MOCK_MODELS_FAIL === '1'
-              ? '无法读取模型列表，请检查接口地址与凭据 (connect ECONNREFUSED 127.0.0.1:3425)'
+              ? '无法读取模型列表，请检查接口地址与凭据 (connect ECONNREFUSED 127.0.0.1:8080)'
               : MOCK_MODELS_FAIL,
         });
         break;

@@ -36,9 +36,9 @@
 
 ## 环境事实（不要问用户）
 
-- 所有模型走本机 **magpie 网关** `http://127.0.0.1:3425`（免 key）：`/v1/chat/completions`、`GET /v1/models`。CLI：`/Applications/magpie.app/Contents/MacOS/magpie models`。
+- 所有模型走本机 **本地兼容网关** `http://127.0.0.1:8080`（OpenAI 兼容接口）：`/v1/chat/completions`、`GET /v1/models`。
 - 执行 Agent：本机 `codex-cli 0.167.0`，用 `codex app-server`。用户全局 `~/.codex/config.toml` 是 `approval_policy="never"` + 完全放开的沙箱，**必须在每次启动时显式覆盖**，并以服务端回显的实际策略为准（见 `bridge/FINDINGS.md`）。
-- 不要修改 `~/.codex/config.toml`，不要运行会改 magpie 配置的命令。
+- 不要修改 `~/.codex/config.toml`，不要运行会改本地兼容网关配置的命令。
 
 ## 协作规则
 

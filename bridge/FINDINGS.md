@@ -1,6 +1,6 @@
 # Task B 结论：Codex 桥接技术验证
 
-> 执行：GPT-6.1-Sol 子代理（2026-11-09），codex-cli 0.167.0，模型经本机 magpie 网关。
+> 执行：GPT-6.1-Sol 子代理（2026-11-09），codex-cli 0.167.0，模型经本机本地兼容网关。
 > 本文件由主代理根据子代理的最终回复整理，并抽查了 `exec-policy`、`app-full` 样本与 `npm test`（9/9 通过）。
 > 标注：**已实测** = 有 `samples/` 日志为证；**仅类型** = 只来自 `codex app-server generate-ts` 生成的类型或文档。
 
@@ -17,9 +17,9 @@
 | **Q3 打断** | **已实测**。app-server 命令开始约 500ms 后发 interrupt，返回 `interrupted`；超过命令原定完成时间后，没有出现测试用的落盘标记。同进程继续和新进程 resume 都保留了上下文（暗号 `BLUE_BADGER_73`）。`exec` 收到 SIGINT 后直接退出，**没有结构化的结束事件**，之后 resume 仍能续上。只证明本次测试命令被终止，**不保证**所有后代进程都会被杀掉。 | `samples/app-interrupt.raw.jsonl`、`samples/exec-interrupt.raw.jsonl`、`samples/exec-resume.stage.jsonl` |
 | **Q4 权限审批** | **已实测**。app-server 会发出 `item/commandExecution/requestApproval`：客户端 `accept` 后 `npm test` 跑通；`decline` 后命令被拒绝，且模型没有重试。注意，这次审批是提示词明确要求提权（`require_escalated`）才触发的，**`on-request` 不等于每条命令都会询问**。`exec` 即使传了 `-c approval_policy="on-request"`，会话记录里实际生效的仍是 `"never"`，也没有审批回调。生成的类型里有 `untrusted`，但运行时直接拒绝。 | `samples/app-full.stage.jsonl`、`samples/app-deny.raw.jsonl`、`samples/exec-policy.raw.jsonl`、`samples/untrusted-rejected.raw.jsonl` |
 | **Q5 会话续接** | **已实测**。两种方式都能凭 id 跨进程恢复，且记得之前的内容：app-server 用 `thread/resume`，exec 用 `exec resume`。 | `samples/app-steer.raw.jsonl`、`samples/exec-resume.raw.jsonl` |
-| **Q6 换模型** | **已实测**。同一脚本分别用 `gpt-6-luna` 和 `remote-magpie/antigravity/gemini-3.8-flash` 跑：命令事件和审批协议一致，两者在批准后测试都通过。**但不完全等价**：GPT 用结构化改文件工具，带 diff；Gemini 通过 shell 调用 `apply_patch`，只有命令事件、没有结构化 diff，而且额外跑了好几条探查命令。 | `samples/app-full.raw.jsonl`、`samples/gemini-full.raw.jsonl` |
+| **Q6 换模型** | **已实测**。同一脚本分别用 `gpt-6-luna` 和 `gemini-flash-preview` 跑：命令事件和审批协议一致，两者在批准后测试都通过。**但不完全等价**：GPT 用结构化改文件工具，带 diff；Gemini 通过 shell 调用 `apply_patch`，只有命令事件、没有结构化 diff，而且额外跑了好几条探查命令。 | `samples/app-full.raw.jsonl`、`samples/gemini-full.raw.jsonl` |
 | **Q7 延迟** | **已实测**。三次首事件分别是 10 / 10 / 9 ms，但这只是本地状态事件，不是模型首字；首段文字分别是 8885 / 3381 / 5458 ms，平均约 **5.9 秒**。测量时本机有其他并发流量，仅供粗略参考。 | `samples/latency.raw.jsonl` |
-| **Q8 前台模型直连** | **已实测**。一个 19 行的脚本直接调用 `http://127.0.0.1:3425/v1/chat/completions`，传入 StageEvent，让模型用大肥鱼的口吻播报：首个非空文字 **8341 ms**，总耗时 8897 ms。 | `src/frontstage-spike.ts`、`samples/frontstage.measurement.jsonl` |
+| **Q8 前台模型直连** | **已实测**。一个 19 行的脚本直接调用 `http://127.0.0.1:8080/v1/chat/completions`，传入 StageEvent，让模型用大肥鱼的口吻播报：首个非空文字 **8341 ms**，总耗时 8897 ms。 | `src/frontstage-spike.ts`、`samples/frontstage.measurement.jsonl` |
 
 ## 做正式桥接层的三大风险
 
