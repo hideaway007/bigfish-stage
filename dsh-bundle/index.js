@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 
 // packages/dsh-client-ui-p5stage/src/stage-api.ts
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath as realpath2, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath as realpath2, rename, stat as stat2, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute as isAbsolute2, join } from "node:path";
+import { isAbsolute as isAbsolute2, join, resolve as resolve2 } from "node:path";
 
 // server/src/git-ops.ts
 import { execFile } from "node:child_process";
@@ -133,7 +133,18 @@ async function commitGitAll(cwd, message) {
 
 // packages/dsh-client-ui-p5stage/src/stage-api.ts
 var characterIds = /* @__PURE__ */ new Set(["deepseek-v4-pro", "gemini-4-argon", "claude-opus-5-5", "codex-dragon"]);
-function createStageApi(directory = join(homedir(), ".config/bigfish-stage/dsh-rooms")) {
+function stageStoragePaths(env = process.env, home = homedir()) {
+  const defaultHome = join(home, ".dsh");
+  const runtimeHome = resolve2(env.DSH_HOME?.trim() || defaultHome);
+  return {
+    directory: join(runtimeHome, "bigfish-stage", "rooms"),
+    legacy: runtimeHome === resolve2(defaultHome) ? join(home, ".config/bigfish-stage/dsh-rooms") : void 0
+  };
+}
+function createStageApi(storageDirectory) {
+  const defaults = stageStoragePaths();
+  const legacy = storageDirectory ? void 0 : defaults.legacy;
+  const directory = storageDirectory ?? defaults.directory;
   const queues = /* @__PURE__ */ new Map();
   return async (request) => {
     const json = (data, status = 200) => Response.json(data, { status, headers: { "cache-control": "no-store" } });
@@ -145,13 +156,50 @@ function createStageApi(directory = join(homedir(), ".config/bigfish-stage/dsh-r
       const input = JSON.parse(text);
       if (!input || typeof input.cwd !== "string" || !isAbsolute2(input.cwd)) throw new Error("\u8BF7\u9009\u62E9\u6709\u6548\u7684\u672C\u5730\u9879\u76EE\u76EE\u5F55");
       const cwd = await realpath2(input.cwd);
+      if (!(await stat2(cwd)).isDirectory()) throw new Error("\u8BF7\u9009\u62E9\u6587\u4EF6\u5939\uFF0C\u4E0D\u80FD\u4F7F\u7528\u6587\u4EF6\u8DEF\u5F84");
+      if (input.op === "preferences_get" || input.op === "preferences_patch") {
+        const file2 = join(directory, "preferences.json");
+        const read = async () => {
+          try {
+            return JSON.parse(await readFile(file2, "utf8"));
+          } catch (error) {
+            if (error.code === "ENOENT") return { typingCharsPerSec: 40 };
+            throw error;
+          }
+        };
+        if (input.op === "preferences_get") {
+          await queues.get(file2);
+          return json(await read());
+        }
+        const speed = input.typingCharsPerSec;
+        if (!Number.isFinite(speed) || speed < 1 || speed > 1e3) throw new Error("\u663E\u793A\u901F\u5EA6\u9700\u5728 1 \u81F3 1000 \u5B57/\u79D2\u4E4B\u95F4");
+        const save = async () => {
+          const value = { typingCharsPerSec: speed };
+          await mkdir(directory, { recursive: true, mode: 448 });
+          const temp = `${file2}.${randomUUID()}.tmp`;
+          await writeFile(temp, JSON.stringify(value), { mode: 384 });
+          await rename(temp, file2);
+          return value;
+        };
+        const next = (queues.get(file2) ?? Promise.resolve()).then(save, save);
+        queues.set(file2, next.catch(() => {
+        }));
+        return json(await next);
+      }
       const file = join(directory, `${createHash("sha256").update(cwd).digest("hex")}.json`);
       const load = async () => {
         try {
           return JSON.parse(await readFile(file, "utf8"));
         } catch (error) {
-          if (error.code === "ENOENT") return {};
-          throw error;
+          if (error.code !== "ENOENT") throw error;
+          if (legacy) {
+            try {
+              return JSON.parse(await readFile(join(legacy, `${createHash("sha256").update(cwd).digest("hex")}.json`), "utf8"));
+            } catch (oldError) {
+              if (oldError.code !== "ENOENT") throw oldError;
+            }
+          }
+          return {};
         }
       };
       if (input.op === "rooms_get") {
@@ -198,8 +246,8 @@ function createStageApi(directory = join(homedir(), ".config/bigfish-stage/dsh-r
 }
 
 // packages/dsh-client-ui-p5stage/src/index.ts
-import { readFile as readFile2, stat as stat2 } from "node:fs/promises";
-import { extname, join as join2, resolve as resolve2, sep } from "node:path";
+import { readFile as readFile2, stat as stat3 } from "node:fs/promises";
+import { extname, join as join2, resolve as resolve3, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 var MIME_TYPES = {
   ".json": "application/json; charset=utf-8",
@@ -220,12 +268,12 @@ var MIME_TYPES = {
   ".ogg": "audio/ogg",
   ".md": "text/markdown; charset=utf-8"
 };
-var pkgDir = resolve2(fileURLToPath(new URL("..", import.meta.url)));
-var repoPublicDir = [resolve2(pkgDir, "public"), resolve2(pkgDir, "../../public")].find(
+var pkgDir = resolve3(fileURLToPath(new URL("..", import.meta.url)));
+var repoPublicDir = [resolve3(pkgDir, "public"), resolve3(pkgDir, "../../public")].find(
   (dir) => existsSync(join2(dir, "characters"))
-) ?? resolve2(pkgDir, "public");
+) ?? resolve3(pkgDir, "public");
 function createStaticPrefixResource(mountPrefix, rootDir) {
-  const normalizedRoot = resolve2(rootDir);
+  const normalizedRoot = resolve3(rootDir);
   return async (request) => {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = decodeURIComponent(url.pathname);
@@ -233,12 +281,12 @@ function createStaticPrefixResource(mountPrefix, rootDir) {
     if (!rel) {
       return new Response("Not Found", { status: 404 });
     }
-    const targetPath = resolve2(join2(normalizedRoot, rel));
+    const targetPath = resolve3(join2(normalizedRoot, rel));
     if (targetPath !== normalizedRoot && !targetPath.startsWith(normalizedRoot + sep)) {
       return new Response("Forbidden", { status: 403 });
     }
     try {
-      const info = await stat2(targetPath);
+      const info = await stat3(targetPath);
       if (!info.isFile()) {
         return new Response("Not Found", { status: 404 });
       }

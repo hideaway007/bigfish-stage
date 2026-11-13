@@ -19,6 +19,8 @@ import type {
 } from '../stageReducer';
 
 interface SystemMenuModalProps {
+  embeddedInDsh?: boolean;
+  onPickDirectory?: () => Promise<string | null>;
   open: boolean;
   activeTab: SystemMenuTab;
   settings: PublicSettings;
@@ -115,6 +117,8 @@ function formatAdapterDisplayName(ad: WorkerAdapterInfo): string {
 }
 
 export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
+  embeddedInDsh = false,
+  onPickDirectory,
   open,
   activeTab,
   settings,
@@ -286,7 +290,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
           })
           .catch(() => {});
       }
-    } else if (activeTab === 'worker') {
+    } else if (activeTab === 'worker' || activeTab === 'characters') {
       onListModels('worker');
       reloadExtProviders();
     } else if (
@@ -346,7 +350,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
         <div className="p5-system-body">
           {/* Left Tab Navigation — Clean 1-line labels */}
           <nav className="p5-system-nav" aria-label="设置分类">
-            {TABS.map((t) => {
+            {TABS.filter(t => !embeddedInDsh || t.id !== 'voice').map((t) => {
               const isActive = activeTab === t.id;
               return (
                 <button
@@ -375,6 +379,8 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                   <p>
                     每位角色拥有「独立大脑与专属房间」：单独记住各自的模型与对话历史，切换角色不串记忆。
                   </p>
+                  <button type="button" className="p5-apply-btn" disabled={safeWorkerModels.loading} onClick={() => onListModels('worker')}>刷新可用模型</button>
+                  {safeWorkerModels.error && <p role="alert">{safeWorkerModels.error}</p>}
                 </div>
 
                 <div className="p5-char-grid">
@@ -391,11 +397,10 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
 
                     const pillCandidates = Array.from(
                       new Set([
-                        'deepseek-chat',
-                        'deepseek-reasoner',
-                        ...(pack.recommendedModels ?? []),
+                        ...safeWorkerModels.models,
+                        ...(embeddedInDsh ? [] : ['deepseek-chat', 'deepseek-reasoner', ...(pack.recommendedModels ?? [])]),
                       ])
-                    ).slice(0, 4);
+                    );
                     if (brainModel && !pillCandidates.includes(brainModel)) {
                       pillCandidates.unshift(brainModel);
                     }
@@ -473,7 +478,15 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                             独立大脑与专属房间：
                           </span>
                           <div className="p5-model-pills">
-                            {pillCandidates.map((m) => {
+                            {embeddedInDsh ? <select
+                              className="p5-form-input"
+                              aria-label={`${shortName}的模型`}
+                              data-testid={`char-brain-select-${ch.id}`}
+                              value={brainModel}
+                              onChange={event => onUpdateSettings({ characterBrains: { [ch.id]: { model: event.target.value } } })}
+                            >
+                              {pillCandidates.map(model => <option key={model} value={model} disabled={!safeWorkerModels.models.includes(model)}>{model}{safeWorkerModels.models.includes(model) ? '' : '（当前配置，目录中不可用）'}</option>)}
+                            </select> : pillCandidates.slice(0, 5).map((m) => {
                               const isSelectedModel = brainModel === m;
                               return (
                                 <button
@@ -1430,7 +1443,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
             )}
 
             {/* ── TAB 3: 互动台词 (VOICE) ── */}
-            {activeTab === 'voice' && (
+            {activeTab === 'voice' && !embeddedInDsh && (
               <div className="p5-sys-panel" data-testid="system-panel-voice">
                 <div className="p5-sys-panel-head">
                   <h3>互动台词设置</h3>
@@ -1654,6 +1667,12 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                         onClick={async () => {
                           setDirPickError(null);
                           try {
+                            if (embeddedInDsh) {
+                              if (!onPickDirectory) throw new Error('文件夹选择器不可用');
+                              const picked = await onPickDirectory();
+                              if (picked) setProjectDirDraft(picked);
+                              return;
+                            }
                             const electronAPI = (
                               window as unknown as {
                                 electronAPI?: {
@@ -1717,7 +1736,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                           }
                         }}
                       >
-                        保存
+                        {embeddedInDsh ? '在此文件夹新建会话' : '保存'}
                       </button>
                     </div>
                     {dirPickError && (
