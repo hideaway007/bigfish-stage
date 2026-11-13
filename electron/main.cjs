@@ -1,8 +1,12 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const os = require('node:os');
 const fs = require('node:fs');
+const {
+  resolveRuntimePaths,
+  ensureBigfishProfile,
+  buildDshSpawnEnv,
+} = require('./runtime.cjs');
 
 let mainWindow = null;
 let dshProcess = null;
@@ -10,130 +14,14 @@ let dshOrigin = null;
 let dshBootUrl = null;
 let quitting = false;
 
-function buildAugmentedPath() {
-  const home = os.homedir();
-  const extraDirs = [
-    path.join(home, '.local/bin'),
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    '/usr/bin',
-    '/bin',
-  ];
-  // Also discover nvm / ~/.local/lib/node-* bin directories if present
-  const localLib = path.join(home, '.local/lib');
-  if (fs.existsSync(localLib)) {
-    try {
-      for (const entry of fs.readdirSync(localLib)) {
-        if (entry.startsWith('node-')) {
-          extraDirs.unshift(path.join(localLib, entry, 'bin'));
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-  const current = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
-  return Array.from(new Set([...extraDirs, ...current])).join(path.delimiter);
-}
-
-function resolveDshBinary() {
-  if (process.env.DSH_BIN && fs.existsSync(process.env.DSH_BIN)) {
-    return process.env.DSH_BIN;
-  }
-  const home = os.homedir();
-  const candidates = [
-    path.join(home, '.local/bin/dsh'),
-    '/opt/homebrew/bin/dsh',
-    '/usr/local/bin/dsh',
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return 'dsh';
-}
-
-function ensureBigfishProfile(projectRoot) {
-  const dshHome = process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
-  const profileDir = path.join(dshHome, 'profiles', 'bigfish');
-  fs.mkdirSync(profileDir, { recursive: true });
-
-  const pkgPath = path.join(profileDir, 'package.json');
-  if (!fs.existsSync(pkgPath)) {
-    fs.writeFileSync(
-      pkgPath,
-      JSON.stringify(
-        {
-          name: 'dsh-profile-bigfish',
-          private: true,
-          dependencies: {},
-          dsh: {
-            profile: {
-              bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
-            },
-          },
-        },
-        null,
-        2
-      ) + '\n'
-    );
-  }
-
-  const cordisYmlPath = path.join(profileDir, 'cordis.yml');
-  if (!fs.existsSync(cordisYmlPath)) {
-    fs.writeFileSync(cordisYmlPath, '[]\n');
-  }
-
-  const patchPath = path.join(profileDir, 'cordis.patch.yml');
-  if (!fs.existsSync(patchPath)) {
-    fs.writeFileSync(
-      patchPath,
-      [
-        '# bigfish profile — P5 Agent Stage over DeepSeek Harness',
-        '- id: ui-chat',
-        '  disabled: true',
-        '- id: ui-brand-official',
-        '  disabled: true',
-        '- id: ui-sidebar',
-        '  disabled: true',
-        '- id: ui-settings-account',
-        '  disabled: true',
-        '- insert:',
-        '    - id: ui-p5stage',
-        "      name: '@bigfish/dsh-client-ui-p5stage'",
-        '',
-      ].join('\n')
-    );
-  }
-
-  // Ensure symlink to this checkout's @bigfish/dsh-client-ui-p5stage plugin
-  const scopeDir = path.join(profileDir, 'node_modules', '@bigfish');
-  fs.mkdirSync(scopeDir, { recursive: true });
-  const linkPath = path.join(scopeDir, 'dsh-client-ui-p5stage');
-  const targetPluginDir = path.join(projectRoot, 'packages', 'dsh-client-ui-p5stage');
-  try {
-    const existing = fs.lstatSync(linkPath);
-    if (existing.isSymbolicLink() || existing.isDirectory()) {
-      const realExisting = fs.realpathSync(linkPath);
-      const realTarget = fs.realpathSync(targetPluginDir);
-      if (realExisting !== realTarget) {
-        fs.rmSync(linkPath, { recursive: true, force: true });
-        fs.symlinkSync(targetPluginDir, linkPath, 'dir');
-      }
-    }
-  } catch {
-    fs.symlinkSync(targetPluginDir, linkPath, 'dir');
-  }
-}
-
-function startDshRuntime(projectRoot) {
-  ensureBigfishProfile(projectRoot);
-  const dshBin = resolveDshBinary();
-  const env = {
-    ...process.env,
-    PATH: buildAugmentedPath(),
-  };
+function startDshRuntime(runtimePaths) {
+  ensureBigfishProfile({
+    appRoot: runtimePaths.appRoot,
+    pluginDir: runtimePaths.pluginDir,
+  });
+  const { dshBin, env } = buildDshSpawnEnv({
+    cwd: runtimePaths.launchCwd,
+  });
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -143,9 +31,10 @@ function startDshRuntime(projectRoot) {
       dshBin,
       ['--profile', 'bigfish', '--no-open', '--port', '0'],
       {
-        cwd: projectRoot,
+        cwd: runtimePaths.launchCwd,
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
+        shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(dshBin),
       }
     );
     dshProcess = proc;
@@ -179,7 +68,11 @@ function startDshRuntime(projectRoot) {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      reject(new Error(`无法启动 dsh (${dshBin}): ${err.message}`));
+      const hint =
+        err && err.code === 'ENOENT'
+          ? '\n请确认本机已安装 DeepSeek Harness CLI（dsh），或通过环境变量 DSH_BIN 指定可执行文件路径。'
+          : '';
+      reject(new Error(`无法启动 dsh (${dshBin}): ${err.message}${hint}`));
     });
 
     proc.on('exit', (code, signal) => {
@@ -383,11 +276,15 @@ ipcMain.handle('native-pick-directory', async () => {
 
 app.whenReady().then(async () => {
   setupMenu();
-  const projectRoot = path.resolve(__dirname, '..');
   const win = createMainWindow();
 
   try {
-    const { url } = await startDshRuntime(projectRoot);
+    const runtimePaths = resolveRuntimePaths({
+      moduleDir: __dirname,
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    });
+    const { url } = await startDshRuntime(runtimePaths);
     if (win && !win.isDestroyed()) {
       await win.loadURL(url);
       if (process.env.BIGFISH_VERIFY_SHOT) {
@@ -416,8 +313,8 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const reopened = createMainWindow();
-      if (dshOrigin) {
-        void reopened.loadURL(dshOrigin);
+      if (dshBootUrl || dshOrigin) {
+        void reopened.loadURL(dshBootUrl || dshOrigin);
       }
     }
   });

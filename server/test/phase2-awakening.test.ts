@@ -16,7 +16,9 @@ const runFile = promisify(execFile);
 
 class MockBrainAdapter implements WorkerAdapter {
   id = 'dsh';
+  readonly supportsCompact = true;
   starts: StartSessionOptions[] = [];
+  compactions = 0;
   private seq = 0;
 
   async info() {
@@ -50,6 +52,14 @@ class MockBrainAdapter implements WorkerAdapter {
         active = false;
       },
       async decidePermission() {},
+      compact: async () => {
+        this.compactions += 1;
+        return {
+          turnsCompacted: 1,
+          freedTokens: 1200,
+          summary: 'DSH 已将前序对话压缩为结构化检查点。',
+        };
+      },
       async close() {
         active = false;
       },
@@ -112,6 +122,13 @@ test('Phase 2：每角色独立大脑模型与独立房间 JSONL 持久化回放
     await sendCmd({ type: 'compact_session' });
     const compactedEv = messages.find(m => m.type === 'event' && m.event.type === 'context_compacted');
     assert.ok(compactedEv, 'compact_session 应发出真实的 context_compacted 事件');
+    assert.equal(adapter.compactions, 1, 'compact_session 应调用底层执行器的真实 compact 能力');
+    const welcomeAfterCompact = await controller.welcome();
+    assert.ok(
+      welcomeAfterCompact.type === 'welcome' &&
+        welcomeAfterCompact.history.some(e => e.type === 'user_message' && e.text === '大肥鱼帮我写登录页'),
+      '压缩后应完整保留舞台回看审计记录，不删除历史消息'
+    );
 
     messages.length = 0;
     await sendCmd({ type: 'interact_character', characterId: 'deepseek-v4-pro', zone: 'head' });

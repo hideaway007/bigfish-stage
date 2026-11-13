@@ -782,6 +782,7 @@ export const StageApp: React.FC<StageAppProps> = ({
       return;
     }
 
+    if (sourceMode !== 'demo') { setContextTokens(prev => ({ ...prev, used: 0 })); return; }
     const sessionEvents = state.events.slice(sessionStartIdx);
     const userAndWorkerCount = sessionEvents.filter(
       (e) => e.type === 'user_message' || e.type === 'worker_text'
@@ -818,20 +819,9 @@ export const StageApp: React.FC<StageAppProps> = ({
 
   const handleTriggerCompaction = () => {
     if (isCompacting) return;
+    if (state.turnActive) return;
     if (sourceMode === 'live' && connStatus.state !== 'connected') {
-      playSfx('compaction');
-      const freed = 64000;
-      setCompactionState({
-        activeCutin: true,
-        turnsCompacted: 8,
-        freedTokens: freed,
-        summaryText: '离线预览：已将历史对话压缩为摘要卡，释放 64,000 Tokens！',
-        compactedAt: Date.now(),
-      });
-      setContextTokens((prev) => ({
-        used: Math.max(0, prev.used - freed),
-        max: prev.max,
-      }));
+      dispatch({ type: 'SERVER_MESSAGE', message: { type: 'command_error', commandType: 'compact_session', message: '尚未连接执行引擎，无法整理记忆' } });
       return;
     }
     setIsCompacting(true);
@@ -934,8 +924,7 @@ export const StageApp: React.FC<StageAppProps> = ({
   };
 
   const handleSwitchCharacter = (nextCharId: string) => {
-    if (!nextCharId) return;
-    dispatch({ type: 'SET_CHARACTER', characterId: nextCharId });
+    if (!nextCharId || state.turnActive) return;
     sourceRef.current?.switchCharacter(nextCharId);
   };
 
@@ -987,20 +976,8 @@ export const StageApp: React.FC<StageAppProps> = ({
     toCharacterId: string,
     instruction: string
   ) => {
-    const fromId = character.id;
+    if (state.turnActive) return;
     setBatonModalOpen(false);
-    const now = Date.now();
-    lastBatonCutinAtRef.current = now;
-    playSfx('switch');
-    playSfx('allow');
-    setBatonCutinData({
-      key: now,
-      fromCharacterId: fromId,
-      toCharacterId,
-      summary:
-        instruction || '交接当前代码改动与对话上下文，继续推进下一棒！',
-    });
-    dispatch({ type: 'SET_CHARACTER', characterId: toCharacterId });
     sourceRef.current?.batonPass?.(toCharacterId, instruction);
   };
 
@@ -1290,6 +1267,7 @@ export const StageApp: React.FC<StageAppProps> = ({
     .reverse()
     .find((ev) => ev.type === 'worker_text');
 
+  const contextUsageKnown = sourceMode === 'demo' || state.events.some(event => event.type === 'context_usage');
   const usedK = Math.round(contextTokens.used / 1000);
   const maxK = Math.round(contextTokens.max / 1000);
   const contextPercent = Math.min(
@@ -1843,12 +1821,12 @@ export const StageApp: React.FC<StageAppProps> = ({
                       strokeDasharray={138.2}
                       strokeDashoffset={
                         138.2 -
-                        (138.2 * Math.max(8, Math.min(100, contextPercent))) /
+                        (138.2 * (contextUsageKnown ? Math.max(8, Math.min(100, contextPercent)) : 0)) /
                           100
                       }
                     />
                   </svg>
-                  <span className="p5-radar-pct">{contextPercent}%</span>
+                  <span className="p5-radar-pct">{contextUsageKnown ? `${contextPercent}%` : '—'}</span>
                 </div>
 
                 <div className="p5-radar-info">
@@ -1857,7 +1835,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                     className="p5-radar-tokens"
                     data-testid="context-meter-value"
                   >
-                    <strong>{usedK}k</strong> / {maxK}k
+                    {contextUsageKnown ? <><strong>{usedK}k</strong> / {maxK}k</> : '等待引擎统计'}
                   </span>
                   <button
                     type="button"
@@ -1866,7 +1844,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                     }`}
                     data-testid="trigger-compaction-btn"
                     onClick={handleTriggerCompaction}
-                    disabled={isCompacting}
+                    disabled={isCompacting || state.turnActive}
                     title="触发历史上下文记忆蒸馏压缩"
                   >
                     {isCompacting ? '✦ 凝炼中…' : '✦ 记忆凝炼'}
@@ -1883,6 +1861,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                       key={ch.id}
                       type="button"
                       data-testid={`party-member-${ch.id}`}
+                      disabled={state.turnActive}
                       className={`p5-medal-item ${isActive ? 'is-active' : ''}`}
                       style={
                         {
@@ -2384,7 +2363,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                     {compactionState.summaryText}
                   </span>
                   <span className="p5-compaction-node-freed">
-                    −{Math.round(compactionState.freedTokens / 1000)}k Tokens
+                    {compactionState.freedTokens > 0 ? `−${Math.round(compactionState.freedTokens / 1000)}k Tokens` : '引擎未提供节省数量'}
                   </span>
                 </div>
               )}
@@ -2774,7 +2753,7 @@ export const StageApp: React.FC<StageAppProps> = ({
               {compactionState.summaryText}
             </div>
             <div className="p5-compaction-sub">
-              DSH 上下文蒸馏完成 · 警戒槽已回落至 {usedK}k / {maxK}k Tokens
+              {compactionState.freedTokens > 0 ? `上下文整理完成 · 释放约 ${Math.round(compactionState.freedTokens / 1000)}k Tokens` : '上下文整理完成 · 未提供精确用量，历史回看已保留'}
             </div>
           </div>
         </div>

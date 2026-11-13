@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { approvalPresentation, displayCommand, displayPath, fileKey, uncoveredGitDiff } from './presentation';
 import type { StageEvent, ToolKind } from '../../../src/shared/stage-events';
 import { DEFAULT_SETTINGS, type WorkerSettings } from '../../../src/shared/settings';
-import type { ConnectionResult, ModelList, StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
+import type { CompactionResult, ConnectionResult, ModelList, StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
 import { SentenceBuffer } from '../text-buffer';
 import { listEndpointModels, testEndpoint } from '../voice/endpoint';
 
@@ -59,6 +59,67 @@ export function formatToolSummary(toolName: string, args: Record<string, any>, c
   return { summary: toolName };
 }
 
+export function extractDshSummaryText(raw: unknown): string {
+  if (typeof raw === 'string') return raw.trim();
+  if (Array.isArray(raw)) {
+    return raw
+      .map((block: any) =>
+        block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string'
+          ? block.text
+          : ''
+      )
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+  }
+  return '';
+}
+
+export function parseDshCompactionEvent(data: Record<string, any>): CompactionResult {
+  const turnsRaw = Array.isArray(data.shadowedSeqs)
+    ? data.shadowedSeqs.length
+    : data.shadowedItemCount ?? data.turnsCompacted ?? data.turns;
+  const turnsCompacted =
+    typeof turnsRaw === 'number' && Number.isFinite(turnsRaw) && turnsRaw >= 0 ? Math.trunc(turnsRaw) : 0;
+
+  const freedRaw = data.freedTokens ?? data.savedTokens ?? data.shadowedTokenCount;
+  const hasTokenStats = typeof freedRaw === 'number' && Number.isFinite(freedRaw) && freedRaw > 0;
+  const freedTokens = hasTokenStats ? Math.trunc(freedRaw) : 0;
+
+  const afterTokens =
+    typeof data.afterTokens === 'number' && Number.isFinite(data.afterTokens) && data.afterTokens >= 0
+      ? Math.trunc(data.afterTokens)
+      : undefined;
+  const maxTokens =
+    typeof data.maxTokens === 'number' && Number.isFinite(data.maxTokens) && data.maxTokens > 0 && afterTokens !== undefined
+      ? Math.trunc(data.maxTokens)
+      : undefined;
+
+  const rawText = extractDshSummaryText(data.summary).replace(/\s+/g, ' ').slice(0, 240);
+  let summary: string;
+  if (rawText) {
+    summary = hasTokenStats || rawText.includes('未提供') ? rawText : `${rawText}（引擎未提供释放 Token 统计）`;
+  } else if (hasTokenStats) {
+    summary =
+      turnsCompacted > 0
+        ? `DSH 已压缩 ${turnsCompacted} 项历史记录（引擎报告折叠 ${freedTokens} Tokens）。`
+        : `DSH 已完成上下文压缩（引擎报告折叠 ${freedTokens} Tokens）。`;
+  } else {
+    summary =
+      turnsCompacted > 0
+        ? `DSH 已压缩 ${turnsCompacted} 项历史记录（引擎未提供释放 Token 统计）。`
+        : 'DSH 已完成上下文压缩（引擎未提供释放 Token 统计）。';
+  }
+
+  return {
+    turnsCompacted,
+    freedTokens,
+    ...(afterTokens !== undefined ? { afterTokens } : {}),
+    ...(maxTokens !== undefined ? { maxTokens } : {}),
+    summary,
+  };
+}
+
 /** Stateful translation from DSH SDK events into StageEvent. */
 export class DshEventMapper {
   private active = false;
@@ -67,6 +128,7 @@ export class DshEventMapper {
   private buffer: SentenceBuffer;
   readonly structuredDiffFiles = new Set<string>();
   private steers = new Set<string>();
+  private compactionCapture?: (result: CompactionResult) => void;
 
   constructor(private output: (event: StageEvent) => void, private cwd = '', private home = '') {
     this.buffer = new SentenceBuffer((text, final) => this.emit({ type: 'worker_text', text, ...(final ? { final } : {}) }));
@@ -78,6 +140,10 @@ export class DshEventMapper {
 
   registerSteer(id: string) {
     this.steers.add(id);
+  }
+
+  setCompactionCapture(capture?: (result: CompactionResult) => void) {
+    this.compactionCapture = capture;
   }
 
   begin() {
@@ -178,10 +244,11 @@ export class DshEventMapper {
         const isError = kind === 'error';
         const isCancelled = kind === 'cancelled';
         const errorMsg = typeof reasonObj === 'object' && reasonObj?.error?.message ? reasonObj.error.message : (typeof reasonObj === 'string' ? reasonObj : '本轮完成');
-        if (data.usage?.totalTokens || data.contextTokens) {
+        const turnTokens = data.usage?.totalTokens ?? data.contextTokens;
+        if (typeof turnTokens === 'number' && Number.isFinite(turnTokens) && turnTokens > 0) {
           this.emit({
             type: 'context_usage',
-            usedTokens: Number(data.usage?.totalTokens ?? data.contextTokens ?? 45000),
+            usedTokens: Math.trunc(turnTokens),
             maxTokens: Number(data.maxContextTokens ?? 1000000),
           });
         }
@@ -192,23 +259,34 @@ export class DshEventMapper {
       }
 
       if (type === 'context/usage' || type === 'token/usage') {
-        this.emit({
-          type: 'context_usage',
-          usedTokens: Number(data.usedTokens ?? data.totalTokens ?? 45000),
-          maxTokens: Number(data.maxTokens ?? 1000000),
-        });
+        const used = data.usedTokens ?? data.totalTokens;
+        if (typeof used === 'number' && Number.isFinite(used) && used >= 0) {
+          this.emit({
+            type: 'context_usage',
+            usedTokens: Math.trunc(used),
+            maxTokens: Number(data.maxTokens ?? 1000000),
+          });
+        }
       }
 
-      if (type === 'context/compacted' || type === 'compaction' || type === 'memory/compacted') {
-        const turnsCompacted = Number(data.turnsCompacted ?? data.turns ?? 10);
-        const freedTokens = Number(data.freedTokens ?? data.savedTokens ?? 80000);
-        this.emit({
-          type: 'context_compacted',
-          turnsCompacted,
-          freedTokens,
-          afterTokens: typeof data.afterTokens === 'number' ? data.afterTokens : undefined,
-          summary: typeof data.summary === 'string' ? data.summary : `已成功将前 ${turnsCompacted} 轮历史压缩为摘要卡，释放 ${freedTokens.toLocaleString()} Tokens！`,
-        });
+      if (
+        type === 'compaction/summary' ||
+        type === 'context/compacted' ||
+        type === 'compaction' ||
+        type === 'memory/compacted'
+      ) {
+        const parsed = parseDshCompactionEvent(data);
+        if (this.compactionCapture) {
+          this.compactionCapture(parsed);
+        } else {
+          this.emit({
+            type: 'context_compacted',
+            turnsCompacted: parsed.turnsCompacted,
+            freedTokens: parsed.freedTokens,
+            ...(parsed.afterTokens !== undefined ? { afterTokens: parsed.afterTokens } : {}),
+            summary: parsed.summary,
+          });
+        }
       }
     }
 
@@ -277,6 +355,7 @@ export class DshSession implements WorkerSession {
   private beforeDiff = '';
   private completing?: Promise<void>;
   private patchFile?: string;
+  private resumeAttempted = false;
   private readonly emit: (event: StageEvent) => void;
 
   constructor(private options: StartSessionOptions, private home: string) {
@@ -303,13 +382,13 @@ export class DshSession implements WorkerSession {
     this.child.stdin.write(JSON.stringify(message) + '\n');
   }
 
-  private request(method: string, params: unknown): Promise<any> {
+  private request(method: string, params: unknown, timeoutMs = 30_000): Promise<any> {
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`DSH ${method} 超时`));
-      }, 30_000);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try {
         this.sendWire({ jsonrpc: '2.0', id, method, params });
@@ -369,9 +448,15 @@ export class DshSession implements WorkerSession {
       cwd: this.options.cwd,
       provider,
       model: this.options.model,
+      ...(this.options.reasoningEffort ? { reasoningEffort: this.options.reasoningEffort } : {}),
       approvalRequests: true,
       capabilities: { userQuestions: true },
     });
+
+    if (this.options.resumeId && !this.resumeAttempted) {
+      this.resumeAttempted = true;
+      await this.request('session/resume', { sessionId: this.sessionId }, 1500).catch(() => {});
+    }
 
     if (emitSessionStarted) {
       this.emit({
@@ -422,10 +507,16 @@ export class DshSession implements WorkerSession {
     if (method === 'session.status') {
       if (params.status === 'running') {
         this.turnActive = true;
+      } else if (params.status === 'idle') {
+        this.turnActive = false;
       }
     }
 
     this.mapper.translate(message);
+
+    if (method === 'session.event' && params.event?.type === 'turn/end') {
+      this.turnActive = false;
+    }
   }
 
   async send(id: string, text: string) {
@@ -494,6 +585,76 @@ export class DshSession implements WorkerSession {
       result: { outcome: allowed ? 'allowed-once' : 'rejected' },
     });
     this.emit({ type: 'permission_resolved', at: Date.now(), requestId, allowed });
+  }
+
+  async compact(): Promise<CompactionResult> {
+    if (this.disposed) throw new Error('DSH 连接已关闭，请新建或恢复会话');
+    if (this.turnActive) throw new Error('任务进行中无法执行记忆凝炼，请等待本轮完成');
+    if (this.closed || !this.child?.stdin?.writable) {
+      await this.spawnAndInitialize(false);
+    }
+
+    let captured: CompactionResult | undefined;
+    this.mapper.setCompactionCapture((res) => {
+      captured = res;
+    });
+
+    try {
+      const response = await this.request('session/query', {
+        sessionId: this.sessionId,
+        contentBlocks: [{ type: 'text', text: '/compact' }],
+      });
+
+      if (!response || typeof response !== 'object') {
+        throw new Error('DSH 返回了无效的上下文压缩响应');
+      }
+      if (response.kind === 'prompt') {
+        throw new Error('当前 DSH 运行时未启用 /compact 原生压缩命令');
+      }
+      if (response.kind !== 'command') {
+        throw new Error('DSH 未能以原生命令方式执行 /compact');
+      }
+
+      const cmdResult = response.execution?.result;
+      if (!cmdResult || cmdResult.kind === 'error') {
+        const msg =
+          typeof cmdResult?.text === 'string' && cmdResult.text.trim()
+            ? cmdResult.text.trim()
+            : 'DSH 上下文压缩执行失败';
+        throw new Error(msg);
+      }
+
+      if (captured) return captured;
+
+      const resultText = typeof cmdResult.text === 'string' ? cmdResult.text.trim() : '';
+      if (cmdResult.sourceEventSeq === undefined && (!resultText || /no compactable history/i.test(resultText))) {
+        throw new Error('当前会话暂无可压缩的历史上下文');
+      }
+
+      const officialMatch = /^Compacted\s+(\d+)\s+history items\s+\(~(\d+)\s+tokens\)\./i.exec(resultText);
+      if (officialMatch) {
+        const turnsCompacted = Number(officialMatch[1]);
+        const freedTokens = Number(officialMatch[2]);
+        return {
+          turnsCompacted,
+          freedTokens,
+          summary:
+            freedTokens > 0
+              ? `DSH 已压缩 ${turnsCompacted} 项历史记录（引擎报告折叠 ${freedTokens} Tokens）。`
+              : `DSH 已压缩 ${turnsCompacted} 项历史记录（引擎未提供释放 Token 统计）。`,
+        };
+      }
+
+      return {
+        turnsCompacted: 0,
+        freedTokens: 0,
+        summary: resultText
+          ? `${resultText}（引擎未提供释放 Token 统计）`
+          : 'DSH 已完成上下文压缩（引擎未提供释放 Token 统计）。',
+      };
+    } finally {
+      this.mapper.setCompactionCapture(undefined);
+    }
   }
 
   private async gitDiff(): Promise<string> {
@@ -566,6 +727,7 @@ export class DshSession implements WorkerSession {
 
 export class DshAdapter implements WorkerAdapter {
   readonly id = 'dsh';
+  readonly supportsCompact = true;
 
   constructor(private home: string) {}
 

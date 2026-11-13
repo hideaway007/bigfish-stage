@@ -10,13 +10,29 @@ import type { AdapterRegistry } from './adapters/registry';
 import { CharacterCatalog, findTouchReaction } from './characters';
 import { SettingsStore } from './settings-store';
 import { Voice } from './voice/voice';
-import { endpointRequest, listEndpointModels, testEndpoint } from './voice/endpoint';
+import { listEndpointModels, testEndpoint } from './voice/endpoint';
 import { commitGitAll, getGitStatus, revertGitFile } from './git-ops';
 
 const TOUCH_ZONES = new Set<CharacterTouchZone>(['head', 'face', 'body', 'prop']);
 
 function safeSessionFilename(sessionId: string): string {
   return sessionId.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'default';
+}
+
+function touchesRuntimeSettings(patch: SettingsPatch): boolean {
+  return (
+    patch.activeCharacterId !== undefined ||
+    patch.projectDir !== undefined ||
+    patch.worker !== undefined ||
+    patch.characterBrains !== undefined
+  );
+}
+
+function sameExtra(a?: Record<string, string>, b?: Record<string, string>): boolean {
+  const keysA = Object.keys(a ?? {}).sort();
+  const keysB = Object.keys(b ?? {}).sort();
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((k, idx) => k === keysB[idx] && a?.[k] === b?.[k]);
 }
 
 export function resolveEffectiveWorker(settings: AppSettings, characterId?: string): WorkerSettings & { rolePrompt?: string } {
@@ -378,12 +394,22 @@ export class SessionController {
     }
   }
 
+  private enqueueStoreUpdate(patch: SettingsPatch): Promise<AppSettings> {
+    const run = () => this.store.update(patch);
+    const next = this.settingsQueue.then(run, run);
+    this.settingsQueue = next.then(
+      () => {},
+      () => {}
+    );
+    return next;
+  }
+
   private async saveCharacterRoomBinding(characterId: string, sessionId: string | null) {
     if (sessionId) this.characterActiveSession.set(characterId, sessionId);
     else this.characterActiveSession.delete(characterId);
     const currentBrain = this.store.current.characterBrains?.[characterId] ?? {};
     if (currentBrain.activeSessionId !== sessionId) {
-      await this.store.update({
+      await this.enqueueStoreUpdate({
         characterBrains: {
           [characterId]: { activeSessionId: sessionId },
         },
@@ -393,6 +419,8 @@ export class SessionController {
 
   private async openSession(resumeId?: string, forCharacterId?: string) {
     if (this.worker?.turnActive) throw new Error('请先喊停当前任务，再切换会话');
+    const previousInMemory =
+      resumeId && this.info?.sessionId === resumeId && this.history.length > 0 ? [...this.history] : undefined;
     if (this.info && this.history.length > 0) {
       await this.persistTranscript(this.info.sessionId, this.history);
     }
@@ -405,7 +433,9 @@ export class SessionController {
     await this.worker?.close();
     this.worker = undefined;
     this.info = null;
-    const restoredHistory = resumeId ? this.loadTranscriptFromDisk(resumeId) : [];
+    const diskHistory = resumeId ? this.loadTranscriptFromDisk(resumeId) : [];
+    const restoredHistory =
+      previousInMemory && previousInMemory.length > diskHistory.length ? previousInMemory : diskHistory;
     this.history = restoredHistory;
     this.voice.reset();
     this.broadcast({ type: 'session', session: null });
@@ -415,6 +445,7 @@ export class SessionController {
         ...effectiveWorker,
         cwd,
         resumeId,
+        ...(resumeId && restoredHistory.length > 0 ? { restoredEvents: [...restoredHistory] } : {}),
         onEvent: event => this.record(event),
       });
       if (this.closed) {
@@ -442,119 +473,132 @@ export class SessionController {
     }
   }
 
-  private async switchCharacterRoom(nextCharId: string) {
+  private async performCharacterSwitch(nextCharId: string) {
+    if (!this.characters.get(nextCharId)) throw new Error('角色包不存在');
+    if (this.worker?.turnActive) {
+      throw new Error('任务运行中无法切换角色，请先停止或等待本轮完成');
+    }
     const prevCharId = this.store.current.activeCharacterId;
     if (prevCharId === nextCharId) return;
 
-    if (this.info && !this.worker?.turnActive) {
+    if (this.info) {
       this.characterActiveSession.set(prevCharId, this.info.sessionId);
       await this.persistTranscript(this.info.sessionId, this.history);
+    }
+    if (this.worker) {
       await this.worker?.close();
       this.worker = undefined;
-      this.info = null;
-      this.history = [];
     }
+    this.info = null;
+    this.history = [];
 
-    await this.update({ activeCharacterId: nextCharId });
+    await this.enqueueStoreUpdate({ activeCharacterId: nextCharId });
+    this.configureVoice();
+    this.broadcast({ type: 'settings', settings: this.store.public });
 
-    if (!this.worker?.turnActive) {
-      const targetSessionId = this.characterActiveSession.get(nextCharId);
-      const summary = targetSessionId ? this.sessions.get(targetSessionId) : undefined;
-      if (targetSessionId && summary) {
-        const diskHistory = this.loadTranscriptFromDisk(targetSessionId);
-        this.history = diskHistory;
-        const effectiveWorker = resolveEffectiveWorker(this.store.current, nextCharId);
-        this.info = {
-          sessionId: targetSessionId,
-          adapter: summary.adapter || effectiveWorker.adapter,
-          model: effectiveWorker.model || summary.model || '',
-          cwd: summary.cwd || this.store.current.projectDir || '',
-          characterId: nextCharId,
-          turnActive: false,
-        };
-        this.broadcast({ type: 'session', session: this.snapshot(), history: [...this.history] });
-      } else {
-        this.broadcast({ type: 'session', session: null, history: [] });
-      }
+    const targetSessionId = this.characterActiveSession.get(nextCharId);
+    const summary = targetSessionId ? this.sessions.get(targetSessionId) : undefined;
+    if (targetSessionId && summary) {
+      const diskHistory = this.loadTranscriptFromDisk(targetSessionId);
+      this.history = diskHistory;
+      const effectiveWorker = resolveEffectiveWorker(this.store.current, nextCharId);
+      this.info = {
+        sessionId: targetSessionId,
+        adapter: summary.adapter || effectiveWorker.adapter,
+        model: effectiveWorker.model || summary.model || '',
+        cwd: summary.cwd || this.store.current.projectDir || '',
+        characterId: nextCharId,
+        turnActive: false,
+      };
+      this.broadcast({ type: 'session', session: this.snapshot(), history: [...this.history] });
+    } else {
+      this.broadcast({ type: 'session', session: null, history: [] });
+    }
+  }
+
+  private async switchCharacterRoom(nextCharId: string) {
+    if (!this.characters.get(nextCharId)) throw new Error('角色包不存在');
+    if (this.worker?.turnActive) {
+      throw new Error('任务运行中无法切换角色，请先停止或等待本轮完成');
+    }
+    if (this.managementBusy) {
+      throw new Error('会话正在启动或切换，请稍后重试');
+    }
+    this.managementBusy = true;
+    try {
+      await this.settingsQueue;
+      await this.performCharacterSwitch(nextCharId);
+    } finally {
+      this.managementBusy = false;
     }
   }
 
   private async compactCurrentSession() {
+    await this.settingsQueue;
     if (this.worker?.turnActive) throw new Error('任务运行中无法执行记忆凝炼，请等待本轮完成');
-    const userTurns = this.history.filter(e => e.type === 'user_message');
-    const latestUsage = [...this.history].reverse().find((e): e is Extract<StageEvent, { type: 'context_usage' }> => e.type === 'context_usage');
-    const maxTokens = latestUsage?.maxTokens || 1_000_000;
-    const rawCharLen = JSON.stringify(this.history).length;
-    const estimatedBefore = latestUsage?.usedTokens || Math.max(12_000, userTurns.length * 4_500 + Math.round(rawCharLen / 2));
-
-    const digestLines: string[] = [];
-    for (const ev of this.history.slice(-40)) {
-      if (ev.type === 'user_message') digestLines.push(`用户指令: ${ev.text.slice(0, 140)}`);
-      else if (ev.type === 'tool_end' && ev.summary) digestLines.push(`工具操作(${ev.ok ? '成功' : '失败'}): ${ev.summary.slice(0, 100)}`);
-      else if (ev.type === 'worker_text' && ev.text.trim()) digestLines.push(`结论: ${ev.text.trim().slice(0, 160)}`);
+    if (!this.worker && !this.info) {
+      throw new Error('当前尚未建立会话，无法执行记忆凝炼');
     }
 
-    let summary = '';
-    const settings = this.store.current;
-    const effectiveWorker = resolveEffectiveWorker(settings);
-    const llmEp =
-      effectiveWorker.connection === 'endpoint' && effectiveWorker.endpoint.baseUrl
-        ? { ...effectiveWorker.endpoint, model: effectiveWorker.model }
-        : settings.voice.endpoint;
-
-    if (digestLines.length > 0 && llmEp.baseUrl && (llmEp.apiKey || llmEp.baseUrl.includes('127.0.0.1') || llmEp.baseUrl.includes('localhost'))) {
-      try {
-        const res = await endpointRequest(
-          llmEp,
-          'chat/completions',
-          {
-            model: llmEp.model,
-            stream: false,
-            max_tokens: 220,
-            messages: [
-              {
-                role: 'system',
-                content: '你是代码会话记忆蒸馏器。请把以下历史对话浓缩为一段不超过 110 字的简体中文关键进展摘要，保留修改过的文件名与核心结论，不要客套话。',
-              },
-              { role: 'user', content: digestLines.join('\n') },
-            ],
-          },
-          AbortSignal.timeout(8500)
-        );
-        const text = res?.choices?.[0]?.message?.content;
-        if (typeof text === 'string' && text.trim()) {
-          summary = text.trim().replace(/\s+/g, ' ').slice(0, 180);
-        }
-      } catch {}
+    if (!this.worker && this.info) {
+      const settings = this.store.current;
+      const charId = this.info.characterId || settings.activeCharacterId;
+      const effectiveWorker = resolveEffectiveWorker(settings, charId);
+      const adapterId = this.info.adapter || effectiveWorker.adapter;
+      const adapter = this.registry.get(adapterId);
+      if (adapter.supportsCompact === false) {
+        throw new Error(`当前执行器 (${adapter.id}) 不支持手动上下文压缩，未修改任何会话历史`);
+      }
+      await this.openSession(this.info.sessionId, charId);
     }
 
-    const turnsCompacted = Math.max(1, userTurns.length || 1);
-    if (!summary) {
-      const lastPrompt = userTurns.at(-1)?.text.slice(0, 48) || '近期工作区探索';
-      summary = `已将前 ${turnsCompacted} 轮记录（含「${lastPrompt}」等上下文）蒸馏为高密度战术记忆锚点。`;
+    if (!this.worker) {
+      throw new Error('当前尚未建立会话，无法执行记忆凝炼');
+    }
+    if (this.worker.turnActive) {
+      throw new Error('任务运行中无法执行记忆凝炼，请等待本轮完成');
+    }
+    if (typeof this.worker.compact !== 'function') {
+      throw new Error(`当前执行器 (${this.info?.adapter || 'unknown'}) 不支持手动上下文压缩，未修改任何会话历史`);
     }
 
-    const freedTokens = Math.max(4_000, Math.round(estimatedBefore * 0.68));
-    const afterTokens = Math.max(1_500, estimatedBefore - freedTokens);
-
-    const head = this.history.find(e => e.type === 'session_started');
-    const recentTail = this.history.slice(-6).filter(e => e.type !== 'session_started');
-    this.history = [...(head ? [head] : []), ...recentTail];
+    const result = await this.worker.compact();
+    const turnsCompacted =
+      typeof result.turnsCompacted === 'number' && Number.isFinite(result.turnsCompacted) && result.turnsCompacted >= 0
+        ? Math.trunc(result.turnsCompacted)
+        : 0;
+    const hasFreed =
+      typeof result.freedTokens === 'number' && Number.isFinite(result.freedTokens) && result.freedTokens > 0;
+    const freedTokens = hasFreed ? Math.trunc(result.freedTokens) : 0;
+    const afterTokens =
+      typeof result.afterTokens === 'number' && Number.isFinite(result.afterTokens) && result.afterTokens >= 0
+        ? Math.trunc(result.afterTokens)
+        : undefined;
+    const rawSummary = typeof result.summary === 'string' ? result.summary.trim() : '';
+    const summary = rawSummary
+      ? hasFreed || rawSummary.includes('未提供')
+        ? rawSummary
+        : `${rawSummary}（未提供释放 Token 统计）`
+      : hasFreed
+        ? `已完成上下文压缩（压缩 ${turnsCompacted} 轮，引擎报告释放 ${freedTokens} Tokens）。`
+        : '已完成上下文压缩（未提供释放 Token 统计）。';
 
     this.record({
       type: 'context_compacted',
       at: Date.now(),
       turnsCompacted,
       freedTokens,
-      afterTokens,
+      ...(afterTokens !== undefined ? { afterTokens } : {}),
       summary,
     });
-    this.record({
-      type: 'context_usage',
-      at: Date.now(),
-      usedTokens: afterTokens,
-      maxTokens,
-    });
+    if (afterTokens !== undefined && typeof result.maxTokens === 'number' && Number.isFinite(result.maxTokens) && result.maxTokens > 0) {
+      this.record({
+        type: 'context_usage',
+        at: Date.now(),
+        usedTokens: afterTokens,
+        maxTokens: Math.trunc(result.maxTokens),
+      });
+    }
     if (this.info) {
       await this.persistTranscript(this.info.sessionId, this.history);
     }
@@ -562,6 +606,7 @@ export class SessionController {
 
   private async executeBatonPass(toCharacterId: string, instruction?: string) {
     if (!this.characters.get(toCharacterId)) throw new Error('目标角色不存在');
+    await this.settingsQueue;
     if (this.worker?.turnActive) throw new Error('请等待当前角色完成本轮行动后再换手接力');
 
     const fromCharacterId = this.store.current.activeCharacterId;
@@ -585,7 +630,7 @@ export class SessionController {
 
     const summary = `${fromPack?.name.split('（')[0] ?? fromCharacterId} ➔ ${toPack.name.split('（')[0]}：${instruction?.trim() || '接力推进当前任务与代码审查'}`;
 
-    await this.switchCharacterRoom(toCharacterId);
+    await this.performCharacterSwitch(toCharacterId);
 
     const hasProject = Boolean(this.store.current.projectDir);
     if (hasProject) {
@@ -601,7 +646,7 @@ export class SessionController {
       summary,
     });
 
-    if (hasProject && this.worker && (instruction?.trim() || briefParts.length > 0)) {
+    if (hasProject && this.worker && !this.stopPendingStart && (instruction?.trim() || briefParts.length > 0)) {
       const handoffPrompt = [
         `【角色换手交接 · Agent Relay】上一棒队友：${fromPack?.name ?? fromCharacterId}`,
         ...briefParts,
@@ -612,8 +657,34 @@ export class SessionController {
   }
 
   private async update(patch: SettingsPatch) {
+    const runtimeTouched = touchesRuntimeSettings(patch);
+    if (runtimeTouched) {
+      if (this.worker?.turnActive) {
+        throw new Error('任务运行中无法切换角色、模型或项目配置，请先停止或等待本轮完成');
+      }
+      if (this.managementBusy) {
+        throw new Error('会话正在启动或切换，无法修改角色、模型或项目配置，请稍后重试');
+      }
+    }
+
+    if (patch.activeCharacterId !== undefined) {
+      if (!this.characters.get(patch.activeCharacterId)) throw new Error('角色包不存在');
+      const { activeCharacterId, ...restPatch } = patch;
+      if (Object.keys(restPatch).length > 0) {
+        await this.update(restPatch);
+      }
+      if (activeCharacterId !== this.store.current.activeCharacterId) {
+        await this.switchCharacterRoom(activeCharacterId);
+      } else if (Object.keys(restPatch).length === 0) {
+        this.broadcast({ type: 'settings', settings: this.store.public });
+      }
+      return;
+    }
+
     const run = async () => {
-      if (patch.activeCharacterId !== undefined && !this.characters.get(patch.activeCharacterId)) throw new Error('角色包不存在');
+      if (runtimeTouched && this.worker?.turnActive) {
+        throw new Error('任务运行中无法切换角色、模型或项目配置，请先停止或等待本轮完成');
+      }
       if (patch.worker?.adapter !== undefined) this.registry.get(patch.worker.adapter);
       if (patch.projectDir !== undefined && patch.projectDir !== null) {
         const cwd = await this.project(patch.projectDir);
@@ -625,23 +696,37 @@ export class SessionController {
       const nextEff = resolveEffectiveWorker(nextSettings);
       this.configureVoice();
 
+      const projectChanged = patch.projectDir !== undefined && prev.projectDir !== nextSettings.projectDir;
+      const adapterChanged = prevEff.adapter !== nextEff.adapter;
       const workerChanged =
-        (patch.projectDir !== undefined && prev.projectDir !== nextSettings.projectDir) ||
-        prevEff.adapter !== nextEff.adapter ||
+        projectChanged ||
+        adapterChanged ||
         prevEff.model !== nextEff.model ||
         prevEff.connection !== nextEff.connection ||
         prevEff.sandbox !== nextEff.sandbox ||
+        prevEff.agentPreset !== nextEff.agentPreset ||
+        prevEff.reasoningEffort !== nextEff.reasoningEffort ||
+        prevEff.rolePrompt !== nextEff.rolePrompt ||
         prevEff.endpoint.baseUrl !== nextEff.endpoint.baseUrl ||
-        prevEff.endpoint.apiKey !== nextEff.endpoint.apiKey;
+        prevEff.endpoint.apiKey !== nextEff.endpoint.apiKey ||
+        !sameExtra(prevEff.extra, nextEff.extra);
 
-      if (workerChanged && this.worker && !this.worker.turnActive) {
-        await this.worker.close();
-        this.worker = undefined;
-        if (patch.projectDir !== undefined && prev.projectDir !== nextSettings.projectDir) {
+      if (workerChanged && !this.worker?.turnActive) {
+        if (this.worker) {
+          await this.worker.close();
+          this.worker = undefined;
+        }
+        if (projectChanged || adapterChanged) {
+          if (this.info && this.history.length > 0) {
+            await this.persistTranscript(this.info.sessionId, this.history);
+          }
           this.info = null;
-          this.broadcast({ type: 'session', session: null });
+          this.history = [];
+          this.broadcast({ type: 'session', session: null, history: [] });
         } else if (this.info) {
           this.info = { ...this.info, adapter: nextEff.adapter, model: nextEff.model };
+          this.ensureCurrentSessionEntry(Date.now());
+          await this.persistSessions();
           this.broadcast({ type: 'session', session: this.snapshot() });
         }
       }
@@ -664,9 +749,16 @@ export class SessionController {
         case 'new_session':
         case 'resume_session': {
           if (this.managementBusy) throw new Error('会话正在启动或切换，请稍后重试');
+          if (command.type === 'send' && this.worker?.turnActive) {
+            throw new Error('任务运行中，请使用插话');
+          }
+          if (command.type !== 'send' && this.worker?.turnActive) {
+            throw new Error('请先喊停当前任务，再切换会话');
+          }
           this.managementBusy = true;
           this.stopPendingStart = false;
           try {
+            await this.settingsQueue;
             if (command.type === 'new_session') {
               await this.openSession(undefined);
             } else if (command.type === 'resume_session') {
@@ -722,11 +814,20 @@ export class SessionController {
           await this.update(command.patch);
           break;
         case 'compact_session':
-          await this.compactCurrentSession();
+          if (this.worker?.turnActive) throw new Error('任务运行中无法执行记忆凝炼，请等待本轮完成');
+          if (this.managementBusy) throw new Error('会话正在启动或切换，请稍后重试');
+          this.managementBusy = true;
+          try {
+            await this.compactCurrentSession();
+          } finally {
+            this.managementBusy = false;
+          }
           break;
         case 'baton_pass':
+          if (this.worker?.turnActive) throw new Error('请等待当前角色完成本轮行动后再换手接力');
           if (this.managementBusy) throw new Error('会话正在切换中，请稍后重试');
           this.managementBusy = true;
+          this.stopPendingStart = false;
           try {
             await this.executeBatonPass(command.toCharacterId, command.instruction);
           } finally {
