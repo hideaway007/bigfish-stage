@@ -591,6 +591,7 @@ export class DshStageSource implements StageDataSource {
   private roomsReady: Promise<void> | null = null;
   private changingRoom = false;
   private pendingSteers = new Set<string>();
+  private typingCharsPerSec = DEFAULT_SETTINGS.performance.typingCharsPerSec;
 
   constructor(
     private readonly ctx: any,
@@ -697,7 +698,7 @@ export class DshStageSource implements StageDataSource {
         },
         maxLinesPerMinute: DEFAULT_SETTINGS.voice.maxLinesPerMinute,
       },
-      performance: { ...DEFAULT_SETTINGS.performance },
+      performance: { ...DEFAULT_SETTINGS.performance, typingCharsPerSec: this.typingCharsPerSec },
     };
   }
 
@@ -944,7 +945,7 @@ export class DshStageSource implements StageDataSource {
             at,
             type: 'context_usage',
             usedTokens: total,
-            maxTokens: 1000000,
+            maxTokens: 0, // DSH usage does not include the model's context capacity.
           });
         }
       }
@@ -999,12 +1000,9 @@ export class DshStageSource implements StageDataSource {
     }
 
     if (type === 'compaction/summary') {
-      const summaryText =
-        typeof data.summary === 'string' && data.summary.trim()
-          ? data.summary.trim().slice(0, 180)
-          : 'DSH 已将较早对话凝炼为摘要卡！';
+      const summaryText = extractContentText(data.summary).trim() || 'DSH 已将较早对话凝炼为摘要卡！';
       const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 0);
-      const turns = Number(data.shadowedItemCount ?? 0);
+      const turns = Number(data.shadowedItemCount ?? data.shadowedSeqs?.length ?? 0);
       out.push({
         at,
         type: 'context_compacted',
@@ -1408,6 +1406,32 @@ export class DshStageSource implements StageDataSource {
     }
   }
 
+  public async pickDirectory(): Promise<string | null> {
+    if (!this.ctx.uiWorkspace?.pickDirectory) throw new Error('当前 DSH 无文件夹选择器，请直接填写路径');
+    return this.ctx.uiWorkspace.pickDirectory();
+  }
+
+  public newSessionInDirectory(directory: string): void {
+    if (this.changingRoom || this.isSessionRunning()) { this.reportError(new Error('请等待当前任务完成后再更换工作文件夹'), 'new_session'); return; }
+    this.changingRoom = true;
+    void (async () => {
+      const cwd = directory.trim();
+      // Validate the path before asking DSH to create a workspace or session.
+      await this.stageRequest({ op: 'rooms_get', cwd });
+      if (!this.ctx.remote?.session?.create || !this.ctx.uiWorkspace?.openSession) throw new Error('DSH 会话创建接口不可用');
+      const workspace = this.ctx.workspaces?.create ? await this.ctx.workspaces.create({ path: cwd }) : null;
+      const created = this.unwrap(await this.ctx.remote.session.create({
+        ...(workspace?.workspaceId ? { workspaceId: workspace.workspaceId } : { cwd }), agentPreset: this.resolveAgentPreset(),
+      }));
+      if (!created?.sessionId) throw new Error('未能创建新会话');
+      await this.refreshModelCatalog(false);
+      const model = this.resolveModelName();
+      if (model !== 'dsh/default') await this.selectModelAndEffort(model, undefined, created.sessionId);
+      await this.stageRequest({ op: 'rooms_patch', cwd, characterId: this.activeCharacterId, sessionId: created.sessionId, ...(model !== 'dsh/default' ? { model } : {}) });
+      this.ctx.uiWorkspace.openSession(created.sessionId);
+    })().catch(error => this.reportError(error, 'new_session')).finally(() => { this.changingRoom = false; });
+  }
+
   public resumeSession(targetSessionId: string): void {
     this.ctx.uiWorkspace?.openSession?.(targetSessionId);
   }
@@ -1421,15 +1445,15 @@ export class DshStageSource implements StageDataSource {
     return value?.value ?? value;
   }
 
-  private reportError(error: unknown, commandType: 'send' | 'steer' | 'switch_character' | 'baton_pass' | 'update_settings' | 'compact_session') {
+  private reportError(error: unknown, commandType: 'send' | 'steer' | 'switch_character' | 'baton_pass' | 'update_settings' | 'compact_session' | 'new_session') {
     this.emitMessage({ type: 'command_error', commandType, message: error instanceof Error ? error.message : '操作失败' });
   }
 
   private async stageRequest(input: Record<string, unknown>): Promise<any> {
     const res = await fetch('/api/bigfish-stage', { method: 'POST', credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...input, cwd: this.resolveCwd() }) });
-    if (!res.ok) throw new Error(res.status === 404 ? '请升级 DeepSeek Harness 并重新启用舞台插件，以使用角色房间和代码变更功能' : `舞台操作失败 (${res.status})`);
-    const data = await res.json();
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cwd: this.resolveCwd(), ...input }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || (res.status === 404 ? '请升级 DeepSeek Harness 并重新启用舞台插件，以使用角色房间和代码变更功能' : `舞台操作失败 (${res.status})`));
     if (data.error) throw new Error(data.error);
     return data;
   }
@@ -1437,6 +1461,8 @@ export class DshStageSource implements StageDataSource {
   private ensureRooms(): Promise<void> {
     if (!this.roomsReady) this.roomsReady = (async () => {
       this.rooms = await this.stageRequest({ op: 'rooms_get' });
+      const preferences = await this.stageRequest({ op: 'preferences_get' });
+      if (Number.isFinite(preferences.typingCharsPerSec)) this.typingCharsPerSec = preferences.typingCharsPerSec;
       const owner = Object.entries(this.rooms).find(([, room]) => room.sessionId === this.sessionId)?.[0];
       if (owner) this.activeCharacterId = owner;
       else if (!this.rooms[this.activeCharacterId]?.sessionId) {
@@ -1456,6 +1482,7 @@ export class DshStageSource implements StageDataSource {
     for (const item of entries) {
       const ev = item?.event;
       if (ev?.type === 'user/message' || ev?.type === 'assistant/message') {
+        if (ev.type === 'user/message' && !isHumanUserMessageEvent(ev, ev.data ?? {})) continue;
         const text = stripPersona(extractContentText(ev.data?.message?.content ?? ev.data?.content));
         if (text) context.push(`${ev.type === 'user/message' ? '用户' : '上一位角色'}：${text.slice(0, 2500)}`);
       } else if (ev?.type === 'tool/call') {
@@ -1481,7 +1508,8 @@ export class DshStageSource implements StageDataSource {
       if (!this.ctx.uiWorkspace?.openSession) throw new Error('DSH 会话导航暂不可用');
       this.rooms = await this.stageRequest({ op: 'rooms_patch', characterId: this.activeCharacterId, sessionId: this.sessionId, model: this.resolveModelName() });
       const room = this.rooms[characterId];
-      const model = room?.model || getCachedCharacterPack(characterId).recommendedModels?.find(m => this.catalogModels.includes(m)) || this.defaultModelSelection?.model || this.resolveModelName();
+      const model = room?.model || getCachedCharacterPack(characterId).recommendedModels?.find(m => this.catalogModels.includes(m)) ||
+        (this.catalogModels.includes(this.resolveModelName()) ? this.resolveModelName() : this.catalogModels[0]) || this.resolveModelName();
       let target = room?.sessionId;
       if (!target) {
         if (!this.ctx.remote?.session?.create) throw new Error('DSH 不支持创建独立角色会话，请升级');
@@ -1516,6 +1544,12 @@ export class DshStageSource implements StageDataSource {
   }
 
   public updateSettings(patch: SettingsPatch): void {
+    if (patch.projectDir?.trim()) this.newSessionInDirectory(patch.projectDir);
+    if (patch.performance?.typingCharsPerSec !== undefined) {
+      void this.stageRequest({ op: 'preferences_patch', typingCharsPerSec: patch.performance.typingCharsPerSec })
+        .then(value => { this.typingCharsPerSec = value.typingCharsPerSec; this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() }); })
+        .catch(error => this.reportError(error, 'update_settings'));
+    }
     if (patch.activeCharacterId) {
       this.switchCharacter(patch.activeCharacterId);
     }
@@ -1588,7 +1622,9 @@ export class DshStageSource implements StageDataSource {
     const binding = this.ctx.sessions?.binding?.(this.sessionId);
     if (this.changingRoom || this.isSessionRunning()) { this.reportError(new Error('请等待当前任务完成后再整理记忆'), 'compact_session'); return; }
     if (!binding?.session?.command) { this.reportError(new Error('当前会话不支持整理记忆'), 'compact_session'); return; }
-    void Promise.resolve(binding.session.command('/compact')).then(value => this.unwrap(value)).catch(error => this.reportError(error, 'compact_session'));
+    void Promise.resolve(binding.session.command('/compact')).then(value => {
+      if (this.unwrap(value)?.matched === false) throw new Error('当前 DSH 未启用记忆整理命令');
+    }).catch(error => this.reportError(error, 'compact_session'));
   }
 
   public testConnection(target: 'worker' | 'voice'): void {

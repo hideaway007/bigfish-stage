@@ -763,7 +763,7 @@ export const StageApp: React.FC<StageAppProps> = ({
     }
 
     if (latestUsage) {
-      const maxTokens = latestUsage.maxTokens || 1000000;
+      const maxTokens = latestUsage.maxTokens;
       let usedTokens = latestUsage.usedTokens;
       if (latestCompactedAfterUsage) {
         usedTokens =
@@ -776,7 +776,7 @@ export const StageApp: React.FC<StageAppProps> = ({
         usedTokens = Math.max(0, usedTokens - compactionState.freedTokens);
       }
       setContextTokens({
-        used: Math.max(0, Math.min(maxTokens, usedTokens)),
+        used: Math.max(0, maxTokens > 0 ? Math.min(maxTokens, usedTokens) : usedTokens),
         max: maxTokens,
       });
       return;
@@ -997,8 +997,9 @@ export const StageApp: React.FC<StageAppProps> = ({
   };
 
   const handleStartNewSessionWithDir = (projectDir: string) => {
-    sourceRef.current?.updateSettings({ projectDir });
-    sourceRef.current?.newSession();
+    const source = sourceRef.current;
+    if (source?.newSessionInDirectory) source.newSessionInDirectory(projectDir);
+    else { source?.updateSettings({ projectDir }); source?.newSession(); }
     dispatch({ type: 'TOGGLE_SYSTEM_MENU', open: false });
   };
 
@@ -1270,10 +1271,11 @@ export const StageApp: React.FC<StageAppProps> = ({
   const contextUsageKnown = sourceMode === 'demo' || state.events.some(event => event.type === 'context_usage');
   const usedK = Math.round(contextTokens.used / 1000);
   const maxK = Math.round(contextTokens.max / 1000);
-  const contextPercent = Math.min(
+  const contextCapacityKnown = contextUsageKnown && contextTokens.max > 0;
+  const contextPercent = contextCapacityKnown ? Math.min(
     100,
     Math.max(0, Math.round((contextTokens.used / contextTokens.max) * 100))
-  );
+  ) : 0;
 
   const touchedFiles = Array.from(
     new Set(
@@ -1608,7 +1610,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                   new Set([
                     ...(activeModel && activeModel !== 'dsh/default' ? [activeModel] : []),
                     ...catalogList,
-                    ...recList,
+                    ...(embeddedInDsh ? [] : recList),
                   ])
                 );
                 const q = stageModelQuery.trim().toLowerCase();
@@ -1821,12 +1823,12 @@ export const StageApp: React.FC<StageAppProps> = ({
                       strokeDasharray={138.2}
                       strokeDashoffset={
                         138.2 -
-                        (138.2 * (contextUsageKnown ? Math.max(8, Math.min(100, contextPercent)) : 0)) /
+                        (138.2 * (contextCapacityKnown ? Math.max(8, Math.min(100, contextPercent)) : 0)) /
                           100
                       }
                     />
                   </svg>
-                  <span className="p5-radar-pct">{contextUsageKnown ? `${contextPercent}%` : '—'}</span>
+                  <span className="p5-radar-pct">{contextCapacityKnown ? `${contextPercent}%` : '—'}</span>
                 </div>
 
                 <div className="p5-radar-info">
@@ -1835,7 +1837,7 @@ export const StageApp: React.FC<StageAppProps> = ({
                     className="p5-radar-tokens"
                     data-testid="context-meter-value"
                   >
-                    {contextUsageKnown ? <><strong>{usedK}k</strong> / {maxK}k</> : '等待引擎统计'}
+                    {contextUsageKnown ? <><strong>{usedK}k</strong> / {contextCapacityKnown ? `${maxK}k` : '上限未提供'}</> : '等待引擎统计'}
                   </span>
                   <button
                     type="button"
@@ -2810,6 +2812,8 @@ export const StageApp: React.FC<StageAppProps> = ({
       />
 
       <SystemMenuModal
+        embeddedInDsh={embeddedInDsh}
+        onPickDirectory={embeddedInDsh ? () => sourceRef.current?.pickDirectory?.() ?? Promise.reject(new Error('请直接填写文件夹路径')) : undefined}
         open={state.systemMenuOpen}
         activeTab={state.systemMenuTab}
         settings={state.serverSettings}

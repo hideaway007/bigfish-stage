@@ -41,6 +41,8 @@ export interface StageDataSource {
   listSessions(): void;
   subscribeSessions(listener: (state: SessionListState) => void): () => void;
   newSession(): void;
+  newSessionInDirectory?(directory: string): void;
+  pickDirectory?(): Promise<string | null>;
   resumeSession(sessionId: string): void;
   switchCharacter(characterId: string): void;
   updateSettings(patch: SettingsPatch): void;

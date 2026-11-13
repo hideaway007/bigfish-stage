@@ -6320,6 +6320,8 @@ window.__ModuleLoader__.load({
 		  return ad.name;
 		}
 		var SystemMenuModal = ({
+		  embeddedInDsh = false,
+		  onPickDirectory,
 		  open,
 		  activeTab,
 		  settings,
@@ -6459,7 +6461,7 @@ window.__ModuleLoader__.load({
 		        }).catch(() => {
 		        });
 		      }
-		    } else if (activeTab === "worker") {
+		    } else if (activeTab === "worker" || activeTab === "characters") {
 		      onListModels("worker");
 		      reloadExtProviders();
 		    } else if (activeTab === "voice" && safeVoiceModels.models.length === 0 && !safeVoiceModels.loading) {
@@ -6508,7 +6510,7 @@ window.__ModuleLoader__.load({
 		          ] })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-system-body", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("nav", { className: "p5-system-nav", "aria-label": "\u8BBE\u7F6E\u5206\u7C7B", children: TABS.map((t) => {
+		          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("nav", { className: "p5-system-nav", "aria-label": "\u8BBE\u7F6E\u5206\u7C7B", children: TABS.filter((t) => !embeddedInDsh || t.id !== "voice").map((t) => {
 		            const isActive = activeTab === t.id;
 		            return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
 		              "button",
@@ -6531,7 +6533,9 @@ window.__ModuleLoader__.load({
 		                children: [
 		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel-head", children: [
 		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "\u89D2\u8272\u4E0E\u72EC\u7ACB\u5927\u8111" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: "\u6BCF\u4F4D\u89D2\u8272\u62E5\u6709\u300C\u72EC\u7ACB\u5927\u8111\u4E0E\u4E13\u5C5E\u623F\u95F4\u300D\uFF1A\u5355\u72EC\u8BB0\u4F4F\u5404\u81EA\u7684\u6A21\u578B\u4E0E\u5BF9\u8BDD\u5386\u53F2\uFF0C\u5207\u6362\u89D2\u8272\u4E0D\u4E32\u8BB0\u5FC6\u3002" })
+		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: "\u6BCF\u4F4D\u89D2\u8272\u62E5\u6709\u300C\u72EC\u7ACB\u5927\u8111\u4E0E\u4E13\u5C5E\u623F\u95F4\u300D\uFF1A\u5355\u72EC\u8BB0\u4F4F\u5404\u81EA\u7684\u6A21\u578B\u4E0E\u5BF9\u8BDD\u5386\u53F2\uFF0C\u5207\u6362\u89D2\u8272\u4E0D\u4E32\u8BB0\u5FC6\u3002" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { type: "button", className: "p5-apply-btn", disabled: safeWorkerModels.loading, onClick: () => onListModels("worker"), children: "\u5237\u65B0\u53EF\u7528\u6A21\u578B" }),
+		                    safeWorkerModels.error && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { role: "alert", children: safeWorkerModels.error })
 		                  ] }),
 		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-char-grid", children: characters.map((ch) => {
 		                    const pack = getCachedCharacterPack(ch.id);
@@ -6543,11 +6547,10 @@ window.__ModuleLoader__.load({
 		                    const roleMeta = CHARACTER_ROLE_META[ch.id];
 		                    const pillCandidates = Array.from(
 		                      /* @__PURE__ */ new Set([
-		                        "deepseek-chat",
-		                        "deepseek-reasoner",
-		                        ...pack.recommendedModels ?? []
+		                        ...safeWorkerModels.models,
+		                        ...embeddedInDsh ? [] : ["deepseek-chat", "deepseek-reasoner", ...pack.recommendedModels ?? []]
 		                      ])
-		                    ).slice(0, 4);
+		                    );
 		                    if (brainModel && !pillCandidates.includes(brainModel)) {
 		                      pillCandidates.unshift(brainModel);
 		                    }
@@ -6609,7 +6612,20 @@ window.__ModuleLoader__.load({
 		                                    children: "\u72EC\u7ACB\u5927\u8111\u4E0E\u4E13\u5C5E\u623F\u95F4\uFF1A"
 		                                  }
 		                                ),
-		                                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-model-pills", children: pillCandidates.map((m) => {
+		                                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-model-pills", children: embeddedInDsh ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		                                  "select",
+		                                  {
+		                                    className: "p5-form-input",
+		                                    "aria-label": `${shortName}\u7684\u6A21\u578B`,
+		                                    "data-testid": `char-brain-select-${ch.id}`,
+		                                    value: brainModel,
+		                                    onChange: (event) => onUpdateSettings({ characterBrains: { [ch.id]: { model: event.target.value } } }),
+		                                    children: pillCandidates.map((model) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("option", { value: model, disabled: !safeWorkerModels.models.includes(model), children: [
+		                                      model,
+		                                      safeWorkerModels.models.includes(model) ? "" : "\uFF08\u5F53\u524D\u914D\u7F6E\uFF0C\u76EE\u5F55\u4E2D\u4E0D\u53EF\u7528\uFF09"
+		                                    ] }, model))
+		                                  }
+		                                ) : pillCandidates.slice(0, 5).map((m) => {
 		                                  const isSelectedModel = brainModel === m;
 		                                  return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
 		                                    "button",
@@ -7409,7 +7425,7 @@ window.__ModuleLoader__.load({
 		                ] })
 		              ] })
 		            ] }),
-		            activeTab === "voice" && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-voice", children: [
+		            activeTab === "voice" && !embeddedInDsh && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel", "data-testid": "system-panel-voice", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel-head", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "\u4E92\u52A8\u53F0\u8BCD\u8BBE\u7F6E" }),
 		                /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: "\u914D\u7F6E\u89D2\u8272\u5728\u821E\u53F0\u4E8B\u4EF6\u4E0E\u70B9\u51FB\u4E92\u52A8\u65F6\u7684\u81EA\u7531\u53F0\u8BCD\u751F\u6210\u3002" })
@@ -7627,6 +7643,12 @@ window.__ModuleLoader__.load({
 		                        onClick: async () => {
 		                          setDirPickError(null);
 		                          try {
+		                            if (embeddedInDsh) {
+		                              if (!onPickDirectory) throw new Error("\u6587\u4EF6\u5939\u9009\u62E9\u5668\u4E0D\u53EF\u7528");
+		                              const picked = await onPickDirectory();
+		                              if (picked) setProjectDirDraft(picked);
+		                              return;
+		                            }
 		                            const electronAPI = window.electronAPI;
 		                            if (electronAPI?.pickDirectory) {
 		                              const picked = await electronAPI.pickDirectory();
@@ -7679,7 +7701,7 @@ window.__ModuleLoader__.load({
 		                            onUpdateSettings({ projectDir: trimmed });
 		                          }
 		                        },
-		                        children: "\u4FDD\u5B58"
+		                        children: embeddedInDsh ? "\u5728\u6B64\u6587\u4EF6\u5939\u65B0\u5EFA\u4F1A\u8BDD" : "\u4FDD\u5B58"
 		                      }
 		                    )
 		                  ] }),
@@ -9124,7 +9146,7 @@ window.__ModuleLoader__.load({
 		      }
 		    }
 		    if (latestUsage) {
-		      const maxTokens = latestUsage.maxTokens || 1e6;
+		      const maxTokens = latestUsage.maxTokens;
 		      let usedTokens = latestUsage.usedTokens;
 		      if (latestCompactedAfterUsage) {
 		        usedTokens = latestCompactedAfterUsage.afterTokens ?? Math.max(0, usedTokens - latestCompactedAfterUsage.freedTokens);
@@ -9132,7 +9154,7 @@ window.__ModuleLoader__.load({
 		        usedTokens = Math.max(0, usedTokens - compactionState.freedTokens);
 		      }
 		      setContextTokens({
-		        used: Math.max(0, Math.min(maxTokens, usedTokens)),
+		        used: Math.max(0, maxTokens > 0 ? Math.min(maxTokens, usedTokens) : usedTokens),
 		        max: maxTokens
 		      });
 		      return;
@@ -9311,8 +9333,12 @@ window.__ModuleLoader__.load({
 		    sourceRef.current?.commitGit?.(message);
 		  };
 		  const handleStartNewSessionWithDir = (projectDir) => {
-		    sourceRef.current?.updateSettings({ projectDir });
-		    sourceRef.current?.newSession();
+		    const source = sourceRef.current;
+		    if (source?.newSessionInDirectory) source.newSessionInDirectory(projectDir);
+		    else {
+		      source?.updateSettings({ projectDir });
+		      source?.newSession();
+		    }
 		    dispatch({ type: "TOGGLE_SYSTEM_MENU", open: false });
 		  };
 		  const selectedCard = (() => {
@@ -9526,10 +9552,11 @@ window.__ModuleLoader__.load({
 		  const contextUsageKnown = sourceMode === "demo" || state.events.some((event) => event.type === "context_usage");
 		  const usedK = Math.round(contextTokens.used / 1e3);
 		  const maxK = Math.round(contextTokens.max / 1e3);
-		  const contextPercent = Math.min(
+		  const contextCapacityKnown = contextUsageKnown && contextTokens.max > 0;
+		  const contextPercent = contextCapacityKnown ? Math.min(
 		    100,
 		    Math.max(0, Math.round(contextTokens.used / contextTokens.max * 100))
-		  );
+		  ) : 0;
 		  const touchedFiles = Array.from(
 		    new Set(
 		      state.skillCards.map(
@@ -9822,7 +9849,7 @@ window.__ModuleLoader__.load({
 		                        /* @__PURE__ */ new Set([
 		                          ...activeModel && activeModel !== "dsh/default" ? [activeModel] : [],
 		                          ...catalogList,
-		                          ...recList
+		                          ...embeddedInDsh ? [] : recList
 		                        ])
 		                      );
 		                      const q = stageModelQuery.trim().toLowerCase();
@@ -10034,13 +10061,13 @@ window.__ModuleLoader__.load({
 		                                  cy: "32",
 		                                  r: "22",
 		                                  strokeDasharray: 138.2,
-		                                  strokeDashoffset: 138.2 - 138.2 * (contextUsageKnown ? Math.max(8, Math.min(100, contextPercent)) : 0) / 100
+		                                  strokeDashoffset: 138.2 - 138.2 * (contextCapacityKnown ? Math.max(8, Math.min(100, contextPercent)) : 0) / 100
 		                                }
 		                              )
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-pct", children: contextUsageKnown ? `${contextPercent}%` : "\u2014" })
+		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-pct", children: contextCapacityKnown ? `${contextPercent}%` : "\u2014" })
 		                      ] }),
 		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-radar-info", children: [
 		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-kicker", children: "CONTEXT GAUGE" }),
@@ -10055,8 +10082,7 @@ window.__ModuleLoader__.load({
 		                                "k"
 		                              ] }),
 		                              " / ",
-		                              maxK,
-		                              "k"
+		                              contextCapacityKnown ? `${maxK}k` : "\u4E0A\u9650\u672A\u63D0\u4F9B"
 		                            ] }) : "\u7B49\u5F85\u5F15\u64CE\u7EDF\u8BA1"
 		                          }
 		                        ),
@@ -10991,6 +11017,8 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		          SystemMenuModal,
 		          {
+		            embeddedInDsh,
+		            onPickDirectory: embeddedInDsh ? () => sourceRef.current?.pickDirectory?.() ?? Promise.reject(new Error("\u8BF7\u76F4\u63A5\u586B\u5199\u6587\u4EF6\u5939\u8DEF\u5F84")) : void 0,
 		            open: state.systemMenuOpen,
 		            activeTab: state.systemMenuTab,
 		            settings: state.serverSettings,
@@ -11495,6 +11523,7 @@ window.__ModuleLoader__.load({
 		  roomsReady = null;
 		  changingRoom = false;
 		  pendingSteers = /* @__PURE__ */ new Set();
+		  typingCharsPerSec = DEFAULT_SETTINGS.performance.typingCharsPerSec;
 		  bindCallbacks(callbacks) {
 		    this.callbacks = callbacks;
 		  }
@@ -11587,7 +11616,7 @@ window.__ModuleLoader__.load({
 		        },
 		        maxLinesPerMinute: DEFAULT_SETTINGS.voice.maxLinesPerMinute
 		      },
-		      performance: { ...DEFAULT_SETTINGS.performance }
+		      performance: { ...DEFAULT_SETTINGS.performance, typingCharsPerSec: this.typingCharsPerSec }
 		    };
 		  }
 		  buildSessionInfo() {
@@ -11826,7 +11855,8 @@ window.__ModuleLoader__.load({
 		            at,
 		            type: "context_usage",
 		            usedTokens: total,
-		            maxTokens: 1e6
+		            maxTokens: 0
+		            // DSH usage does not include the model's context capacity.
 		          });
 		        }
 		      }
@@ -11871,9 +11901,9 @@ window.__ModuleLoader__.load({
 		      return out;
 		    }
 		    if (type === "compaction/summary") {
-		      const summaryText = typeof data.summary === "string" && data.summary.trim() ? data.summary.trim().slice(0, 180) : "DSH \u5DF2\u5C06\u8F83\u65E9\u5BF9\u8BDD\u51DD\u70BC\u4E3A\u6458\u8981\u5361\uFF01";
+		      const summaryText = extractContentText(data.summary).trim() || "DSH \u5DF2\u5C06\u8F83\u65E9\u5BF9\u8BDD\u51DD\u70BC\u4E3A\u6458\u8981\u5361\uFF01";
 		      const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 0);
-		      const turns = Number(data.shadowedItemCount ?? 0);
+		      const turns = Number(data.shadowedItemCount ?? data.shadowedSeqs?.length ?? 0);
 		      out.push({
 		        at,
 		        type: "context_compacted",
@@ -12243,6 +12273,35 @@ window.__ModuleLoader__.load({
 		      });
 		    }
 		  }
+		  async pickDirectory() {
+		    if (!this.ctx.uiWorkspace?.pickDirectory) throw new Error("\u5F53\u524D DSH \u65E0\u6587\u4EF6\u5939\u9009\u62E9\u5668\uFF0C\u8BF7\u76F4\u63A5\u586B\u5199\u8DEF\u5F84");
+		    return this.ctx.uiWorkspace.pickDirectory();
+		  }
+		  newSessionInDirectory(directory) {
+		    if (this.changingRoom || this.isSessionRunning()) {
+		      this.reportError(new Error("\u8BF7\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210\u540E\u518D\u66F4\u6362\u5DE5\u4F5C\u6587\u4EF6\u5939"), "new_session");
+		      return;
+		    }
+		    this.changingRoom = true;
+		    void (async () => {
+		      const cwd = directory.trim();
+		      await this.stageRequest({ op: "rooms_get", cwd });
+		      if (!this.ctx.remote?.session?.create || !this.ctx.uiWorkspace?.openSession) throw new Error("DSH \u4F1A\u8BDD\u521B\u5EFA\u63A5\u53E3\u4E0D\u53EF\u7528");
+		      const workspace = this.ctx.workspaces?.create ? await this.ctx.workspaces.create({ path: cwd }) : null;
+		      const created = this.unwrap(await this.ctx.remote.session.create({
+		        ...workspace?.workspaceId ? { workspaceId: workspace.workspaceId } : { cwd },
+		        agentPreset: this.resolveAgentPreset()
+		      }));
+		      if (!created?.sessionId) throw new Error("\u672A\u80FD\u521B\u5EFA\u65B0\u4F1A\u8BDD");
+		      await this.refreshModelCatalog(false);
+		      const model = this.resolveModelName();
+		      if (model !== "dsh/default") await this.selectModelAndEffort(model, void 0, created.sessionId);
+		      await this.stageRequest({ op: "rooms_patch", cwd, characterId: this.activeCharacterId, sessionId: created.sessionId, ...model !== "dsh/default" ? { model } : {} });
+		      this.ctx.uiWorkspace.openSession(created.sessionId);
+		    })().catch((error) => this.reportError(error, "new_session")).finally(() => {
+		      this.changingRoom = false;
+		    });
+		  }
 		  resumeSession(targetSessionId) {
 		    this.ctx.uiWorkspace?.openSession?.(targetSessionId);
 		  }
@@ -12261,16 +12320,18 @@ window.__ModuleLoader__.load({
 		      method: "POST",
 		      credentials: "same-origin",
 		      headers: { "content-type": "application/json" },
-		      body: JSON.stringify({ ...input, cwd: this.resolveCwd() })
+		      body: JSON.stringify({ cwd: this.resolveCwd(), ...input })
 		    });
-		    if (!res.ok) throw new Error(res.status === 404 ? "\u8BF7\u5347\u7EA7 DeepSeek Harness \u5E76\u91CD\u65B0\u542F\u7528\u821E\u53F0\u63D2\u4EF6\uFF0C\u4EE5\u4F7F\u7528\u89D2\u8272\u623F\u95F4\u548C\u4EE3\u7801\u53D8\u66F4\u529F\u80FD" : `\u821E\u53F0\u64CD\u4F5C\u5931\u8D25 (${res.status})`);
-		    const data = await res.json();
+		    const data = await res.json().catch(() => ({}));
+		    if (!res.ok) throw new Error(data.error || (res.status === 404 ? "\u8BF7\u5347\u7EA7 DeepSeek Harness \u5E76\u91CD\u65B0\u542F\u7528\u821E\u53F0\u63D2\u4EF6\uFF0C\u4EE5\u4F7F\u7528\u89D2\u8272\u623F\u95F4\u548C\u4EE3\u7801\u53D8\u66F4\u529F\u80FD" : `\u821E\u53F0\u64CD\u4F5C\u5931\u8D25 (${res.status})`));
 		    if (data.error) throw new Error(data.error);
 		    return data;
 		  }
 		  ensureRooms() {
 		    if (!this.roomsReady) this.roomsReady = (async () => {
 		      this.rooms = await this.stageRequest({ op: "rooms_get" });
+		      const preferences = await this.stageRequest({ op: "preferences_get" });
+		      if (Number.isFinite(preferences.typingCharsPerSec)) this.typingCharsPerSec = preferences.typingCharsPerSec;
 		      const owner = Object.entries(this.rooms).find(([, room]) => room.sessionId === this.sessionId)?.[0];
 		      if (owner) this.activeCharacterId = owner;
 		      else if (!this.rooms[this.activeCharacterId]?.sessionId) {
@@ -12293,6 +12354,7 @@ window.__ModuleLoader__.load({
 		    for (const item of entries) {
 		      const ev = item?.event;
 		      if (ev?.type === "user/message" || ev?.type === "assistant/message") {
+		        if (ev.type === "user/message" && !isHumanUserMessageEvent(ev, ev.data ?? {})) continue;
 		        const text = stripPersona(extractContentText(ev.data?.message?.content ?? ev.data?.content));
 		        if (text) context.push(`${ev.type === "user/message" ? "\u7528\u6237" : "\u4E0A\u4E00\u4F4D\u89D2\u8272"}\uFF1A${text.slice(0, 2500)}`);
 		      } else if (ev?.type === "tool/call") {
@@ -12325,7 +12387,7 @@ window.__ModuleLoader__.load({
 		      if (!this.ctx.uiWorkspace?.openSession) throw new Error("DSH \u4F1A\u8BDD\u5BFC\u822A\u6682\u4E0D\u53EF\u7528");
 		      this.rooms = await this.stageRequest({ op: "rooms_patch", characterId: this.activeCharacterId, sessionId: this.sessionId, model: this.resolveModelName() });
 		      const room = this.rooms[characterId];
-		      const model = room?.model || getCachedCharacterPack(characterId).recommendedModels?.find((m) => this.catalogModels.includes(m)) || this.defaultModelSelection?.model || this.resolveModelName();
+		      const model = room?.model || getCachedCharacterPack(characterId).recommendedModels?.find((m) => this.catalogModels.includes(m)) || (this.catalogModels.includes(this.resolveModelName()) ? this.resolveModelName() : this.catalogModels[0]) || this.resolveModelName();
 		      let target = room?.sessionId;
 		      if (!target) {
 		        if (!this.ctx.remote?.session?.create) throw new Error("DSH \u4E0D\u652F\u6301\u521B\u5EFA\u72EC\u7ACB\u89D2\u8272\u4F1A\u8BDD\uFF0C\u8BF7\u5347\u7EA7");
@@ -12369,6 +12431,13 @@ window.__ModuleLoader__.load({
 		    }).catch((error) => this.emitMessage({ type: "git_op_result", op, ok: false, message: error.message }));
 		  }
 		  updateSettings(patch) {
+		    if (patch.projectDir?.trim()) this.newSessionInDirectory(patch.projectDir);
+		    if (patch.performance?.typingCharsPerSec !== void 0) {
+		      void this.stageRequest({ op: "preferences_patch", typingCharsPerSec: patch.performance.typingCharsPerSec }).then((value) => {
+		        this.typingCharsPerSec = value.typingCharsPerSec;
+		        this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
+		      }).catch((error) => this.reportError(error, "update_settings"));
+		    }
 		    if (patch.activeCharacterId) {
 		      this.switchCharacter(patch.activeCharacterId);
 		    }
@@ -12443,7 +12512,9 @@ window.__ModuleLoader__.load({
 		      this.reportError(new Error("\u5F53\u524D\u4F1A\u8BDD\u4E0D\u652F\u6301\u6574\u7406\u8BB0\u5FC6"), "compact_session");
 		      return;
 		    }
-		    void Promise.resolve(binding.session.command("/compact")).then((value) => this.unwrap(value)).catch((error) => this.reportError(error, "compact_session"));
+		    void Promise.resolve(binding.session.command("/compact")).then((value) => {
+		      if (this.unwrap(value)?.matched === false) throw new Error("\u5F53\u524D DSH \u672A\u542F\u7528\u8BB0\u5FC6\u6574\u7406\u547D\u4EE4");
+		    }).catch((error) => this.reportError(error, "compact_session"));
 		  }
 		  testConnection(target) {
 		    this.emitMessage({
