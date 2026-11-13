@@ -444,6 +444,7 @@ window.__ModuleLoader__.load({
 		    skillCards: [],
 		    selectedToolUseId: null,
 		    pendingPermission: null,
+		    permissionQueue: [],
 		    permissionChoice: "allow",
 		    lastPermissionDecision: null,
 		    steers: [],
@@ -579,6 +580,7 @@ window.__ModuleLoader__.load({
 		        lastTurnSummary: null,
 		        hudStatus: "thinking",
 		        pendingPermission: null,
+		        permissionQueue: [],
 		        lastPermissionDecision: null,
 		        skillCards: [],
 		        steers: [],
@@ -737,29 +739,27 @@ window.__ModuleLoader__.load({
 		      };
 		    }
 		    case "permission_request": {
-		      const mappedEmotion = matchedReaction?.emotion ?? "shocked";
+		      const queue = state.permissionQueue.filter((p) => p.requestId !== event.requestId);
+		      queue.push({ requestId: event.requestId, tool: event.tool, rawName: event.rawName, summary: event.summary, detail: event.detail, at: event.at });
 		      return {
 		        ...nextStateBase,
 		        hudStatus: "acting",
-		        currentEmotion: mappedEmotion,
-		        emotionSwitchKey: state.emotionSwitchKey + 1,
-		        pendingPermission: {
-		          requestId: event.requestId,
-		          tool: event.tool,
-		          rawName: event.rawName,
-		          summary: event.summary,
-		          detail: event.detail,
-		          at: event.at
-		        },
-		        permissionChoice: "allow"
+		        permissionQueue: queue,
+		        pendingPermission: queue[0],
+		        permissionChoice: state.pendingPermission ? state.permissionChoice : "allow",
+		        currentEmotion: matchedReaction?.emotion ?? "shocked",
+		        emotionSwitchKey: state.emotionSwitchKey + 1
 		      };
 		    }
 		    case "permission_resolved": {
+		      const queue = state.permissionQueue.filter((p) => p.requestId !== event.requestId);
 		      return {
 		        ...nextStateBase,
-		        pendingPermission: null,
+		        permissionQueue: queue,
+		        pendingPermission: queue[0] ?? null,
+		        permissionChoice: state.pendingPermission?.requestId === event.requestId ? "allow" : state.permissionChoice,
 		        lastPermissionDecision: event.allowed ? "allow" : "reject",
-		        hudStatus: "thinking"
+		        hudStatus: queue.length ? "acting" : "thinking"
 		      };
 		    }
 		    case "steer_queued": {
@@ -774,6 +774,14 @@ window.__ModuleLoader__.load({
 		        steers: [...state.steers, nextSteer]
 		      };
 		    }
+		    case "steer_submitted":
+		      return { ...nextStateBase, steers: state.steers.map((s) => s.id === event.id && s.status !== "acked" ? { ...s, status: "submitted" } : s) };
+		    case "steer_failed":
+		      return {
+		        ...nextStateBase,
+		        steers: state.steers.map((s) => s.id === event.id ? { ...s, status: "failed", error: event.message } : s),
+		        lastError: { message: event.message, at: event.at }
+		      };
 		    case "steer_acked": {
 		      return {
 		        ...nextStateBase,
@@ -794,6 +802,7 @@ window.__ModuleLoader__.load({
 		        lastTurnOk: event.ok,
 		        lastTurnSummary: event.summary ?? null,
 		        pendingPermission: null,
+		        permissionQueue: [],
 		        currentEmotion: nextEmotion,
 		        emotionSwitchKey: state.currentEmotion !== nextEmotion ? state.emotionSwitchKey + 1 : state.emotionSwitchKey
 		      };
@@ -818,7 +827,8 @@ window.__ModuleLoader__.load({
 		        turnActive: false,
 		        hudStatus: "idle",
 		        idleWaitMs: 0,
-		        pendingPermission: null
+		        pendingPermission: null,
+		        permissionQueue: []
 		      };
 		    }
 		    default:
@@ -832,6 +842,7 @@ window.__ModuleLoader__.load({
 		    skillCards: [],
 		    steers: [],
 		    pendingPermission: null,
+		    permissionQueue: [],
 		    lastPermissionDecision: null,
 		    lastTurnOk: null,
 		    lastTurnSummary: null,
@@ -5705,10 +5716,11 @@ window.__ModuleLoader__.load({
 		      ] })
 		    ] }),
 		    steers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "eng-steer-bar", children: steers.map((st) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "eng-steer-item", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "eng-steer-tag", children: st.status === "queued" ? "\u5DF2\u4F20\u8FBE\uFF0C\u5F85\u63A5\u6536" : "\u5DF2\u63A5\u6536" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "eng-steer-tag", children: { queued: "\u6B63\u5728\u63D0\u4EA4", submitted: "\u5DF2\u63D0\u4EA4\uFF0C\u7B49\u5F85\u6267\u884C", acked: "\u5DF2\u8FDB\u5165\u6267\u884C\u4E0A\u4E0B\u6587", failed: "\u63D0\u4EA4\u5931\u8D25" }[st.status] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
 		        "\u63D2\u8BDD\uFF1A",
-		        st.text
+		        st.text,
+		        st.error ? `\uFF08${st.error}\uFF09` : ""
 		      ] })
 		    ] }, st.id)) }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("main", { className: "eng-timeline", "data-testid": "engineering-timeline", children: events.map((ev, idx) => {
@@ -9125,6 +9137,10 @@ window.__ModuleLoader__.load({
 		      });
 		      return;
 		    }
+		    if (sourceMode !== "demo") {
+		      setContextTokens((prev) => ({ ...prev, used: 0 }));
+		      return;
+		    }
 		    const sessionEvents = state.events.slice(sessionStartIdx);
 		    const userAndWorkerCount = sessionEvents.filter(
 		      (e) => e.type === "user_message" || e.type === "worker_text"
@@ -9155,20 +9171,9 @@ window.__ModuleLoader__.load({
 		  }, [isCompacting]);
 		  const handleTriggerCompaction = () => {
 		    if (isCompacting) return;
+		    if (state.turnActive) return;
 		    if (sourceMode === "live" && connStatus.state !== "connected") {
-		      playSfx("compaction");
-		      const freed = 64e3;
-		      setCompactionState({
-		        activeCutin: true,
-		        turnsCompacted: 8,
-		        freedTokens: freed,
-		        summaryText: "\u79BB\u7EBF\u9884\u89C8\uFF1A\u5DF2\u5C06\u5386\u53F2\u5BF9\u8BDD\u538B\u7F29\u4E3A\u6458\u8981\u5361\uFF0C\u91CA\u653E 64,000 Tokens\uFF01",
-		        compactedAt: Date.now()
-		      });
-		      setContextTokens((prev) => ({
-		        used: Math.max(0, prev.used - freed),
-		        max: prev.max
-		      }));
+		      dispatch({ type: "SERVER_MESSAGE", message: { type: "command_error", commandType: "compact_session", message: "\u5C1A\u672A\u8FDE\u63A5\u6267\u884C\u5F15\u64CE\uFF0C\u65E0\u6CD5\u6574\u7406\u8BB0\u5FC6" } });
 		      return;
 		    }
 		    setIsCompacting(true);
@@ -9250,8 +9255,7 @@ window.__ModuleLoader__.load({
 		    );
 		  };
 		  const handleSwitchCharacter = (nextCharId) => {
-		    if (!nextCharId) return;
-		    dispatch({ type: "SET_CHARACTER", characterId: nextCharId });
+		    if (!nextCharId || state.turnActive) return;
 		    sourceRef.current?.switchCharacter(nextCharId);
 		  };
 		  const handleUpdateSettings = (patch) => {
@@ -9290,19 +9294,8 @@ window.__ModuleLoader__.load({
 		    });
 		  };
 		  const handleConfirmBatonPass = (toCharacterId, instruction) => {
-		    const fromId = character.id;
+		    if (state.turnActive) return;
 		    setBatonModalOpen(false);
-		    const now = Date.now();
-		    lastBatonCutinAtRef.current = now;
-		    playSfx("switch");
-		    playSfx("allow");
-		    setBatonCutinData({
-		      key: now,
-		      fromCharacterId: fromId,
-		      toCharacterId,
-		      summary: instruction || "\u4EA4\u63A5\u5F53\u524D\u4EE3\u7801\u6539\u52A8\u4E0E\u5BF9\u8BDD\u4E0A\u4E0B\u6587\uFF0C\u7EE7\u7EED\u63A8\u8FDB\u4E0B\u4E00\u68D2\uFF01"
-		    });
-		    dispatch({ type: "SET_CHARACTER", characterId: toCharacterId });
 		    sourceRef.current?.batonPass?.(toCharacterId, instruction);
 		  };
 		  const handleRequestGitStatus = () => {
@@ -9530,6 +9523,7 @@ window.__ModuleLoader__.load({
 		  const emotionMeta = resolveEmotionLabel(character, state.currentEmotion);
 		  const latestUserMsg = [...state.events].reverse().find((ev) => ev.type === "user_message");
 		  const latestWorkerFinal = [...state.events].reverse().find((ev) => ev.type === "worker_text");
+		  const contextUsageKnown = sourceMode === "demo" || state.events.some((event) => event.type === "context_usage");
 		  const usedK = Math.round(contextTokens.used / 1e3);
 		  const maxK = Math.round(contextTokens.max / 1e3);
 		  const contextPercent = Math.min(
@@ -10040,25 +10034,22 @@ window.__ModuleLoader__.load({
 		                                  cy: "32",
 		                                  r: "22",
 		                                  strokeDasharray: 138.2,
-		                                  strokeDashoffset: 138.2 - 138.2 * Math.max(8, Math.min(100, contextPercent)) / 100
+		                                  strokeDashoffset: 138.2 - 138.2 * (contextUsageKnown ? Math.max(8, Math.min(100, contextPercent)) : 0) / 100
 		                                }
 		                              )
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-radar-pct", children: [
-		                          contextPercent,
-		                          "%"
-		                        ] })
+		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-pct", children: contextUsageKnown ? `${contextPercent}%` : "\u2014" })
 		                      ] }),
 		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-radar-info", children: [
 		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-kicker", children: "CONTEXT GAUGE" }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		                          "span",
 		                          {
 		                            className: "p5-radar-tokens",
 		                            "data-testid": "context-meter-value",
-		                            children: [
+		                            children: contextUsageKnown ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
 		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("strong", { children: [
 		                                usedK,
 		                                "k"
@@ -10066,7 +10057,7 @@ window.__ModuleLoader__.load({
 		                              " / ",
 		                              maxK,
 		                              "k"
-		                            ]
+		                            ] }) : "\u7B49\u5F85\u5F15\u64CE\u7EDF\u8BA1"
 		                          }
 		                        ),
 		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
@@ -10076,7 +10067,7 @@ window.__ModuleLoader__.load({
 		                            className: `p5-compaction-trigger-btn ${isCompacting ? "is-compacting" : ""}`,
 		                            "data-testid": "trigger-compaction-btn",
 		                            onClick: handleTriggerCompaction,
-		                            disabled: isCompacting,
+		                            disabled: isCompacting || state.turnActive,
 		                            title: "\u89E6\u53D1\u5386\u53F2\u4E0A\u4E0B\u6587\u8BB0\u5FC6\u84B8\u998F\u538B\u7F29",
 		                            children: isCompacting ? "\u2726 \u51DD\u70BC\u4E2D\u2026" : "\u2726 \u8BB0\u5FC6\u51DD\u70BC"
 		                          }
@@ -10093,6 +10084,7 @@ window.__ModuleLoader__.load({
 		                    {
 		                      type: "button",
 		                      "data-testid": `party-member-${ch.id}`,
+		                      disabled: state.turnActive,
 		                      className: `p5-medal-item ${isActive ? "is-active" : ""}`,
 		                      style: {
 		                        "--member-color": ch.themeColor
@@ -10595,11 +10587,7 @@ window.__ModuleLoader__.load({
 		                        children: [
 		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-badge", children: "\u2726 MEMORY DISTILLED // \u8BB0\u5FC6\u6458\u8981\u5361" }),
 		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-text", children: compactionState.summaryText }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-compaction-node-freed", children: [
-		                            "\u2212",
-		                            Math.round(compactionState.freedTokens / 1e3),
-		                            "k Tokens"
-		                          ] })
+		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-freed", children: compactionState.freedTokens > 0 ? `\u2212${Math.round(compactionState.freedTokens / 1e3)}k Tokens` : "\u5F15\u64CE\u672A\u63D0\u4F9B\u8282\u7701\u6570\u91CF" })
 		                        ]
 		                      }
 		                    ),
@@ -10945,13 +10933,7 @@ window.__ModuleLoader__.load({
 		            children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-compaction-blade", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-kicker", children: "\u2726 MEMORY DISTILLATION // \u8BB0\u5FC6\u51DD\u70BC\u6280\u80FD\u53D1\u52A8\uFF01" }),
 		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-headline", children: compactionState.summaryText }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-compaction-sub", children: [
-		                "DSH \u4E0A\u4E0B\u6587\u84B8\u998F\u5B8C\u6210 \xB7 \u8B66\u6212\u69FD\u5DF2\u56DE\u843D\u81F3 ",
-		                usedK,
-		                "k / ",
-		                maxK,
-		                "k Tokens"
-		              ] })
+		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-sub", children: compactionState.freedTokens > 0 ? `\u4E0A\u4E0B\u6587\u6574\u7406\u5B8C\u6210 \xB7 \u91CA\u653E\u7EA6 ${Math.round(compactionState.freedTokens / 1e3)}k Tokens` : "\u4E0A\u4E0B\u6587\u6574\u7406\u5B8C\u6210 \xB7 \u672A\u63D0\u4F9B\u7CBE\u786E\u7528\u91CF\uFF0C\u5386\u53F2\u56DE\u770B\u5DF2\u4FDD\u7559" })
 		            ] })
 		          }
 		        ),
@@ -11509,6 +11491,10 @@ window.__ModuleLoader__.load({
 		  liveStreamingText = "";
 		  lastEmittedLiveLen = 0;
 		  approvalSeq = 0;
+		  rooms = {};
+		  roomsReady = null;
+		  changingRoom = false;
+		  pendingSteers = /* @__PURE__ */ new Set();
 		  bindCallbacks(callbacks) {
 		    this.callbacks = callbacks;
 		  }
@@ -11586,13 +11572,11 @@ window.__ModuleLoader__.load({
 		        }
 		      },
 		      characterBrains: Object.fromEntries(
-		        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [
-		          cid,
-		          {
-		            rolePrompt: brain.rolePrompt,
-		            ...cid === this.activeCharacterId ? { model } : {}
-		          }
-		        ])
+		        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [cid, {
+		          rolePrompt: brain.rolePrompt,
+		          ...this.rooms[cid]?.model ? { model: this.rooms[cid].model } : cid === this.activeCharacterId ? { model } : {},
+		          activeSessionId: this.rooms[cid]?.sessionId ?? null
+		        }])
 		      ),
 		      voice: {
 		        enabled: false,
@@ -11612,7 +11596,8 @@ window.__ModuleLoader__.load({
 		      adapter: "dsh",
 		      model: this.resolveModelName(),
 		      cwd: this.resolveCwd(),
-		      turnActive: this.isSessionRunning()
+		      turnActive: this.isSessionRunning(),
+		      characterId: this.activeCharacterId
 		    };
 		  }
 		  maybeCharacterReaction(ev) {
@@ -11770,6 +11755,8 @@ window.__ModuleLoader__.load({
 		      if (!isHumanUserMessageEvent(rawEv, data)) {
 		        return out;
 		      }
+		      const requestId = data.source?.rpcId ?? data.message?.source?.rpcId;
+		      if (typeof requestId === "string" && this.pendingSteers.delete(requestId)) out.push({ type: "steer_acked", id: requestId, at });
 		      const content = data.message?.content ?? data.content;
 		      const text = stripPersona(extractContentText(content));
 		      if (text) {
@@ -11795,13 +11782,14 @@ window.__ModuleLoader__.load({
 		      this.lastEmittedLiveLen = 0;
 		      const content = data.message?.content ?? data.content ?? [];
 		      const text = extractContentText(content);
-		      if (text && !hasToolCallBlock(content)) {
-		        this.replyShownInTurn = true;
+		      if (text) {
+		        const final = !hasToolCallBlock(content);
+		        if (final) this.replyShownInTurn = true;
 		        out.push({
 		          at,
 		          type: "worker_text",
 		          text,
-		          final: true
+		          final
 		        });
 		      }
 		      if (Array.isArray(content)) {
@@ -11884,13 +11872,13 @@ window.__ModuleLoader__.load({
 		    }
 		    if (type === "compaction/summary") {
 		      const summaryText = typeof data.summary === "string" && data.summary.trim() ? data.summary.trim().slice(0, 180) : "DSH \u5DF2\u5C06\u8F83\u65E9\u5BF9\u8BDD\u51DD\u70BC\u4E3A\u6458\u8981\u5361\uFF01";
-		      const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 8e4);
-		      const turns = Number(data.shadowedItemCount ?? 8);
+		      const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 0);
+		      const turns = Number(data.shadowedItemCount ?? 0);
 		      out.push({
 		        at,
 		        type: "context_compacted",
 		        turnsCompacted: turns,
-		        freedTokens: freed > 0 ? freed : 8e4,
+		        freedTokens: Number.isFinite(freed) && freed > 0 ? freed : 0,
 		        summary: summaryText
 		      });
 		      return out;
@@ -12047,6 +12035,7 @@ window.__ModuleLoader__.load({
 		      attempt: 0,
 		      hasEverConnected: true
 		    });
+		    void this.ensureRooms().catch((error) => this.reportError(error, "update_settings"));
 		    void this.refreshModelCatalog(false);
 		    void preloadCharacterPacks().then(() => {
 		      if (this.initialized) {
@@ -12096,14 +12085,6 @@ window.__ModuleLoader__.load({
 		        }
 		      })
 		    );
-		    this.disposers.push(
-		      subscribeStoredCharacterId((nextId) => {
-		        if (nextId !== this.activeCharacterId) {
-		          this.activeCharacterId = nextId;
-		          this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		        }
-		      })
-		    );
 		  }
 		  retryNow() {
 		    this.handleWindowUpdate();
@@ -12126,6 +12107,10 @@ window.__ModuleLoader__.load({
 		    this.sessionListeners.clear();
 		  }
 		  send(text, images) {
+		    if (this.changingRoom) {
+		      this.reportError(new Error("\u89D2\u8272\u6B63\u5728\u5207\u6362\uFF0C\u8BF7\u7A0D\u540E\u53D1\u9001"), "send");
+		      return;
+		    }
 		    const hasImages = !!images && images.length > 0;
 		    const trimmed = text.trim() || (hasImages ? "\u8BF7\u770B\u8FD9\u5F20\u56FE\u3002" : "");
 		    if (!trimmed) return;
@@ -12162,32 +12147,24 @@ window.__ModuleLoader__.load({
 		    });
 		  }
 		  steer(text, images) {
-		    const hasImages = !!images && images.length > 0;
-		    const trimmed = text.trim() || (hasImages ? "\u8BF7\u770B\u8FD9\u5F20\u56FE\u3002" : "");
+		    const trimmed = text.trim() || (images?.length ? "\u8BF7\u770B\u8FD9\u5F20\u56FE\u3002" : "");
 		    if (!trimmed) return;
-		    const binding = this.ctx.sessions?.binding?.(this.sessionId);
-		    const session = binding?.session;
-		    if (!session) return;
-		    const sub = session.beginSubmission?.({
-		      mode: "steer",
-		      text: trimmed,
-		      attachments: echoAttachments(images)
-		    });
-		    this.emitMessage({
-		      type: "event",
-		      event: {
-		        at: Date.now(),
-		        type: "steer_queued",
-		        id: String(sub?.requestId ?? `steer_${Date.now()}`),
-		        text: trimmed
-		      }
-		    });
-		    void session.prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), "steer", void 0, sub?.requestId).then((res) => {
-		      if (res && res.ok === false) {
-		        sub?.abandon?.();
-		      }
-		    }).catch(() => {
+		    const session = this.ctx.sessions?.binding?.(this.sessionId)?.session;
+		    if (!session) {
+		      this.reportError(new Error("\u5C1A\u672A\u5EFA\u7ACB\u4F1A\u8BDD"), "steer");
+		      return;
+		    }
+		    const sub = session.beginSubmission?.({ mode: "steer", text: trimmed, attachments: echoAttachments(images) });
+		    const id = String(sub?.requestId ?? crypto.randomUUID());
+		    this.pendingSteers.add(id);
+		    this.emitMessage({ type: "event", event: { at: Date.now(), type: "steer_queued", id, text: trimmed } });
+		    void session.prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), "steer", void 0, id).then((res) => {
+		      this.unwrap(res);
+		      if (this.pendingSteers.has(id)) this.emitMessage({ type: "event", event: { at: Date.now(), type: "steer_submitted", id } });
+		    }).catch((error) => {
 		      sub?.abandon?.();
+		      this.pendingSteers.delete(id);
+		      this.emitMessage({ type: "event", event: { at: Date.now(), type: "steer_failed", id, message: error instanceof Error ? error.message : "\u63D2\u8BDD\u63D0\u4EA4\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5" } });
 		    });
 		  }
 		  stop() {
@@ -12232,8 +12209,7 @@ window.__ModuleLoader__.load({
 		    const sessions = this.buildSessionSummaries();
 		    const feedState = {
 		      sessions,
-		      loading: false,
-		      loaded: true
+		      status: "ready"
 		    };
 		    for (const fn of this.sessionListeners) {
 		      fn(feedState);
@@ -12248,8 +12224,7 @@ window.__ModuleLoader__.load({
 		    this.sessionListeners.add(listener);
 		    listener({
 		      sessions: this.buildSessionSummaries(),
-		      loading: false,
-		      loaded: true
+		      status: "ready"
 		    });
 		    return () => {
 		      this.sessionListeners.delete(listener);
@@ -12274,73 +12249,124 @@ window.__ModuleLoader__.load({
 		  async reloadCatalogAndBroadcast() {
 		    await this.refreshModelCatalog(true);
 		  }
-		  batonPass(toCharacterId, instruction) {
-		    const fromCharacterId = this.activeCharacterId;
-		    const fromPack = getCachedCharacterPack(fromCharacterId);
-		    const toPack = getCachedCharacterPack(toCharacterId);
-		    const fromShort = fromPack.name.split("\uFF08")[0];
-		    const toShort = toPack.name.split("\uFF08")[0];
-		    this.activeCharacterId = toCharacterId;
-		    setStoredCharacterId(toCharacterId);
-		    const cwd = this.resolveCwd();
-		    const touchedFiles = /* @__PURE__ */ new Set();
-		    const entries = this.ctx.sessions?.binding?.(this.sessionId)?.eventSource?.getSnapshot?.()?.entries ?? [];
-		    for (const item of entries) {
-		      if (item?.type === "event" && item.event?.type === "tool/call") {
-		        const d = item.event.data ?? {};
-		        const args = parseArgsObject(d.args ?? d.input ?? d.arguments);
-		        const info = summarizeToolCall(String(d.toolName ?? d.name ?? "tool"), args, cwd);
-		        if (info.file) touchedFiles.add(info.file);
-		      }
-		    }
-		    const cleanInst = (instruction ?? "").trim();
-		    const summaryText = `${fromShort} \u2794 ${toShort}\uFF1A${cleanInst || "\u63A5\u529B\u63A8\u8FDB\u5F53\u524D\u4EFB\u52A1\u4E0E\u4EE3\u7801\u5BA1\u67E5"}`;
-		    this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		    this.emitStageEventWithReaction({
-		      at: Date.now(),
-		      type: "baton_pass",
-		      fromCharacterId,
-		      toCharacterId,
-		      summary: summaryText
+		  unwrap(value) {
+		    if (value?.ok === false) throw new Error(String(value.error?.message ?? "DSH \u62D2\u7EDD\u4E86\u8BF7\u6C42"));
+		    return value?.value ?? value;
+		  }
+		  reportError(error, commandType) {
+		    this.emitMessage({ type: "command_error", commandType, message: error instanceof Error ? error.message : "\u64CD\u4F5C\u5931\u8D25" });
+		  }
+		  async stageRequest(input) {
+		    const res = await fetch("/api/bigfish-stage", {
+		      method: "POST",
+		      credentials: "same-origin",
+		      headers: { "content-type": "application/json" },
+		      body: JSON.stringify({ ...input, cwd: this.resolveCwd() })
 		    });
-		    const filesHint = touchedFiles.size > 0 ? `
-		\u524D\u5E8F\u6B65\u9AA4\u6D89\u53CA\u6587\u4EF6\uFF1A${Array.from(touchedFiles).slice(-8).join(", ")}` : "";
-		    const handoffPrompt = [
-		      `\u3010\u89D2\u8272\u6362\u624B\u63A5\u529B \xB7 Agent Relay\u3011\u4E0A\u4E00\u68D2\u961F\u53CB\u300C${fromShort}\u300D\u5DF2\u5C06\u63A5\u529B\u68D2\u4EA4\u7ED9\u4F60\uFF08${toShort}\uFF09\u3002${filesHint}`,
-		      `\u672C\u68D2\u4EA4\u63A5\u6307\u4EE4\uFF1A${cleanInst || "\u8BF7\u57FA\u4E8E\u4E0A\u65B9\u5BF9\u8BDD\u4E0E\u4EE3\u7801\u6539\u52A8\u4E0A\u4E0B\u6587\uFF0C\u590D\u6838\u4E0A\u4E00\u68D2\u7684\u7ED3\u8BBA\uFF0C\u6307\u51FA\u6F5C\u5728\u95EE\u9898\u6216\u7EE7\u7EED\u63A8\u8FDB\u4E0B\u4E00\u6B65\u5B9E\u73B0\u3002"}`
-		    ].join("\n");
-		    this.send(handoffPrompt);
+		    if (!res.ok) throw new Error(res.status === 404 ? "\u8BF7\u5347\u7EA7 DeepSeek Harness \u5E76\u91CD\u65B0\u542F\u7528\u821E\u53F0\u63D2\u4EF6\uFF0C\u4EE5\u4F7F\u7528\u89D2\u8272\u623F\u95F4\u548C\u4EE3\u7801\u53D8\u66F4\u529F\u80FD" : `\u821E\u53F0\u64CD\u4F5C\u5931\u8D25 (${res.status})`);
+		    const data = await res.json();
+		    if (data.error) throw new Error(data.error);
+		    return data;
+		  }
+		  ensureRooms() {
+		    if (!this.roomsReady) this.roomsReady = (async () => {
+		      this.rooms = await this.stageRequest({ op: "rooms_get" });
+		      const owner = Object.entries(this.rooms).find(([, room]) => room.sessionId === this.sessionId)?.[0];
+		      if (owner) this.activeCharacterId = owner;
+		      else if (!this.rooms[this.activeCharacterId]?.sessionId) {
+		        this.rooms = await this.stageRequest({ op: "rooms_patch", characterId: this.activeCharacterId, sessionId: this.sessionId, ...this.resolveModelName() !== "dsh/default" ? { model: this.resolveModelName() } : {} });
+		      }
+		      this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
+		      this.emitMessage({ type: "session", session: this.buildSessionInfo() });
+		    })().catch((error) => {
+		      this.roomsReady = null;
+		      throw error;
+		    });
+		    return this.roomsReady;
 		  }
 		  switchCharacter(characterId) {
-		    this.activeCharacterId = characterId;
-		    setStoredCharacterId(characterId);
-		    const pack = getCachedCharacterPack(characterId);
-		    const picked = pickReactionForEvent(
-		      pack,
-		      {
-		        at: Date.now(),
-		        type: "session_started",
-		        sessionId: this.sessionId,
-		        model: this.resolveModelName(),
-		        cwd: this.resolveCwd()
-		      },
-		      this.reactionSeed++
-		    );
-		    this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		    if (picked) {
-		      this.emitMessage({
-		        type: "event",
-		        event: {
-		          at: Date.now(),
-		          type: "character_line",
-		          characterId,
-		          emotion: "happy",
-		          text: picked.text,
-		          source: "preset",
-		          lineId: `switch_${Date.now()}_${this.reactionSeed}`
-		        }
-		      });
+		    void this.changeRoom(characterId);
+		  }
+		  batonPass(toCharacterId, instruction) {
+		    const entries = this.ctx.sessions?.binding?.(this.sessionId)?.eventSource?.getSnapshot?.()?.entries ?? [];
+		    const context = [];
+		    for (const item of entries) {
+		      const ev = item?.event;
+		      if (ev?.type === "user/message" || ev?.type === "assistant/message") {
+		        const text = stripPersona(extractContentText(ev.data?.message?.content ?? ev.data?.content));
+		        if (text) context.push(`${ev.type === "user/message" ? "\u7528\u6237" : "\u4E0A\u4E00\u4F4D\u89D2\u8272"}\uFF1A${text.slice(0, 2500)}`);
+		      } else if (ev?.type === "tool/call") {
+		        const d = ev.data ?? {};
+		        const info = summarizeToolCall(String(d.toolName ?? d.name ?? "tool"), parseArgsObject(d.args ?? d.input ?? d.arguments), this.resolveCwd());
+		        if (info.file) context.push(`\u64CD\u4F5C\u6587\u4EF6\uFF1A${info.file}`);
+		      }
 		    }
+		    const handoff = `\u3010\u89D2\u8272\u6362\u624B\u4EA4\u63A5\u3011\u4E0A\u4E00\u4F4D\uFF1A${getCachedCharacterPack(this.activeCharacterId).name}
+		${context.slice(-12).join("\n")}
+		\u672C\u8F6E\u4EFB\u52A1\uFF1A${instruction?.trim() || "\u590D\u6838\u5DF2\u6709\u6539\u52A8\u548C\u7ED3\u8BBA\uFF0C\u7EE7\u7EED\u5B8C\u6210\u4EFB\u52A1\u3002"}`;
+		    void this.changeRoom(toCharacterId, handoff);
+		  }
+		  async changeRoom(characterId, handoff) {
+		    const command = handoff ? "baton_pass" : "switch_character";
+		    if (this.changingRoom || this.isSessionRunning()) {
+		      this.reportError(new Error("\u8BF7\u7B49\u5F85\u672C\u8F6E\u5B8C\u6210\u6216\u5148\u558A\u505C\uFF0C\u518D\u5207\u6362\u89D2\u8272"), command);
+		      return;
+		    }
+		    if (!KNOWN_CHARACTER_IDS.includes(characterId)) {
+		      this.reportError(new Error("\u89D2\u8272\u4E0D\u5B58\u5728"), command);
+		      return;
+		    }
+		    if (characterId === this.activeCharacterId) return;
+		    this.changingRoom = true;
+		    try {
+		      await this.ensureRooms();
+		      await this.refreshModelCatalog(false);
+		      if (this.isSessionRunning()) throw new Error("\u4EFB\u52A1\u5DF2\u5F00\u59CB\uFF0C\u8BF7\u5148\u558A\u505C");
+		      if (!this.ctx.uiWorkspace?.openSession) throw new Error("DSH \u4F1A\u8BDD\u5BFC\u822A\u6682\u4E0D\u53EF\u7528");
+		      this.rooms = await this.stageRequest({ op: "rooms_patch", characterId: this.activeCharacterId, sessionId: this.sessionId, model: this.resolveModelName() });
+		      const room = this.rooms[characterId];
+		      const model = room?.model || getCachedCharacterPack(characterId).recommendedModels?.find((m) => this.catalogModels.includes(m)) || this.defaultModelSelection?.model || this.resolveModelName();
+		      let target = room?.sessionId;
+		      if (!target) {
+		        if (!this.ctx.remote?.session?.create) throw new Error("DSH \u4E0D\u652F\u6301\u521B\u5EFA\u72EC\u7ACB\u89D2\u8272\u4F1A\u8BDD\uFF0C\u8BF7\u5347\u7EA7");
+		        target = this.unwrap(await this.ctx.remote.session.create({ cwd: this.resolveCwd(), agentPreset: this.resolveAgentPreset() }))?.sessionId;
+		        if (!target) throw new Error("\u672A\u80FD\u521B\u5EFA\u89D2\u8272\u4F1A\u8BDD");
+		      }
+		      if (this.ctx.sessions?.binding?.(target)?.session?.getSnapshot?.()?.running || this.ctx.sessions?.list?.getSnapshot?.()?.byId?.[target]?.running) throw new Error("\u76EE\u6807\u89D2\u8272\u6B63\u5728\u6267\u884C\u53E6\u4E00\u9879\u4EFB\u52A1");
+		      await this.selectModelAndEffort(model, void 0, target);
+		      this.rooms = await this.stageRequest({ op: "rooms_patch", characterId, sessionId: target, model });
+		      if (handoff) {
+		        if (!this.ctx.remote?.session?.prompt) throw new Error("DSH \u63A5\u529B\u53D1\u9001\u63A5\u53E3\u4E0D\u53EF\u7528");
+		        this.unwrap(await this.ctx.remote.session.prompt({ sessionId: target, requestId: crypto.randomUUID(), mode: "queue", content: buildPromptParts(buildPersonaPreamble(characterId) + handoff, void 0) }));
+		      }
+		      const fromCharacterId = this.activeCharacterId;
+		      setStoredCharacterId(characterId);
+		      if (handoff) this.emitMessage({ type: "event", event: { at: Date.now(), type: "baton_pass", fromCharacterId, toCharacterId: characterId, summary: "\u5DF2\u5207\u6362\u5230\u76EE\u6807\u89D2\u8272\u7684\u6A21\u578B\u548C\u4F1A\u8BDD\u5E76\u63D0\u4EA4\u4EA4\u63A5\u4EFB\u52A1" } });
+		      this.ctx.uiWorkspace.openSession(target);
+		    } catch (error) {
+		      this.reportError(error, command);
+		    } finally {
+		      this.changingRoom = false;
+		    }
+		  }
+		  requestGitStatus() {
+		    void this.stageRequest({ op: "git_status" }).then((data) => this.emitMessage({ type: "git_status_result", ...data })).catch((error) => this.emitMessage({ type: "git_status_result", isRepo: false, files: [], diff: "", error: error.message }));
+		  }
+		  revertGitFile(path) {
+		    this.gitOperation("revert", { op: "git_revert", path });
+		  }
+		  commitGit(message) {
+		    this.gitOperation("commit", { op: "git_commit", message });
+		  }
+		  gitOperation(op, input) {
+		    if (this.isSessionRunning() || this.changingRoom) {
+		      this.emitMessage({ type: "git_op_result", op, ok: false, message: "\u8BF7\u5148\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210\uFF0C\u907F\u514D\u540C\u65F6\u4FEE\u6539\u6587\u4EF6" });
+		      return;
+		    }
+		    void this.stageRequest(input).then((data) => {
+		      this.emitMessage({ type: "git_op_result", op, ...data });
+		      this.requestGitStatus();
+		    }).catch((error) => this.emitMessage({ type: "git_op_result", op, ok: false, message: error.message }));
 		  }
 		  updateSettings(patch) {
 		    if (patch.activeCharacterId) {
@@ -12362,40 +12388,38 @@ window.__ModuleLoader__.load({
 		      }
 		      this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
 		    }
-		    const brainModel = patch.characterBrains ? Object.values(patch.characterBrains).find((b) => typeof b?.model === "string" && b.model.trim())?.model : void 0;
-		    const requestedModel = patch.worker?.model ?? brainModel;
-		    const requestedEffort = patch.worker?.reasoningEffort;
-		    if (typeof requestedEffort === "string" && !requestedModel) {
-		      this.selectModelAndEffort(this.resolveModelName(), requestedEffort);
-		      return;
-		    }
-		    if (typeof requestedModel === "string" && requestedModel.trim()) {
-		      const model = requestedModel.trim();
-		      const supported = reasoningBridge.efforts(model).map((e) => e.id);
-		      const keep = currentReasoningEffort && supported.includes(currentReasoningEffort) ? currentReasoningEffort : void 0;
-		      this.selectModelAndEffort(model, requestedEffort ?? keep);
-		      return;
+		    void this.updateModelSettings(patch).catch((error) => this.reportError(error, "update_settings"));
+		  }
+		  async updateModelSettings(patch) {
+		    if (!patch.characterBrains && !patch.worker?.model && !patch.worker?.reasoningEffort) return;
+		    if (this.changingRoom || this.isSessionRunning()) throw new Error("\u8BF7\u7B49\u5F85\u672C\u8F6E\u5B8C\u6210\u540E\u518D\u4FEE\u6539\u6A21\u578B");
+		    this.changingRoom = true;
+		    try {
+		      await this.ensureRooms();
+		      if (this.isSessionRunning()) throw new Error("\u4EFB\u52A1\u5DF2\u5F00\u59CB\uFF0C\u8BF7\u5148\u558A\u505C");
+		      for (const [characterId, brain] of Object.entries(patch.characterBrains ?? {})) {
+		        if (!brain?.model?.trim()) continue;
+		        if (characterId === this.activeCharacterId) await this.selectModelAndEffort(brain.model.trim());
+		        this.rooms = await this.stageRequest({ op: "rooms_patch", characterId, model: brain.model.trim() });
+		      }
+		      if (patch.worker?.model || patch.worker?.reasoningEffort) {
+		        const model = patch.worker.model?.trim() || this.resolveModelName();
+		        await this.selectModelAndEffort(model, patch.worker.reasoningEffort);
+		        this.rooms = await this.stageRequest({ op: "rooms_patch", characterId: this.activeCharacterId, model });
+		      }
+		      this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
+		      this.emitMessage({ type: "session", session: this.buildSessionInfo() });
+		    } finally {
+		      this.changingRoom = false;
 		    }
 		  }
-		  selectModelAndEffort(model, effort) {
-		    {
-		      const provider = this.modelProviderMap.get(model) ?? this.defaultModelSelection?.provider ?? "deepseek-account";
-		      if (this.ctx.remote?.session?.selectModel) {
-		        void this.ctx.remote.session.selectModel({
-		          sessionId: this.sessionId,
-		          provider,
-		          model,
-		          ...effort ? { reasoningEffort: effort } : {}
-		        }).then(() => {
-		          if (effort) {
-		            currentReasoningEffort = effort;
-		            notifyReasoning();
-		          }
-		          this.emitMessage({ type: "session", session: this.buildSessionInfo() });
-		          this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		        }).catch(() => {
-		        });
-		      }
+		  async selectModelAndEffort(model, effort, sessionId = this.sessionId) {
+		    const provider = this.modelProviderMap.get(model) ?? this.defaultModelSelection?.provider ?? "deepseek-account";
+		    if (!this.ctx.remote?.session?.selectModel) throw new Error("DSH \u6A21\u578B\u5207\u6362\u63A5\u53E3\u4E0D\u53EF\u7528");
+		    this.unwrap(await this.ctx.remote.session.selectModel({ sessionId, provider, model, ...effort ? { reasoningEffort: effort } : {} }));
+		    if (effort && sessionId === this.sessionId) {
+		      currentReasoningEffort = effort;
+		      notifyReasoning();
 		    }
 		  }
 		  listModels(target) {
@@ -12411,7 +12435,15 @@ window.__ModuleLoader__.load({
 		  }
 		  compactSession() {
 		    const binding = this.ctx.sessions?.binding?.(this.sessionId);
-		    void binding?.session?.command?.("/compact");
+		    if (this.changingRoom || this.isSessionRunning()) {
+		      this.reportError(new Error("\u8BF7\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210\u540E\u518D\u6574\u7406\u8BB0\u5FC6"), "compact_session");
+		      return;
+		    }
+		    if (!binding?.session?.command) {
+		      this.reportError(new Error("\u5F53\u524D\u4F1A\u8BDD\u4E0D\u652F\u6301\u6574\u7406\u8BB0\u5FC6"), "compact_session");
+		      return;
+		    }
+		    void Promise.resolve(binding.session.command("/compact")).then((value) => this.unwrap(value)).catch((error) => this.reportError(error, "compact_session"));
 		  }
 		  testConnection(target) {
 		    this.emitMessage({

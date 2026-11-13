@@ -87,9 +87,9 @@ export const EngineeringView: React.FC<EngineeringViewProps> = ({
           {steers.map((st) => (
             <div key={st.id} className="eng-steer-item">
               <span className="eng-steer-tag">
-                {st.status === 'queued' ? '已传达，待接收' : '已接收'}
+                {{ queued: '正在提交', submitted: '已提交，等待执行', acked: '已进入执行上下文', failed: '提交失败' }[st.status]}
               </span>
-              <span>插话：{st.text}</span>
+              <span>插话：{st.text}{st.error ? `（${st.error}）` : ''}</span>
             </div>
           ))}
         </div>

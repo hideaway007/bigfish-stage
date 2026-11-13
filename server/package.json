@@ -10,6 +10,6 @@
     "test": "tsx --test test/*.test.ts",
     "test:e2e": "tsx test/e2e-client.ts"
   },
-  "dependencies": { "ws": "^8.18.0" },
-  "devDependencies": { "@types/node": "^22.0.0", "@types/ws": "^8.5.0", "tsx": "^4.20.0", "typescript": "^5.9.0" }
+  "dependencies": { "tsx": "^4.20.0", "ws": "^8.18.0" },
+  "devDependencies": { "@types/node": "^22.0.0", "@types/ws": "^8.5.0", "typescript": "^5.9.0" }
 }

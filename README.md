@@ -71,7 +71,20 @@
 
 ## 一仓多态：4 种运行与交付方式
 
-同一个仓库同时支持 **DSH 插件、独立桌面应用、本地 Web 服务、纯静态演示** 四种模式：
+同一个仓库同时支持 **DSH 插件、Electron 桌面外壳、内置本地 Web 服务、纯静态剧本演示** 四种模式。不同模式的底层内核与能力边界如下：
+
+| 运行模式 | 执行内核与前置要求 | 支持能力范围 | 模式边界说明 |
+| :--- | :--- | :--- | :--- |
+| **1. DSH 插件模式**<br/>（`dsh plugin add` / `npm run dsh`） | 本机已安装 `dsh` CLI 及对应模型凭证 | 全站红黑皮肤 + 左侧会话档案栏、角色立绘/Live2D 差分、真实文件读写技能卡、原生权限审批、运行中插话、上下文压缩、角色换手接力、多会话切换 | 通过 DSH 的登录保护接口提供 Git 变更查看、单文件撤回和提交；角色按项目保存各自模型与会话 |
+| **2. Electron 桌面端**<br/>（`npm run app` / 安装包） | 本机已安装 `dsh` CLI（自动探测 `~/.local/bin`、`nvm`、`fnm`、Homebrew，或通过 `DSH_BIN` 指定） | 与 **DSH 插件模式** 完全一致，另含独立桌面窗口（macOS 红绿灯避让）与系统原生目录选择框 | 桌面安装包为轻量外壳，**不内置 `dsh` 二进制或模型 API Key** |
+| **3. 内置 `server/` Web 模式**<br/>（`npm start` / `npm run dev:server`） | Node.js 22+；完整工程读写需本机已装 `dsh` 或 `codex` CLI（纯对话可用 OpenAI 兼容接口） | 舞台立绘与台词演出、三适配器切换（DSH / Codex / 直连对话）、独立台词模型配置、**内置 Git Diff 查看 / 单文件撤回 / 一键提交抽屉** | 不包含 DSH 原生插件管理与定时任务宿主壳层；直连对话适配器不具备本地文件与终端执行能力 |
+| **4. 纯前端离线 Demo**<br/>（`?demo=1`） | 仅需浏览器（开发期需 Node.js 启动静态页），零 CLI / 零 API Key | 预置剧本自动回放、立绘/Live2D 交互、触摸反馈、模拟权限决断、Backlog 回看、工程视图切换 | **纯前端离线演示**，不读写本地文件、不执行真实命令、不调用真实模型 |
+
+角色模型需在设置中选择本机可用的模型。没有配置专属模型时，会优先使用可用的角色推荐模型，否则使用宿主默认模型；角色名称本身不代表已经接入该厂商。任务进行中需先等待完成或喊停，再换角色、模型或项目。
+
+记忆整理不会删除回看记录。DSH 使用原生 `/compact`；独立 Web 的直连对话模式将旧对话摘录折叠为本地摘要；当前 Codex CLI 适配器不支持手动整理，会明确提示。引擎没有返回统计时，界面显示等待统计，不推算释放数量。
+
+本次已在 DSH `0.2.2-rc.1` 验证全新配置启动、受保护接口和静态资源。旧版资源入口仍保留兼容；若提示角色房间或代码变更接口不可用，请升级 DSH 并重新启用插件。
 
 ### 方式一：作为 DeepSeek Harness 插件安装（推荐）
 直接在 DeepSeek Harness 插件页添加 `https://github.com/hideaway007/bigfish-stage`，或通过命令行安装到指定 Profile：
@@ -81,7 +94,7 @@ dsh plugin --profile web add https://github.com/hideaway007/bigfish-stage
 ```
 
 ### 方式二：作为 Electron 独立桌面客户端运行 / 打包
-前提：本机已安装 Node.js（建议 v22+）与 `dsh` CLI。
+前提：本机已安装 Node.js（建议 v22+）与 `dsh` CLI（若 `dsh` 安装在非标准位置，可设置环境变量 `DSH_BIN=/path/to/dsh`）。
 
 ```bash
 npm install
@@ -91,27 +104,37 @@ npm install
 npm run app
 ```
 
-如需构建 macOS `.dmg` 安装包：
+如需构建 macOS 桌面应用目录或 `.dmg` 安装包（产物输出至 `output/`，采用 `asar: false` 真实磁盘目录以便外部 `dsh` 直接加载插件与静态资源）：
 
 ```bash
+npm run dist:mac
 npm run dist:dmg
 ```
 
 ### 方式三：本地浏览器 Web 工作台模式
-- **基于 DSH 内核启动网页舞台**：
+- **基于 DSH 内核启动网页舞台**（全新机器首次运行会自动初始化 `~/.dsh/profiles/bigfish` 与本地插件软链接，无需先打开 Electron）：
   ```bash
   npm run dsh
+  # 或固定在 62000 端口且不自动弹窗：
+  npm run dsh:web
   ```
-- **基于内置 `server/` WebSocket 服务启动（默认端口 `5300`）**：
-  ```bash
-  npm install && npm --prefix server install
-  ```
-  ```bash
-  npm start
-  ```
+- **基于内置 `server/` WebSocket 服务生产方式启动（默认端口 `5300`）**：
+  1. 安装根项目依赖与 `server` 运行依赖：
+     ```bash
+     npm install && npm --prefix server install --omit=dev
+     ```
+  2. 预构建前端静态资源（`dist/`）与服务端生产入口（`server/dist/index.js`）：
+     ```bash
+     npm run build && npm run build:server
+     ```
+  3. 启动本地生产服务（浏览器访问 `http://127.0.0.1:5300`）：
+     ```bash
+     npm start
+     ```
+  *(开发联调如需热重载，可执行 `npm --prefix server install` 后分别运行 `npm run dev:server` 与 `npm run dev`。)*
 
 ### 方式四：零后端纯前端 Demo 剧本体验
-无需安装任何 Agent CLI 或配置 API Key，直接体验全套角色互动、技能卡、权限决断与换手演出：
+无需安装任何 Agent CLI 或配置 API Key，直接体验角色互动、技能卡、模拟权限决断与回看演出：
 
 ```bash
 npm install
@@ -156,6 +179,7 @@ bigfish-stage/
 │   ├── characters/                  # 4 大角色包配置（character.json + 6 表情立绘与头像）
 │   └── sfx/                         # 舞台交互音效资源
 ├── electron/                        # Electron 独立桌面客户端外壳（自动唤醒本机 DSH 运行时）
+├── scripts/                         # 本地角色包校验、DSH Profile 初始化启动与模拟测试脚本
 ├── server/                          # 独立 Web 模式的本地 WebSocket 服务端与测试套件
 └── docs/                            # 架构文档、角色设定参考与高清实机截图
 ```
@@ -164,7 +188,11 @@ bigfish-stage/
 
 ---
 
-## 致谢与版权合规声明
+## 致谢、版权与素材授权说明
 
+- **仓库代码许可状态**：本仓库当前未附带开源许可证文件（`package.json` 标记为 `private: true`），在项目方正式声明许可证前默认保留相关权利，请勿擅自将其标注为 MIT 或其他开源许可。
 - 本项目中的“AI 娘”角色形象设定（大肥鱼、哈基米 · Argon、Claude 娘、白龙娘等）源自 B 站 UP 主 **ZipZipPipe（UID: 4168597）** 的开源二创设定体系，遵循原作者声明的 **[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans)**（署名-非商业性使用-相同方式共享）协议，**仅限非商业学习交流与开源二创使用**。
-- 所有舞台 UI 组件、几何多边形排版、视差交互与前后端桥接代码均为本项目原创实现。
+- **第三方运行时与媒体素材商业授权待确认**：
+  - `public/characters/deepseek-v4-pro/art/live2d/` 包含 Live2D Cubism Core（受 [Live2D Proprietary Software License Agreement](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html) 约束）、第三方渲染运行时打包文件（`pixi.min.js`、`cubism4.min.js`）及角色 Live2D 模型文件，其对外再分发与商业使用授权**待确认**。
+  - `public/sfx/` 下的 `.mp3` 舞台音效文件原始来源与商业分发授权**待确认**（如移除外部音频映射，前端支持自动回退至内置 WebAudio 合成音效）。
+- 详细发布前检查项参见 [`docs/release-readiness.md`](./docs/release-readiness.md)。

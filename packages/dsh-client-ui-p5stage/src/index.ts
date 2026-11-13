@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import { createStageApi } from './stage-api';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -79,8 +81,20 @@ function createStaticPrefixResource(mountPrefix: string, rootDir: string) {
   };
 }
 
+export function dualRoute(path: string, resource: (request: Request) => Promise<Response>) {
+  return { kind: 'prefix' as const, path, resource,
+    async handler(req: IncomingMessage, res: ServerResponse) {
+      try {
+        const response = await resource(new Request(new URL(req.url ?? '/', 'http://localhost'), { method: req.method ?? 'GET' }));
+        res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+        res.end(Buffer.from(await response.arrayBuffer()));
+      } catch { res.writeHead(400); res.end(); }
+    },
+  };
+}
+
 export const name = 'ui-p5stage-host';
-export const inject = ['webServer'];
+export const inject = ['webServer', 'connection'];
 
 const HEAD_FONT_LINKS = [
   '<link rel="preconnect" href="https://fonts.googleapis.com" />',
@@ -91,23 +105,21 @@ const HEAD_FONT_LINKS = [
 export function apply(ctx: any): void {
   if (!ctx.webServer) return;
 
+  // DSH admits only authenticated owner requests to registered Fetch routes.
+  // Never put mutations on an unauthenticated webServer route.
+  if (ctx.connection?.fetch?.register) {
+    ctx.connection.fetch.register({ path: '/api/bigfish-stage', methods: ['POST'], requestBody: 'buffered', fetch: createStageApi() });
+  }
+
   const charactersDir = join(repoPublicDir, 'characters');
   const sfxDir = join(repoPublicDir, 'sfx');
 
   ctx.effect(() =>
-    ctx.webServer.register({
-      kind: 'prefix',
-      path: '/characters',
-      resource: createStaticPrefixResource('/characters', charactersDir),
-    })
+    ctx.webServer.register(dualRoute('/characters', createStaticPrefixResource('/characters', charactersDir)))
   );
 
   ctx.effect(() =>
-    ctx.webServer.register({
-      kind: 'prefix',
-      path: '/sfx',
-      resource: createStaticPrefixResource('/sfx', sfxDir),
-    })
+    ctx.webServer.register(dualRoute('/sfx', createStaticPrefixResource('/sfx', sfxDir)))
   );
 
   ctx.on('webserver/index-inject', (table: Array<Record<string, unknown>>) => {
