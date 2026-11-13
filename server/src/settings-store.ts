@@ -51,6 +51,8 @@ export function validateSettings(value: unknown): AppSettings {
   assert(Array.isArray(s.recentProjects) && s.recentProjects.every(str), '最近项目列表无效');
   assert(object(s.worker) && str(s.worker.adapter) && str(s.worker.model) && !!s.worker.model.trim(), '执行 Agent 设置无效');
   assert(['read-only', 'workspace-write'].includes(s.worker.sandbox), '沙箱设置无效');
+  assert(s.worker.agentPreset === undefined || str(s.worker.agentPreset), 'Agent 预设模式无效');
+  assert(s.worker.reasoningEffort === undefined || str(s.worker.reasoningEffort), '思考强度设置无效');
   assert(s.worker.extra === undefined || (object(s.worker.extra) && Object.values(s.worker.extra).every(str)), '适配器选项无效');
   assert(['endpoint', 'agent-default'].includes(s.worker.connection), '执行 Agent 连接方式无效');
   assert(object(s.voice) && typeof s.voice.enabled === 'boolean' && object(s.voice.endpoint), '台词设置无效');
@@ -95,6 +97,8 @@ export function validateSettings(value: unknown): AppSettings {
       sandbox: s.worker.sandbox,
       connection: s.worker.connection,
       endpoint: cleanWorkerEp,
+      ...(str(s.worker.agentPreset) && s.worker.agentPreset.trim() ? { agentPreset: s.worker.agentPreset.trim() } : {}),
+      ...(str(s.worker.reasoningEffort) && s.worker.reasoningEffort.trim() ? { reasoningEffort: s.worker.reasoningEffort.trim() } : {}),
       ...(s.worker.extra ? { extra: { ...s.worker.extra } } : {}),
     },
     characterBrains: cleanBrains,

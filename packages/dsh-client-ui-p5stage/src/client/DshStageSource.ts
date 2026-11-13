@@ -32,6 +32,9 @@ function echoAttachments(images: readonly StageImageAttachment[] | undefined) {
   }));
 }
 
+type Room = { model?: string; sessionId?: string };
+type Rooms = Record<string, Room>;
+
 const ACTIVE_CHAR_STORAGE_KEY = 'bigfish.activeCharacterId';
 const ACTIVE_PRESET_STORAGE_KEY = 'bigfish.activeAgentPreset';
 const PRESET_LISTENERS = new Set<(presetId: string) => void>();
@@ -584,6 +587,10 @@ export class DshStageSource implements StageDataSource {
   private liveStreamingText = '';
   private lastEmittedLiveLen = 0;
   private approvalSeq = 0;
+  private rooms: Rooms = {};
+  private roomsReady: Promise<void> | null = null;
+  private changingRoom = false;
+  private pendingSteers = new Set<string>();
 
   constructor(
     private readonly ctx: any,
@@ -675,13 +682,11 @@ export class DshStageSource implements StageDataSource {
         },
       },
       characterBrains: Object.fromEntries(
-        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [
-          cid,
-          {
-            rolePrompt: brain.rolePrompt,
-            ...(cid === this.activeCharacterId ? { model } : {}),
-          },
-        ])
+        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [cid, {
+          rolePrompt: brain.rolePrompt,
+          ...(this.rooms[cid]?.model ? { model: this.rooms[cid].model } : cid === this.activeCharacterId ? { model } : {}),
+          activeSessionId: this.rooms[cid]?.sessionId ?? null,
+        }])
       ),
       voice: {
         enabled: false,
@@ -703,6 +708,7 @@ export class DshStageSource implements StageDataSource {
       model: this.resolveModelName(),
       cwd: this.resolveCwd(),
       turnActive: this.isSessionRunning(),
+      characterId: this.activeCharacterId,
     };
   }
 
@@ -863,6 +869,8 @@ export class DshStageSource implements StageDataSource {
       if (!isHumanUserMessageEvent(rawEv, data)) {
         return out;
       }
+      const requestId = data.source?.rpcId ?? data.message?.source?.rpcId;
+      if (typeof requestId === 'string' && this.pendingSteers.delete(requestId)) out.push({ type: 'steer_acked', id: requestId, at });
       const content = data.message?.content ?? data.content;
       const text = stripPersona(extractContentText(content));
       if (text) {
@@ -890,14 +898,15 @@ export class DshStageSource implements StageDataSource {
       this.lastEmittedLiveLen = 0;
       const content = data.message?.content ?? data.content ?? [];
       const text = extractContentText(content);
-      // Intermediate narration attached to tool calls stays in the background (Trajectory / Backlog only).
-      if (text && !hasToolCallBlock(content)) {
-        this.replyShownInTurn = true;
+      // Keep tool-attached narration in durable history; only final replies drive the main dialogue.
+      if (text) {
+        const final = !hasToolCallBlock(content);
+        if (final) this.replyShownInTurn = true;
         out.push({
           at,
           type: 'worker_text',
           text,
-          final: true,
+          final,
         });
       }
       if (Array.isArray(content)) {
@@ -994,13 +1003,13 @@ export class DshStageSource implements StageDataSource {
         typeof data.summary === 'string' && data.summary.trim()
           ? data.summary.trim().slice(0, 180)
           : 'DSH 已将较早对话凝炼为摘要卡！';
-      const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 80000);
-      const turns = Number(data.shadowedItemCount ?? 8);
+      const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 0);
+      const turns = Number(data.shadowedItemCount ?? 0);
       out.push({
         at,
         type: 'context_compacted',
         turnsCompacted: turns,
-        freedTokens: freed > 0 ? freed : 80000,
+        freedTokens: Number.isFinite(freed) && freed > 0 ? freed : 0,
         summary: summaryText,
       });
       return out;
@@ -1171,6 +1180,7 @@ export class DshStageSource implements StageDataSource {
       hasEverConnected: true,
     });
 
+    void this.ensureRooms().catch(error => this.reportError(error, 'update_settings'));
     void this.refreshModelCatalog(false);
 
     void preloadCharacterPacks().then(() => {
@@ -1227,14 +1237,6 @@ export class DshStageSource implements StageDataSource {
       })
     );
 
-    this.disposers.push(
-      subscribeStoredCharacterId((nextId) => {
-        if (nextId !== this.activeCharacterId) {
-          this.activeCharacterId = nextId;
-          this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
-        }
-      })
-    );
   }
 
   public retryNow(): void {
@@ -1261,6 +1263,7 @@ export class DshStageSource implements StageDataSource {
   }
 
   public send(text: string, images?: readonly StageImageAttachment[]): void {
+    if (this.changingRoom) { this.reportError(new Error('角色正在切换，请稍后发送'), 'send'); return; }
     const hasImages = !!images && images.length > 0;
     const trimmed = text.trim() || (hasImages ? '请看这张图。' : '');
     if (!trimmed) return;
@@ -1303,36 +1306,22 @@ export class DshStageSource implements StageDataSource {
   }
 
   public steer(text: string, images?: readonly StageImageAttachment[]): void {
-    const hasImages = !!images && images.length > 0;
-    const trimmed = text.trim() || (hasImages ? '请看这张图。' : '');
+    const trimmed = text.trim() || (images?.length ? '请看这张图。' : '');
     if (!trimmed) return;
-    const binding = this.ctx.sessions?.binding?.(this.sessionId);
-    const session = binding?.session;
-    if (!session) return;
-
-    const sub = session.beginSubmission?.({
-      mode: 'steer',
-      text: trimmed,
-      attachments: echoAttachments(images),
-    });
-    this.emitMessage({
-      type: 'event',
-      event: {
-        at: Date.now(),
-        type: 'steer_queued',
-        id: String(sub?.requestId ?? `steer_${Date.now()}`),
-        text: trimmed,
-      },
-    });
-    void session
-      .prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), 'steer', undefined, sub?.requestId)
+    const session = this.ctx.sessions?.binding?.(this.sessionId)?.session;
+    if (!session) { this.reportError(new Error('尚未建立会话'), 'steer'); return; }
+    const sub = session.beginSubmission?.({ mode: 'steer', text: trimmed, attachments: echoAttachments(images) });
+    const id = String(sub?.requestId ?? crypto.randomUUID());
+    this.pendingSteers.add(id);
+    this.emitMessage({ type: 'event', event: { at: Date.now(), type: 'steer_queued', id, text: trimmed } });
+    void session.prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), 'steer', undefined, id)
       .then((res: any) => {
-        if (res && res.ok === false) {
-          sub?.abandon?.();
-        }
-      })
-      .catch(() => {
+        this.unwrap(res);
+        if (this.pendingSteers.has(id)) this.emitMessage({ type: 'event', event: { at: Date.now(), type: 'steer_submitted', id } });
+      }).catch((error: unknown) => {
         sub?.abandon?.();
+        this.pendingSteers.delete(id);
+        this.emitMessage({ type: 'event', event: { at: Date.now(), type: 'steer_failed', id, message: error instanceof Error ? error.message : '插话提交失败，请重试' } });
       });
   }
 
@@ -1381,8 +1370,7 @@ export class DshStageSource implements StageDataSource {
     const sessions = this.buildSessionSummaries();
     const feedState: SessionListState = {
       sessions,
-      loading: false,
-      loaded: true,
+      status: 'ready',
     };
     for (const fn of this.sessionListeners) {
       fn(feedState);
@@ -1399,8 +1387,7 @@ export class DshStageSource implements StageDataSource {
     this.sessionListeners.add(listener);
     listener({
       sessions: this.buildSessionSummaries(),
-      loading: false,
-      loaded: true,
+      status: 'ready',
     });
     return () => {
       this.sessionListeners.delete(listener);
@@ -1429,83 +1416,103 @@ export class DshStageSource implements StageDataSource {
     await this.refreshModelCatalog(true);
   }
 
-  public batonPass(toCharacterId: string, instruction?: string): void {
-    const fromCharacterId = this.activeCharacterId;
-    const fromPack = getCachedCharacterPack(fromCharacterId);
-    const toPack = getCachedCharacterPack(toCharacterId);
-    const fromShort = fromPack.name.split('（')[0];
-    const toShort = toPack.name.split('（')[0];
-
-    this.activeCharacterId = toCharacterId;
-    setStoredCharacterId(toCharacterId);
-
-    // Collect recent touched files from session event snapshot for context continuity
-    const cwd = this.resolveCwd();
-    const touchedFiles = new Set<string>();
-    const entries = this.ctx.sessions?.binding?.(this.sessionId)?.eventSource?.getSnapshot?.()?.entries ?? [];
-    for (const item of entries) {
-      if (item?.type === 'event' && item.event?.type === 'tool/call') {
-        const d = item.event.data ?? {};
-        const args = parseArgsObject(d.args ?? d.input ?? d.arguments);
-        const info = summarizeToolCall(String(d.toolName ?? d.name ?? 'tool'), args, cwd);
-        if (info.file) touchedFiles.add(info.file);
-      }
-    }
-
-    const cleanInst = (instruction ?? '').trim();
-    const summaryText = `${fromShort} ➔ ${toShort}：${cleanInst || '接力推进当前任务与代码审查'}`;
-
-    this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
-    this.emitStageEventWithReaction({
-      at: Date.now(),
-      type: 'baton_pass',
-      fromCharacterId,
-      toCharacterId,
-      summary: summaryText,
-    });
-
-    const filesHint =
-      touchedFiles.size > 0
-        ? `\n前序步骤涉及文件：${Array.from(touchedFiles).slice(-8).join(', ')}`
-        : '';
-    const handoffPrompt = [
-      `【怪盗团 Baton Pass 换手接力】上一棒队友「${fromShort}」已将接力棒交给你（${toShort}）。${filesHint}`,
-      `本棒交接指令：${cleanInst || '请基于上方对话与代码改动上下文，复核上一棒的结论，指出潜在问题或继续推进下一步实现。'}`,
-    ].join('\n');
-
-    this.send(handoffPrompt);
+  private unwrap(value: any): any {
+    if (value?.ok === false) throw new Error(String(value.error?.message ?? 'DSH 拒绝了请求'));
+    return value?.value ?? value;
   }
 
-  public switchCharacter(characterId: string): void {
-    this.activeCharacterId = characterId;
-    setStoredCharacterId(characterId);
-    const pack = getCachedCharacterPack(characterId);
-    const picked = pickReactionForEvent(
-      pack,
-      {
-        at: Date.now(),
-        type: 'session_started',
-        sessionId: this.sessionId,
-        model: this.resolveModelName(),
-        cwd: this.resolveCwd(),
-      },
-      this.reactionSeed++
-    );
-    this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
-    if (picked) {
-      this.emitMessage({
-        type: 'event',
-        event: {
-          at: Date.now(),
-          type: 'character_line',
-          characterId,
-          emotion: 'happy',
-          text: picked.text,
-          source: 'preset',
-          lineId: `switch_${Date.now()}_${this.reactionSeed}`,
-        },
-      });
+  private reportError(error: unknown, commandType: 'send' | 'steer' | 'switch_character' | 'baton_pass' | 'update_settings' | 'compact_session') {
+    this.emitMessage({ type: 'command_error', commandType, message: error instanceof Error ? error.message : '操作失败' });
+  }
+
+  private async stageRequest(input: Record<string, unknown>): Promise<any> {
+    const res = await fetch('/api/bigfish-stage', { method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...input, cwd: this.resolveCwd() }) });
+    if (!res.ok) throw new Error(res.status === 404 ? '请升级 DeepSeek Harness 并重新启用舞台插件，以使用角色房间和代码变更功能' : `舞台操作失败 (${res.status})`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+
+  private ensureRooms(): Promise<void> {
+    if (!this.roomsReady) this.roomsReady = (async () => {
+      this.rooms = await this.stageRequest({ op: 'rooms_get' });
+      const owner = Object.entries(this.rooms).find(([, room]) => room.sessionId === this.sessionId)?.[0];
+      if (owner) this.activeCharacterId = owner;
+      else if (!this.rooms[this.activeCharacterId]?.sessionId) {
+        this.rooms = await this.stageRequest({ op: 'rooms_patch', characterId: this.activeCharacterId, sessionId: this.sessionId, ...(this.resolveModelName() !== 'dsh/default' ? { model: this.resolveModelName() } : {}) });
+      }
+      this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
+      this.emitMessage({ type: 'session', session: this.buildSessionInfo() });
+    })().catch(error => { this.roomsReady = null; throw error; });
+    return this.roomsReady;
+  }
+
+  public switchCharacter(characterId: string): void { void this.changeRoom(characterId); }
+
+  public batonPass(toCharacterId: string, instruction?: string): void {
+    const entries = this.ctx.sessions?.binding?.(this.sessionId)?.eventSource?.getSnapshot?.()?.entries ?? [];
+    const context: string[] = [];
+    for (const item of entries) {
+      const ev = item?.event;
+      if (ev?.type === 'user/message' || ev?.type === 'assistant/message') {
+        const text = stripPersona(extractContentText(ev.data?.message?.content ?? ev.data?.content));
+        if (text) context.push(`${ev.type === 'user/message' ? '用户' : '上一位角色'}：${text.slice(0, 2500)}`);
+      } else if (ev?.type === 'tool/call') {
+        const d = ev.data ?? {};
+        const info = summarizeToolCall(String(d.toolName ?? d.name ?? 'tool'), parseArgsObject(d.args ?? d.input ?? d.arguments), this.resolveCwd());
+        if (info.file) context.push(`操作文件：${info.file}`);
+      }
     }
+    const handoff = `【角色换手交接】上一位：${getCachedCharacterPack(this.activeCharacterId).name}\n${context.slice(-12).join('\n')}\n本轮任务：${instruction?.trim() || '复核已有改动和结论，继续完成任务。'}`;
+    void this.changeRoom(toCharacterId, handoff);
+  }
+
+  private async changeRoom(characterId: string, handoff?: string): Promise<void> {
+    const command = handoff ? 'baton_pass' : 'switch_character';
+    if (this.changingRoom || this.isSessionRunning()) { this.reportError(new Error('请等待本轮完成或先喊停，再切换角色'), command); return; }
+    if (!(KNOWN_CHARACTER_IDS as readonly string[]).includes(characterId)) { this.reportError(new Error('角色不存在'), command); return; }
+    if (characterId === this.activeCharacterId) return;
+    this.changingRoom = true;
+    try {
+      await this.ensureRooms();
+      await this.refreshModelCatalog(false);
+      if (this.isSessionRunning()) throw new Error('任务已开始，请先喊停');
+      if (!this.ctx.uiWorkspace?.openSession) throw new Error('DSH 会话导航暂不可用');
+      this.rooms = await this.stageRequest({ op: 'rooms_patch', characterId: this.activeCharacterId, sessionId: this.sessionId, model: this.resolveModelName() });
+      const room = this.rooms[characterId];
+      const model = room?.model || getCachedCharacterPack(characterId).recommendedModels?.find(m => this.catalogModels.includes(m)) || this.defaultModelSelection?.model || this.resolveModelName();
+      let target = room?.sessionId;
+      if (!target) {
+        if (!this.ctx.remote?.session?.create) throw new Error('DSH 不支持创建独立角色会话，请升级');
+        target = this.unwrap(await this.ctx.remote.session.create({ cwd: this.resolveCwd(), agentPreset: this.resolveAgentPreset() }))?.sessionId;
+        if (!target) throw new Error('未能创建角色会话');
+      }
+      if (this.ctx.sessions?.binding?.(target)?.session?.getSnapshot?.()?.running || this.ctx.sessions?.list?.getSnapshot?.()?.byId?.[target]?.running) throw new Error('目标角色正在执行另一项任务');
+      await this.selectModelAndEffort(model, undefined, target);
+      this.rooms = await this.stageRequest({ op: 'rooms_patch', characterId, sessionId: target, model });
+      if (handoff) {
+        if (!this.ctx.remote?.session?.prompt) throw new Error('DSH 接力发送接口不可用');
+        this.unwrap(await this.ctx.remote.session.prompt({ sessionId: target, requestId: crypto.randomUUID(), mode: 'queue', content: buildPromptParts(buildPersonaPreamble(characterId) + handoff, undefined) }));
+      }
+      const fromCharacterId = this.activeCharacterId;
+      setStoredCharacterId(characterId);
+      if (handoff) this.emitMessage({ type: 'event', event: { at: Date.now(), type: 'baton_pass', fromCharacterId, toCharacterId: characterId, summary: '已切换到目标角色的模型和会话并提交交接任务' } });
+      this.ctx.uiWorkspace.openSession(target);
+    } catch (error) { this.reportError(error, command); }
+    finally { this.changingRoom = false; }
+  }
+
+  public requestGitStatus(): void {
+    void this.stageRequest({ op: 'git_status' }).then(data => this.emitMessage({ type: 'git_status_result', ...data }))
+      .catch(error => this.emitMessage({ type: 'git_status_result', isRepo: false, files: [], diff: '', error: error.message }));
+  }
+  public revertGitFile(path: string): void { this.gitOperation('revert', { op: 'git_revert', path }); }
+  public commitGit(message: string): void { this.gitOperation('commit', { op: 'git_commit', message }); }
+  private gitOperation(op: 'revert' | 'commit', input: Record<string, unknown>) {
+    if (this.isSessionRunning() || this.changingRoom) { this.emitMessage({ type: 'git_op_result', op, ok: false, message: '请先等待当前任务完成，避免同时修改文件' }); return; }
+    void this.stageRequest(input).then(data => { this.emitMessage({ type: 'git_op_result', op, ...data }); this.requestGitStatus(); })
+      .catch(error => this.emitMessage({ type: 'git_op_result', op, ok: false, message: error.message }));
   }
 
   public updateSettings(patch: SettingsPatch): void {
@@ -1533,48 +1540,36 @@ export class DshStageSource implements StageDataSource {
       }
       this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
     }
-    const brainModel = patch.characterBrains
-      ? Object.values(patch.characterBrains).find((b) => typeof b?.model === 'string' && b.model.trim())?.model
-      : undefined;
-    const requestedModel = patch.worker?.model ?? brainModel;
-    const requestedEffort = patch.worker?.reasoningEffort;
-    if (typeof requestedEffort === 'string' && !requestedModel) {
-      this.selectModelAndEffort(this.resolveModelName(), requestedEffort);
-      return;
-    }
-    if (typeof requestedModel === 'string' && requestedModel.trim()) {
-      const model = requestedModel.trim();
-      const supported = reasoningBridge.efforts(model).map((e) => e.id);
-      const keep = currentReasoningEffort && supported.includes(currentReasoningEffort) ? currentReasoningEffort : undefined;
-      this.selectModelAndEffort(model, requestedEffort ?? keep);
-      return;
-    }
+    void this.updateModelSettings(patch).catch(error => this.reportError(error, 'update_settings'));
   }
 
-  private selectModelAndEffort(model: string, effort?: string): void {
-    {
-      const provider =
-        this.modelProviderMap.get(model) ??
-        this.defaultModelSelection?.provider ??
-        'deepseek-account';
-      if (this.ctx.remote?.session?.selectModel) {
-        void this.ctx.remote.session
-          .selectModel({
-            sessionId: this.sessionId,
-            provider,
-            model,
-            ...(effort ? { reasoningEffort: effort } : {}),
-          })
-          .then(() => {
-            if (effort) { currentReasoningEffort = effort; notifyReasoning(); }
-            this.emitMessage({ type: 'session', session: this.buildSessionInfo() });
-            this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
-          })
-          .catch(() => {
-            // ignore if model route is not yet configured in DSH
-          });
+  private async updateModelSettings(patch: SettingsPatch): Promise<void> {
+    if (!patch.characterBrains && !patch.worker?.model && !patch.worker?.reasoningEffort) return;
+    if (this.changingRoom || this.isSessionRunning()) throw new Error('请等待本轮完成后再修改模型');
+    this.changingRoom = true;
+    try {
+      await this.ensureRooms();
+      if (this.isSessionRunning()) throw new Error('任务已开始，请先喊停');
+      for (const [characterId, brain] of Object.entries(patch.characterBrains ?? {})) {
+        if (!brain?.model?.trim()) continue;
+        if (characterId === this.activeCharacterId) await this.selectModelAndEffort(brain.model.trim());
+        this.rooms = await this.stageRequest({ op: 'rooms_patch', characterId, model: brain.model.trim() });
       }
-    }
+      if (patch.worker?.model || patch.worker?.reasoningEffort) {
+        const model = patch.worker.model?.trim() || this.resolveModelName();
+        await this.selectModelAndEffort(model, patch.worker.reasoningEffort);
+        this.rooms = await this.stageRequest({ op: 'rooms_patch', characterId: this.activeCharacterId, model });
+      }
+      this.emitMessage({ type: 'settings', settings: this.buildPublicSettings() });
+      this.emitMessage({ type: 'session', session: this.buildSessionInfo() });
+    } finally { this.changingRoom = false; }
+  }
+
+  private async selectModelAndEffort(model: string, effort?: string, sessionId = this.sessionId): Promise<void> {
+    const provider = this.modelProviderMap.get(model) ?? this.defaultModelSelection?.provider ?? 'deepseek-account';
+    if (!this.ctx.remote?.session?.selectModel) throw new Error('DSH 模型切换接口不可用');
+    this.unwrap(await this.ctx.remote.session.selectModel({ sessionId, provider, model, ...(effort ? { reasoningEffort: effort } : {}) }));
+    if (effort && sessionId === this.sessionId) { currentReasoningEffort = effort; notifyReasoning(); }
   }
 
   public listModels(target: 'worker' | 'voice'): void {
@@ -1591,7 +1586,9 @@ export class DshStageSource implements StageDataSource {
 
   public compactSession(): void {
     const binding = this.ctx.sessions?.binding?.(this.sessionId);
-    void binding?.session?.command?.('/compact');
+    if (this.changingRoom || this.isSessionRunning()) { this.reportError(new Error('请等待当前任务完成后再整理记忆'), 'compact_session'); return; }
+    if (!binding?.session?.command) { this.reportError(new Error('当前会话不支持整理记忆'), 'compact_session'); return; }
+    void Promise.resolve(binding.session.command('/compact')).then(value => this.unwrap(value)).catch(error => this.reportError(error, 'compact_session'));
   }
 
   public testConnection(target: 'worker' | 'voice'): void {

@@ -54,7 +54,8 @@ export interface SkillCardItem {
 export interface SteerItem {
   id: string;
   text: string;
-  status: 'queued' | 'acked';
+  status: 'queued' | 'submitted' | 'acked' | 'failed';
+  error?: string;
   queuedAt: number;
   ackedAt?: number;
 }
@@ -136,6 +137,7 @@ export interface StageState {
   selectedToolUseId: string | null;
 
   pendingPermission: PendingPermission | null;
+  permissionQueue: PendingPermission[];
   permissionChoice: 'allow' | 'reject';
   lastPermissionDecision: 'allow' | 'reject' | null;
 
@@ -272,6 +274,7 @@ export function createInitialStageState(
     selectedToolUseId: null,
 
     pendingPermission: null,
+        permissionQueue: [],
     permissionChoice: 'allow',
     lastPermissionDecision: null,
 
@@ -430,6 +433,7 @@ function applySingleStageEvent(
         lastTurnSummary: null,
         hudStatus: 'thinking',
         pendingPermission: null,
+        permissionQueue: [],
         lastPermissionDecision: null,
         skillCards: [],
         steers: [],
@@ -640,31 +644,17 @@ function applySingleStageEvent(
     }
 
     case 'permission_request': {
-      const mappedEmotion = matchedReaction?.emotion ?? 'shocked';
-      return {
-        ...nextStateBase,
-        hudStatus: 'acting',
-        currentEmotion: mappedEmotion,
-        emotionSwitchKey: state.emotionSwitchKey + 1,
-        pendingPermission: {
-          requestId: event.requestId,
-          tool: event.tool,
-          rawName: event.rawName,
-          summary: event.summary,
-          detail: event.detail,
-          at: event.at,
-        },
-        permissionChoice: 'allow',
-      };
+      const queue = state.permissionQueue.filter(p => p.requestId !== event.requestId);
+      queue.push({ requestId: event.requestId, tool: event.tool, rawName: event.rawName, summary: event.summary, detail: event.detail, at: event.at });
+      return { ...nextStateBase, hudStatus: 'acting', permissionQueue: queue,
+        pendingPermission: queue[0], permissionChoice: state.pendingPermission ? state.permissionChoice : 'allow',
+        currentEmotion: matchedReaction?.emotion ?? 'shocked', emotionSwitchKey: state.emotionSwitchKey + 1 };
     }
-
     case 'permission_resolved': {
-      return {
-        ...nextStateBase,
-        pendingPermission: null,
-        lastPermissionDecision: event.allowed ? 'allow' : 'reject',
-        hudStatus: 'thinking',
-      };
+      const queue = state.permissionQueue.filter(p => p.requestId !== event.requestId);
+      return { ...nextStateBase, permissionQueue: queue, pendingPermission: queue[0] ?? null,
+        permissionChoice: state.pendingPermission?.requestId === event.requestId ? 'allow' : state.permissionChoice,
+        lastPermissionDecision: event.allowed ? 'allow' : 'reject', hudStatus: queue.length ? 'acting' : 'thinking' };
     }
 
     case 'steer_queued': {
@@ -679,6 +669,12 @@ function applySingleStageEvent(
         steers: [...state.steers, nextSteer],
       };
     }
+
+    case 'steer_submitted':
+      return { ...nextStateBase, steers: state.steers.map(s => s.id === event.id && s.status !== 'acked' ? { ...s, status: 'submitted' } : s) };
+    case 'steer_failed':
+      return { ...nextStateBase, steers: state.steers.map(s => s.id === event.id ? { ...s, status: 'failed', error: event.message } : s),
+        lastError: { message: event.message, at: event.at } };
 
     case 'steer_acked': {
       return {
@@ -707,6 +703,7 @@ function applySingleStageEvent(
         lastTurnOk: event.ok,
         lastTurnSummary: event.summary ?? null,
         pendingPermission: null,
+        permissionQueue: [],
         currentEmotion: nextEmotion,
         emotionSwitchKey:
           state.currentEmotion !== nextEmotion
@@ -737,6 +734,7 @@ function applySingleStageEvent(
         hudStatus: 'idle',
         idleWaitMs: 0,
         pendingPermission: null,
+        permissionQueue: [],
       };
     }
 
@@ -756,6 +754,7 @@ function replayHistoryIntoState(
     skillCards: [],
     steers: [],
     pendingPermission: null,
+        permissionQueue: [],
     lastPermissionDecision: null,
     lastTurnOk: null,
     lastTurnSummary: null,

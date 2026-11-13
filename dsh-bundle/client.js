@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-	id: "p5-agent-stage",
+	id: "bigfish-stage",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -444,6 +444,7 @@ window.__ModuleLoader__.load({
 		    skillCards: [],
 		    selectedToolUseId: null,
 		    pendingPermission: null,
+		    permissionQueue: [],
 		    permissionChoice: "allow",
 		    lastPermissionDecision: null,
 		    steers: [],
@@ -579,6 +580,7 @@ window.__ModuleLoader__.load({
 		        lastTurnSummary: null,
 		        hudStatus: "thinking",
 		        pendingPermission: null,
+		        permissionQueue: [],
 		        lastPermissionDecision: null,
 		        skillCards: [],
 		        steers: [],
@@ -737,29 +739,27 @@ window.__ModuleLoader__.load({
 		      };
 		    }
 		    case "permission_request": {
-		      const mappedEmotion = matchedReaction?.emotion ?? "shocked";
+		      const queue = state.permissionQueue.filter((p) => p.requestId !== event.requestId);
+		      queue.push({ requestId: event.requestId, tool: event.tool, rawName: event.rawName, summary: event.summary, detail: event.detail, at: event.at });
 		      return {
 		        ...nextStateBase,
 		        hudStatus: "acting",
-		        currentEmotion: mappedEmotion,
-		        emotionSwitchKey: state.emotionSwitchKey + 1,
-		        pendingPermission: {
-		          requestId: event.requestId,
-		          tool: event.tool,
-		          rawName: event.rawName,
-		          summary: event.summary,
-		          detail: event.detail,
-		          at: event.at
-		        },
-		        permissionChoice: "allow"
+		        permissionQueue: queue,
+		        pendingPermission: queue[0],
+		        permissionChoice: state.pendingPermission ? state.permissionChoice : "allow",
+		        currentEmotion: matchedReaction?.emotion ?? "shocked",
+		        emotionSwitchKey: state.emotionSwitchKey + 1
 		      };
 		    }
 		    case "permission_resolved": {
+		      const queue = state.permissionQueue.filter((p) => p.requestId !== event.requestId);
 		      return {
 		        ...nextStateBase,
-		        pendingPermission: null,
+		        permissionQueue: queue,
+		        pendingPermission: queue[0] ?? null,
+		        permissionChoice: state.pendingPermission?.requestId === event.requestId ? "allow" : state.permissionChoice,
 		        lastPermissionDecision: event.allowed ? "allow" : "reject",
-		        hudStatus: "thinking"
+		        hudStatus: queue.length ? "acting" : "thinking"
 		      };
 		    }
 		    case "steer_queued": {
@@ -774,6 +774,14 @@ window.__ModuleLoader__.load({
 		        steers: [...state.steers, nextSteer]
 		      };
 		    }
+		    case "steer_submitted":
+		      return { ...nextStateBase, steers: state.steers.map((s) => s.id === event.id && s.status !== "acked" ? { ...s, status: "submitted" } : s) };
+		    case "steer_failed":
+		      return {
+		        ...nextStateBase,
+		        steers: state.steers.map((s) => s.id === event.id ? { ...s, status: "failed", error: event.message } : s),
+		        lastError: { message: event.message, at: event.at }
+		      };
 		    case "steer_acked": {
 		      return {
 		        ...nextStateBase,
@@ -794,6 +802,7 @@ window.__ModuleLoader__.load({
 		        lastTurnOk: event.ok,
 		        lastTurnSummary: event.summary ?? null,
 		        pendingPermission: null,
+		        permissionQueue: [],
 		        currentEmotion: nextEmotion,
 		        emotionSwitchKey: state.currentEmotion !== nextEmotion ? state.emotionSwitchKey + 1 : state.emotionSwitchKey
 		      };
@@ -818,7 +827,8 @@ window.__ModuleLoader__.load({
 		        turnActive: false,
 		        hudStatus: "idle",
 		        idleWaitMs: 0,
-		        pendingPermission: null
+		        pendingPermission: null,
+		        permissionQueue: []
 		      };
 		    }
 		    default:
@@ -832,6 +842,7 @@ window.__ModuleLoader__.load({
 		    skillCards: [],
 		    steers: [],
 		    pendingPermission: null,
+		    permissionQueue: [],
 		    lastPermissionDecision: null,
 		    lastTurnOk: null,
 		    lastTurnSummary: null,
@@ -4685,8 +4696,8 @@ window.__ModuleLoader__.load({
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "p5-archive-header", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "p5-archive-title-group", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "p5-archive-kicker", children: "PHANTOM TROPHY & ARCHIVE // \u6218\u5229\u54C1\u4E0E\u884C\u52A8\u6863\u6848" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("h2", { className: "p5-archive-title", children: activeTab === "git" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_jsx_runtime3.Fragment, { children: "\u5DE5\u4F5C\u533A\u603B\u53D8\u66F4\u5BA1\u67E5 (Git Trophy)" }) : card ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "p5-archive-kicker", children: "STAGE DIFF & ARCHIVE // \u4EE3\u7801\u53D8\u66F4\u4E0E\u884C\u52A8\u6863\u6848" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("h2", { className: "p5-archive-title", children: activeTab === "git" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_jsx_runtime3.Fragment, { children: "\u5DE5\u4F5C\u533A\u603B\u53D8\u66F4\u5BA1\u67E5 (Git Diff)" }) : card ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
 		                  characterName,
 		                  " \u53D1\u52A8 ",
 		                  card.tool.toUpperCase(),
@@ -5029,7 +5040,7 @@ window.__ModuleLoader__.load({
 		          ] }),
 		          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "p5-holdup-badge-cluster", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "p5-holdup-kicker", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("em", { children: "HOLD UP!" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("em", { children: "ACTION CHECK" }),
 		              " // \u6743\u9650\u51B3\u65AD"
 		            ] }),
 		            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-permission-kbd-hint", children: "\u952E\u76D8 [\u2190 / \u2192] \u5207\u6362 \xB7 [ENTER] \u51B3\u65AD" })
@@ -5074,7 +5085,7 @@ window.__ModuleLoader__.load({
 		                children: [
 		                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-arrow", children: selectedChoice === "allow" ? "\u25B6" : " " }),
 		                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "p5-choice-text-wrap", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-en", children: "ALL-IN // \u6279\u51C6\u7A81\u5165\uFF01" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-en", children: "APPROVE // \u6279\u51C6\u653E\u884C\uFF01" }),
 		                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-zh", children: "\u5141\u8BB8\u6267\u884C" })
 		                  ] }),
 		                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-sub", children: "\u653E\u884C\u672C\u6B21\u64CD\u4F5C\u5E76\u7EE7\u7EED\u63A8\u8FDB" })
@@ -5095,7 +5106,7 @@ window.__ModuleLoader__.load({
 		                children: [
 		                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-arrow", children: selectedChoice === "reject" ? "\u25B6" : " " }),
 		                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "p5-choice-text-wrap", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-en", children: "STAND DOWN // \u6682\u7F13\u884C\u52A8" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-en", children: "INTERCEPT // \u62E6\u622A\u6682\u7F13" }),
 		                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-zh", children: "\u62D2\u7EDD\u6267\u884C" })
 		                  ] }),
 		                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "p5-choice-sub", children: "\u62E6\u622A\u8BE5\u547D\u4EE4\u5E76\u4EA4\u56DE\u4F60\u5904\u7406" })
@@ -5705,10 +5716,11 @@ window.__ModuleLoader__.load({
 		      ] })
 		    ] }),
 		    steers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "eng-steer-bar", children: steers.map((st) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "eng-steer-item", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "eng-steer-tag", children: st.status === "queued" ? "\u5DF2\u4F20\u8FBE\uFF0C\u5F85\u63A5\u6536" : "\u5DF2\u63A5\u6536" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "eng-steer-tag", children: { queued: "\u6B63\u5728\u63D0\u4EA4", submitted: "\u5DF2\u63D0\u4EA4\uFF0C\u7B49\u5F85\u6267\u884C", acked: "\u5DF2\u8FDB\u5165\u6267\u884C\u4E0A\u4E0B\u6587", failed: "\u63D0\u4EA4\u5931\u8D25" }[st.status] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
 		        "\u63D2\u8BDD\uFF1A",
-		        st.text
+		        st.text,
+		        st.error ? `\uFF08${st.error}\uFF09` : ""
 		      ] })
 		    ] }, st.id)) }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("main", { className: "eng-timeline", "data-testid": "engineering-timeline", children: events.map((ev, idx) => {
@@ -6440,8 +6452,8 @@ window.__ModuleLoader__.load({
 		            badge: "\u81EA\u5B9A\u4E49",
 		            builtIn: false,
 		            description: r.description || "\u81EA\u5B9A\u4E49\u7EC4\u5408\u7684\u5DE5\u5177\u96C6\u4E0E\u89D2\u8272\u6307\u4EE4\u9884\u8BBE\u6A21\u5F0F\u3002",
-		            modeDetails: "\u7531\u7528\u6237\u6216\u521B\u9020\u6A21\u5F0F\u5B9A\u4E49\u7684\u4E13\u5C5E\u9884\u8BBE\u7EC4\u5408\uFF0C\u65B0\u5EFA\u6F5C\u5165\u4EFB\u52A1\u65F6\u81EA\u52A8\u6302\u8F7D\u5BF9\u5E94\u5DE5\u5177\u4E0E\u63D0\u793A\u8BCD\u3002",
-		            howToUse: "\u70B9\u9009\u8BBE\u4E3A\u9ED8\u8BA4\u540E\uFF0C\u65B0\u5EFA\u6F5C\u5165\u884C\u52A8\u5373\u6309\u8BE5\u81EA\u5B9A\u4E49\u6A21\u5F0F\u8FD0\u884C\u3002"
+		            modeDetails: "\u7531\u7528\u6237\u6216\u521B\u9020\u6A21\u5F0F\u5B9A\u4E49\u7684\u4E13\u5C5E\u9884\u8BBE\u7EC4\u5408\uFF0C\u65B0\u5EFA\u821E\u53F0\u4F1A\u8BDD\u65F6\u81EA\u52A8\u6302\u8F7D\u5BF9\u5E94\u5DE5\u5177\u4E0E\u63D0\u793A\u8BCD\u3002",
+		            howToUse: "\u70B9\u9009\u8BBE\u4E3A\u9ED8\u8BA4\u540E\uFF0C\u65B0\u5EFA\u821E\u53F0\u4F1A\u8BDD\u5373\u6309\u8BE5\u81EA\u5B9A\u4E49\u6A21\u5F0F\u8FD0\u884C\u3002"
 		          }));
 		          setCustomPresets(extras);
 		        }).catch(() => {
@@ -6635,7 +6647,7 @@ window.__ModuleLoader__.load({
 		                "data-testid": "system-panel-presets",
 		                children: [
 		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "p5-sys-panel-head", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "Agent \u6F5C\u5165\u9884\u8BBE\u6A21\u5F0F" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { children: "Agent \u5DE5\u4F5C\u9884\u8BBE\u6A21\u5F0F" }),
 		                    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "p5-preset-lead", children: "\u9009\u62E9\u89D2\u8272\u8C03\u7528\u5DE5\u5177\u4E0E\u63A8\u8FDB\u4EFB\u52A1\u7684\u65B9\u5F0F\u3002\u65E5\u5E38\u5F00\u53D1\u63A8\u8350\u300C\u6807\u51C6\u6A21\u5F0F\u300D\uFF0C\u6279\u91CF\u6570\u636E\u5904\u7406\u9009\u300CPTC \u6A21\u5F0F\u300D\uFF0C\u6269\u5C55\u65B0\u5DE5\u5177\u4E0E\u81EA\u5B9A\u4E49\u6A21\u5F0F\u9009\u300C\u521B\u9020\u6A21\u5F0F\u300D\u3002" })
 		                  ] }),
 		                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "p5-preset-section-label", children: "\u5185\u7F6E\u9884\u8BBE\u6A21\u5F0F" }),
@@ -8015,7 +8027,7 @@ window.__ModuleLoader__.load({
 		      className: "p5-allout-overlay",
 		      "data-testid": "all-out-finish-overlay",
 		      role: "dialog",
-		      "aria-label": "\u603B\u653B\u51FB\u4EFB\u52A1\u7ED3\u7B97\u6F14\u51FA",
+		      "aria-label": "\u4EFB\u52A1\u7ED3\u7B97\u6F14\u51FA",
 		      onClick: onDismiss,
 		      children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
@@ -8085,12 +8097,12 @@ window.__ModuleLoader__.load({
 		          ] }),
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-allout-copy-zone", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-allout-kicker", children: [
-		              "ALL-OUT FINISH // ",
+		              "STAGE CLEAR // ",
 		              shortName,
-		              " \xB7 \u603B\u653B\u51FB\u51B3\u80DC\u7ED3\u7B97"
+		              " \xB7 \u4EFB\u52A1\u51B3\u80DC\u7ED3\u7B97"
 		            ] }),
 		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-headline-en", children: "MISSION ACCOMPLISHED" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-headline-zh", children: "ALL-OUT FINISH // \u534E\u4E3D\u6536\u5DE5" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-headline-zh", children: "STAGE CLEAR // \u534E\u4E3D\u6536\u5DE5" }),
 		            data.summaryText && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-summary-strip", children: data.summaryText }),
 		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-allout-stats-row", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "p5-allout-stat-pill", children: [
@@ -8122,7 +8134,7 @@ window.__ModuleLoader__.load({
 		            ] })
 		          ] })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-seal", "aria-hidden": "true", children: "\u2605 PHANTOM CLEAR!" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-seal", "aria-hidden": "true", children: "\u2605 BIGFISH CLEAR!" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-allout-dismiss-hint", children: "\u70B9\u51FB\u5C4F\u5E55\u4EFB\u610F\u5904\u6216\u6309 ESC \u7ACB\u5373\u5173\u95ED" })
 		      ]
 		    },
@@ -8170,12 +8182,12 @@ window.__ModuleLoader__.load({
 		      "data-testid": "baton-pass-modal",
 		      role: "dialog",
 		      "aria-modal": "true",
-		      "aria-label": "\u602A\u76D7\u56E2\u6362\u624B\u63A5\u529B\u9009\u62E9",
+		      "aria-label": "\u89D2\u8272\u6362\u624B\u63A5\u529B\u9009\u62E9",
 		      onClick: onClose,
 		      children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-modal", onClick: (e) => e.stopPropagation(), children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("header", { className: "p5-baton-header", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-baton-kicker", children: "BATON PASS // \u6362\u624B\u63A5\u529B" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "p5-baton-kicker", children: "AGENT RELAY // \u6362\u624B\u63A5\u529B" }),
 		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("h2", { className: "p5-baton-title", children: [
 		              "\u4ECE\u300C",
 		              fromShortName,
@@ -8198,7 +8210,7 @@ window.__ModuleLoader__.load({
 		            const isSelected = mate.id === selectedId;
 		            const roleMeta = CHARACTER_ROLE_META[mate.id] ?? {
 		              shortTitle: mate.name.split("\uFF08")[0],
-		              specialtyTag: "\u602A\u76D7\u652F\u63F4",
+		              specialtyTag: "\u63A5\u529B\u652F\u63F4",
 		              specialtyDesc: "\u63A5\u624B\u5F53\u524D\u6539\u52A8\u4E0A\u4E0B\u6587\u7EE7\u7EED\u63A8\u8FDB"
 		            };
 		            const brainModel = settings.characterBrains?.[mate.id]?.model || settings.worker.model;
@@ -8321,7 +8333,7 @@ window.__ModuleLoader__.load({
 		              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("strong", { className: "p5-baton-fighter-name", children: fromName })
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-lightning-hub", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-lightning-bolt", children: "\u26A1 BATON PASS // \u6362\u624B\u63A5\u529B! \u2605" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-lightning-hub", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "p5-baton-lightning-bolt", children: "\u26A1 AGENT RELAY // \u6362\u624B\u63A5\u529B! \u2605" }) }),
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "p5-baton-fighter is-to", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		              "img",
@@ -9125,6 +9137,10 @@ window.__ModuleLoader__.load({
 		      });
 		      return;
 		    }
+		    if (sourceMode !== "demo") {
+		      setContextTokens((prev) => ({ ...prev, used: 0 }));
+		      return;
+		    }
 		    const sessionEvents = state.events.slice(sessionStartIdx);
 		    const userAndWorkerCount = sessionEvents.filter(
 		      (e) => e.type === "user_message" || e.type === "worker_text"
@@ -9155,20 +9171,9 @@ window.__ModuleLoader__.load({
 		  }, [isCompacting]);
 		  const handleTriggerCompaction = () => {
 		    if (isCompacting) return;
+		    if (state.turnActive) return;
 		    if (sourceMode === "live" && connStatus.state !== "connected") {
-		      playSfx("compaction");
-		      const freed = 64e3;
-		      setCompactionState({
-		        activeCutin: true,
-		        turnsCompacted: 8,
-		        freedTokens: freed,
-		        summaryText: "\u79BB\u7EBF\u9884\u89C8\uFF1A\u5DF2\u5C06\u5386\u53F2\u5BF9\u8BDD\u538B\u7F29\u4E3A\u6458\u8981\u5361\uFF0C\u91CA\u653E 64,000 Tokens\uFF01",
-		        compactedAt: Date.now()
-		      });
-		      setContextTokens((prev) => ({
-		        used: Math.max(0, prev.used - freed),
-		        max: prev.max
-		      }));
+		      dispatch({ type: "SERVER_MESSAGE", message: { type: "command_error", commandType: "compact_session", message: "\u5C1A\u672A\u8FDE\u63A5\u6267\u884C\u5F15\u64CE\uFF0C\u65E0\u6CD5\u6574\u7406\u8BB0\u5FC6" } });
 		      return;
 		    }
 		    setIsCompacting(true);
@@ -9250,8 +9255,7 @@ window.__ModuleLoader__.load({
 		    );
 		  };
 		  const handleSwitchCharacter = (nextCharId) => {
-		    if (!nextCharId) return;
-		    dispatch({ type: "SET_CHARACTER", characterId: nextCharId });
+		    if (!nextCharId || state.turnActive) return;
 		    sourceRef.current?.switchCharacter(nextCharId);
 		  };
 		  const handleUpdateSettings = (patch) => {
@@ -9290,19 +9294,8 @@ window.__ModuleLoader__.load({
 		    });
 		  };
 		  const handleConfirmBatonPass = (toCharacterId, instruction) => {
-		    const fromId = character.id;
+		    if (state.turnActive) return;
 		    setBatonModalOpen(false);
-		    const now = Date.now();
-		    lastBatonCutinAtRef.current = now;
-		    playSfx("switch");
-		    playSfx("allow");
-		    setBatonCutinData({
-		      key: now,
-		      fromCharacterId: fromId,
-		      toCharacterId,
-		      summary: instruction || "\u4EA4\u63A5\u5F53\u524D\u4EE3\u7801\u6539\u52A8\u4E0E\u5BF9\u8BDD\u4E0A\u4E0B\u6587\uFF0C\u7EE7\u7EED\u63A8\u8FDB\u4E0B\u4E00\u68D2\uFF01"
-		    });
-		    dispatch({ type: "SET_CHARACTER", characterId: toCharacterId });
 		    sourceRef.current?.batonPass?.(toCharacterId, instruction);
 		  };
 		  const handleRequestGitStatus = () => {
@@ -9530,6 +9523,7 @@ window.__ModuleLoader__.load({
 		  const emotionMeta = resolveEmotionLabel(character, state.currentEmotion);
 		  const latestUserMsg = [...state.events].reverse().find((ev) => ev.type === "user_message");
 		  const latestWorkerFinal = [...state.events].reverse().find((ev) => ev.type === "worker_text");
+		  const contextUsageKnown = sourceMode === "demo" || state.events.some((event) => event.type === "context_usage");
 		  const usedK = Math.round(contextTokens.used / 1e3);
 		  const maxK = Math.round(contextTokens.max / 1e3);
 		  const contextPercent = Math.min(
@@ -9673,7 +9667,7 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-main-grid", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("aside", { className: "p5-left-column", "data-testid": "hud-layer", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-brand-strip", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-brand-tag", children: "P5 AGENT STAGE" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-brand-tag", children: "BIGFISH STAGE" }),
 		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
 		                "div",
 		                {
@@ -10040,25 +10034,22 @@ window.__ModuleLoader__.load({
 		                                  cy: "32",
 		                                  r: "22",
 		                                  strokeDasharray: 138.2,
-		                                  strokeDashoffset: 138.2 - 138.2 * Math.max(8, Math.min(100, contextPercent)) / 100
+		                                  strokeDashoffset: 138.2 - 138.2 * (contextUsageKnown ? Math.max(8, Math.min(100, contextPercent)) : 0) / 100
 		                                }
 		                              )
 		                            ]
 		                          }
 		                        ),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-radar-pct", children: [
-		                          contextPercent,
-		                          "%"
-		                        ] })
+		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-pct", children: contextUsageKnown ? `${contextPercent}%` : "\u2014" })
 		                      ] }),
 		                      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-radar-info", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-kicker", children: "PALACE GAUGE" }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-radar-kicker", children: "CONTEXT GAUGE" }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
 		                          "span",
 		                          {
 		                            className: "p5-radar-tokens",
 		                            "data-testid": "context-meter-value",
-		                            children: [
+		                            children: contextUsageKnown ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
 		                              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("strong", { children: [
 		                                usedK,
 		                                "k"
@@ -10066,7 +10057,7 @@ window.__ModuleLoader__.load({
 		                              " / ",
 		                              maxK,
 		                              "k"
-		                            ]
+		                            ] }) : "\u7B49\u5F85\u5F15\u64CE\u7EDF\u8BA1"
 		                          }
 		                        ),
 		                        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
@@ -10076,7 +10067,7 @@ window.__ModuleLoader__.load({
 		                            className: `p5-compaction-trigger-btn ${isCompacting ? "is-compacting" : ""}`,
 		                            "data-testid": "trigger-compaction-btn",
 		                            onClick: handleTriggerCompaction,
-		                            disabled: isCompacting,
+		                            disabled: isCompacting || state.turnActive,
 		                            title: "\u89E6\u53D1\u5386\u53F2\u4E0A\u4E0B\u6587\u8BB0\u5FC6\u84B8\u998F\u538B\u7F29",
 		                            children: isCompacting ? "\u2726 \u51DD\u70BC\u4E2D\u2026" : "\u2726 \u8BB0\u5FC6\u51DD\u70BC"
 		                          }
@@ -10093,6 +10084,7 @@ window.__ModuleLoader__.load({
 		                    {
 		                      type: "button",
 		                      "data-testid": `party-member-${ch.id}`,
+		                      disabled: state.turnActive,
 		                      className: `p5-medal-item ${isActive ? "is-active" : ""}`,
 		                      style: {
 		                        "--member-color": ch.themeColor
@@ -10152,7 +10144,7 @@ window.__ModuleLoader__.load({
 		                    "data-testid": "git-trophy-btn",
 		                    title: "\u67E5\u770B\u5DE5\u4F5C\u533A\u5168\u91CF Git \u53D8\u66F4\u3001\u5355\u6587\u4EF6\u64A4\u56DE\u4E0E\u4E00\u952E\u63D0\u4EA4",
 		                    children: [
-		                      "\u{1F5C2} \u6218\u5229\u54C1\u53D8\u66F4",
+		                      "\u{1F5C2} \u4EE3\u7801\u53D8\u66F4",
 		                      state.gitStatus.loaded && state.gitStatus.files.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-trophy-count", children: state.gitStatus.files.length })
 		                    ]
 		                  }
@@ -10595,11 +10587,7 @@ window.__ModuleLoader__.load({
 		                        children: [
 		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-badge", children: "\u2726 MEMORY DISTILLED // \u8BB0\u5FC6\u6458\u8981\u5361" }),
 		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-text", children: compactionState.summaryText }),
-		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "p5-compaction-node-freed", children: [
-		                            "\u2212",
-		                            Math.round(compactionState.freedTokens / 1e3),
-		                            "k Tokens"
-		                          ] })
+		                          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "p5-compaction-node-freed", children: compactionState.freedTokens > 0 ? `\u2212${Math.round(compactionState.freedTokens / 1e3)}k Tokens` : "\u5F15\u64CE\u672A\u63D0\u4F9B\u8282\u7701\u6570\u91CF" })
 		                        ]
 		                      }
 		                    ),
@@ -10798,7 +10786,7 @@ window.__ModuleLoader__.load({
 		                  "data-testid": "baton-pass-btn",
 		                  disabled: !canBatonPass,
 		                  onClick: () => setBatonModalOpen(true),
-		                  title: canBatonPass ? "\u5C06\u5F53\u524D\u4F1A\u8BDD\u6458\u8981\u4E0E\u4EE3\u7801\u6539\u52A8\u4EA4\u63A5\u7ED9\u53E6\u4E00\u4F4D\u89D2\u8272\u63A5\u529B\u63A8\u8FDB" : "\u5148\u5B8C\u6210\u81F3\u5C11\u4E00\u8F6E\u5BF9\u8BDD\u6216\u4FEE\u6539\u540E\u5373\u53EF\u53D1\u8D77\u602A\u76D7\u56E2\u6362\u624B\u63A5\u529B",
+		                  title: canBatonPass ? "\u5C06\u5F53\u524D\u4F1A\u8BDD\u6458\u8981\u4E0E\u4EE3\u7801\u6539\u52A8\u4EA4\u63A5\u7ED9\u53E6\u4E00\u4F4D\u89D2\u8272\u63A5\u529B\u63A8\u8FDB" : "\u5148\u5B8C\u6210\u81F3\u5C11\u4E00\u8F6E\u5BF9\u8BDD\u6216\u4FEE\u6539\u540E\u5373\u53EF\u53D1\u8D77\u89D2\u8272\u6362\u624B\u63A5\u529B",
 		                  children: "\u26A1 \u6362\u624B\u63A5\u529B"
 		                }
 		              ) }) }),
@@ -10894,7 +10882,7 @@ window.__ModuleLoader__.load({
 		                            }
 		                            addImageFiles(files);
 		                          },
-		                          placeholder: needsOnboarding ? "\u8BF7\u5148\u5728\u4E0A\u65B9\u300C\u9996\u6B21\u6F5C\u5165\u5F15\u5BFC\u300D\u5361\u7247\u4E2D\u9009\u5B9A\u9879\u76EE\u6587\u4EF6\u5939\u5E76\u70B9\u51FB\u300C\u5F00\u59CB\u300D..." : state.turnActive ? "\u4EFB\u52A1\u8FDB\u884C\u4E2D\uFF1A\u8F93\u5165\u6D88\u606F\u5E76\u56DE\u8F66\u7ACB\u5373\u63D2\u8BDD\u8865\u5145\u8981\u6C42\u2026" : `\u5411${shortNickname}\u4E0B\u8FBE\u65B0\u4EFB\u52A1\uFF0C\u6216\u5728\u6267\u884C\u4E2D\u76F4\u63A5\u63D2\u8BDD\u8865\u5145\u8981\u6C42\u2026`
+		                          placeholder: needsOnboarding ? "\u8BF7\u5148\u5728\u4E0A\u65B9\u300C\u9996\u6B21\u542F\u52A8\u5F15\u5BFC\u300D\u5361\u7247\u4E2D\u9009\u5B9A\u9879\u76EE\u6587\u4EF6\u5939\u5E76\u70B9\u51FB\u300C\u5F00\u59CB\u300D..." : state.turnActive ? "\u4EFB\u52A1\u8FDB\u884C\u4E2D\uFF1A\u8F93\u5165\u6D88\u606F\u5E76\u56DE\u8F66\u7ACB\u5373\u63D2\u8BDD\u8865\u5145\u8981\u6C42\u2026" : `\u5411${shortNickname}\u4E0B\u8FBE\u65B0\u4EFB\u52A1\uFF0C\u6216\u5728\u6267\u884C\u4E2D\u76F4\u63A5\u63D2\u8BDD\u8865\u5145\u8981\u6C42\u2026`
 		                        }
 		                      )
 		                    ] }),
@@ -10945,13 +10933,7 @@ window.__ModuleLoader__.load({
 		            children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-compaction-blade", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-kicker", children: "\u2726 MEMORY DISTILLATION // \u8BB0\u5FC6\u51DD\u70BC\u6280\u80FD\u53D1\u52A8\uFF01" }),
 		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-headline", children: compactionState.summaryText }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "p5-compaction-sub", children: [
-		                "DSH \u4E0A\u4E0B\u6587\u84B8\u998F\u5B8C\u6210 \xB7 \u8B66\u6212\u69FD\u5DF2\u56DE\u843D\u81F3 ",
-		                usedK,
-		                "k / ",
-		                maxK,
-		                "k Tokens"
-		              ] })
+		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "p5-compaction-sub", children: compactionState.freedTokens > 0 ? `\u4E0A\u4E0B\u6587\u6574\u7406\u5B8C\u6210 \xB7 \u91CA\u653E\u7EA6 ${Math.round(compactionState.freedTokens / 1e3)}k Tokens` : "\u4E0A\u4E0B\u6587\u6574\u7406\u5B8C\u6210 \xB7 \u672A\u63D0\u4F9B\u7CBE\u786E\u7528\u91CF\uFF0C\u5386\u53F2\u56DE\u770B\u5DF2\u4FDD\u7559" })
 		            ] })
 		          }
 		        ),
@@ -11509,6 +11491,10 @@ window.__ModuleLoader__.load({
 		  liveStreamingText = "";
 		  lastEmittedLiveLen = 0;
 		  approvalSeq = 0;
+		  rooms = {};
+		  roomsReady = null;
+		  changingRoom = false;
+		  pendingSteers = /* @__PURE__ */ new Set();
 		  bindCallbacks(callbacks) {
 		    this.callbacks = callbacks;
 		  }
@@ -11586,13 +11572,11 @@ window.__ModuleLoader__.load({
 		        }
 		      },
 		      characterBrains: Object.fromEntries(
-		        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [
-		          cid,
-		          {
-		            rolePrompt: brain.rolePrompt,
-		            ...cid === this.activeCharacterId ? { model } : {}
-		          }
-		        ])
+		        Object.entries(DEFAULT_SETTINGS.characterBrains).map(([cid, brain]) => [cid, {
+		          rolePrompt: brain.rolePrompt,
+		          ...this.rooms[cid]?.model ? { model: this.rooms[cid].model } : cid === this.activeCharacterId ? { model } : {},
+		          activeSessionId: this.rooms[cid]?.sessionId ?? null
+		        }])
 		      ),
 		      voice: {
 		        enabled: false,
@@ -11612,7 +11596,8 @@ window.__ModuleLoader__.load({
 		      adapter: "dsh",
 		      model: this.resolveModelName(),
 		      cwd: this.resolveCwd(),
-		      turnActive: this.isSessionRunning()
+		      turnActive: this.isSessionRunning(),
+		      characterId: this.activeCharacterId
 		    };
 		  }
 		  maybeCharacterReaction(ev) {
@@ -11770,6 +11755,8 @@ window.__ModuleLoader__.load({
 		      if (!isHumanUserMessageEvent(rawEv, data)) {
 		        return out;
 		      }
+		      const requestId = data.source?.rpcId ?? data.message?.source?.rpcId;
+		      if (typeof requestId === "string" && this.pendingSteers.delete(requestId)) out.push({ type: "steer_acked", id: requestId, at });
 		      const content = data.message?.content ?? data.content;
 		      const text = stripPersona(extractContentText(content));
 		      if (text) {
@@ -11795,13 +11782,14 @@ window.__ModuleLoader__.load({
 		      this.lastEmittedLiveLen = 0;
 		      const content = data.message?.content ?? data.content ?? [];
 		      const text = extractContentText(content);
-		      if (text && !hasToolCallBlock(content)) {
-		        this.replyShownInTurn = true;
+		      if (text) {
+		        const final = !hasToolCallBlock(content);
+		        if (final) this.replyShownInTurn = true;
 		        out.push({
 		          at,
 		          type: "worker_text",
 		          text,
-		          final: true
+		          final
 		        });
 		      }
 		      if (Array.isArray(content)) {
@@ -11884,13 +11872,13 @@ window.__ModuleLoader__.load({
 		    }
 		    if (type === "compaction/summary") {
 		      const summaryText = typeof data.summary === "string" && data.summary.trim() ? data.summary.trim().slice(0, 180) : "DSH \u5DF2\u5C06\u8F83\u65E9\u5BF9\u8BDD\u51DD\u70BC\u4E3A\u6458\u8981\u5361\uFF01";
-		      const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 8e4);
-		      const turns = Number(data.shadowedItemCount ?? 8);
+		      const freed = Number(data.shadowedTokenCount ?? data.freedTokens ?? 0);
+		      const turns = Number(data.shadowedItemCount ?? 0);
 		      out.push({
 		        at,
 		        type: "context_compacted",
 		        turnsCompacted: turns,
-		        freedTokens: freed > 0 ? freed : 8e4,
+		        freedTokens: Number.isFinite(freed) && freed > 0 ? freed : 0,
 		        summary: summaryText
 		      });
 		      return out;
@@ -12047,6 +12035,7 @@ window.__ModuleLoader__.load({
 		      attempt: 0,
 		      hasEverConnected: true
 		    });
+		    void this.ensureRooms().catch((error) => this.reportError(error, "update_settings"));
 		    void this.refreshModelCatalog(false);
 		    void preloadCharacterPacks().then(() => {
 		      if (this.initialized) {
@@ -12096,14 +12085,6 @@ window.__ModuleLoader__.load({
 		        }
 		      })
 		    );
-		    this.disposers.push(
-		      subscribeStoredCharacterId((nextId) => {
-		        if (nextId !== this.activeCharacterId) {
-		          this.activeCharacterId = nextId;
-		          this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		        }
-		      })
-		    );
 		  }
 		  retryNow() {
 		    this.handleWindowUpdate();
@@ -12126,6 +12107,10 @@ window.__ModuleLoader__.load({
 		    this.sessionListeners.clear();
 		  }
 		  send(text, images) {
+		    if (this.changingRoom) {
+		      this.reportError(new Error("\u89D2\u8272\u6B63\u5728\u5207\u6362\uFF0C\u8BF7\u7A0D\u540E\u53D1\u9001"), "send");
+		      return;
+		    }
 		    const hasImages = !!images && images.length > 0;
 		    const trimmed = text.trim() || (hasImages ? "\u8BF7\u770B\u8FD9\u5F20\u56FE\u3002" : "");
 		    if (!trimmed) return;
@@ -12162,32 +12147,24 @@ window.__ModuleLoader__.load({
 		    });
 		  }
 		  steer(text, images) {
-		    const hasImages = !!images && images.length > 0;
-		    const trimmed = text.trim() || (hasImages ? "\u8BF7\u770B\u8FD9\u5F20\u56FE\u3002" : "");
+		    const trimmed = text.trim() || (images?.length ? "\u8BF7\u770B\u8FD9\u5F20\u56FE\u3002" : "");
 		    if (!trimmed) return;
-		    const binding = this.ctx.sessions?.binding?.(this.sessionId);
-		    const session = binding?.session;
-		    if (!session) return;
-		    const sub = session.beginSubmission?.({
-		      mode: "steer",
-		      text: trimmed,
-		      attachments: echoAttachments(images)
-		    });
-		    this.emitMessage({
-		      type: "event",
-		      event: {
-		        at: Date.now(),
-		        type: "steer_queued",
-		        id: String(sub?.requestId ?? `steer_${Date.now()}`),
-		        text: trimmed
-		      }
-		    });
-		    void session.prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), "steer", void 0, sub?.requestId).then((res) => {
-		      if (res && res.ok === false) {
-		        sub?.abandon?.();
-		      }
-		    }).catch(() => {
+		    const session = this.ctx.sessions?.binding?.(this.sessionId)?.session;
+		    if (!session) {
+		      this.reportError(new Error("\u5C1A\u672A\u5EFA\u7ACB\u4F1A\u8BDD"), "steer");
+		      return;
+		    }
+		    const sub = session.beginSubmission?.({ mode: "steer", text: trimmed, attachments: echoAttachments(images) });
+		    const id = String(sub?.requestId ?? crypto.randomUUID());
+		    this.pendingSteers.add(id);
+		    this.emitMessage({ type: "event", event: { at: Date.now(), type: "steer_queued", id, text: trimmed } });
+		    void session.prompt(buildPromptParts(buildPersonaPreamble(this.activeCharacterId) + trimmed, images), "steer", void 0, id).then((res) => {
+		      this.unwrap(res);
+		      if (this.pendingSteers.has(id)) this.emitMessage({ type: "event", event: { at: Date.now(), type: "steer_submitted", id } });
+		    }).catch((error) => {
 		      sub?.abandon?.();
+		      this.pendingSteers.delete(id);
+		      this.emitMessage({ type: "event", event: { at: Date.now(), type: "steer_failed", id, message: error instanceof Error ? error.message : "\u63D2\u8BDD\u63D0\u4EA4\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5" } });
 		    });
 		  }
 		  stop() {
@@ -12232,8 +12209,7 @@ window.__ModuleLoader__.load({
 		    const sessions = this.buildSessionSummaries();
 		    const feedState = {
 		      sessions,
-		      loading: false,
-		      loaded: true
+		      status: "ready"
 		    };
 		    for (const fn of this.sessionListeners) {
 		      fn(feedState);
@@ -12248,8 +12224,7 @@ window.__ModuleLoader__.load({
 		    this.sessionListeners.add(listener);
 		    listener({
 		      sessions: this.buildSessionSummaries(),
-		      loading: false,
-		      loaded: true
+		      status: "ready"
 		    });
 		    return () => {
 		      this.sessionListeners.delete(listener);
@@ -12274,73 +12249,124 @@ window.__ModuleLoader__.load({
 		  async reloadCatalogAndBroadcast() {
 		    await this.refreshModelCatalog(true);
 		  }
-		  batonPass(toCharacterId, instruction) {
-		    const fromCharacterId = this.activeCharacterId;
-		    const fromPack = getCachedCharacterPack(fromCharacterId);
-		    const toPack = getCachedCharacterPack(toCharacterId);
-		    const fromShort = fromPack.name.split("\uFF08")[0];
-		    const toShort = toPack.name.split("\uFF08")[0];
-		    this.activeCharacterId = toCharacterId;
-		    setStoredCharacterId(toCharacterId);
-		    const cwd = this.resolveCwd();
-		    const touchedFiles = /* @__PURE__ */ new Set();
-		    const entries = this.ctx.sessions?.binding?.(this.sessionId)?.eventSource?.getSnapshot?.()?.entries ?? [];
-		    for (const item of entries) {
-		      if (item?.type === "event" && item.event?.type === "tool/call") {
-		        const d = item.event.data ?? {};
-		        const args = parseArgsObject(d.args ?? d.input ?? d.arguments);
-		        const info = summarizeToolCall(String(d.toolName ?? d.name ?? "tool"), args, cwd);
-		        if (info.file) touchedFiles.add(info.file);
-		      }
-		    }
-		    const cleanInst = (instruction ?? "").trim();
-		    const summaryText = `${fromShort} \u2794 ${toShort}\uFF1A${cleanInst || "\u63A5\u529B\u63A8\u8FDB\u5F53\u524D\u4EFB\u52A1\u4E0E\u4EE3\u7801\u5BA1\u67E5"}`;
-		    this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		    this.emitStageEventWithReaction({
-		      at: Date.now(),
-		      type: "baton_pass",
-		      fromCharacterId,
-		      toCharacterId,
-		      summary: summaryText
+		  unwrap(value) {
+		    if (value?.ok === false) throw new Error(String(value.error?.message ?? "DSH \u62D2\u7EDD\u4E86\u8BF7\u6C42"));
+		    return value?.value ?? value;
+		  }
+		  reportError(error, commandType) {
+		    this.emitMessage({ type: "command_error", commandType, message: error instanceof Error ? error.message : "\u64CD\u4F5C\u5931\u8D25" });
+		  }
+		  async stageRequest(input) {
+		    const res = await fetch("/api/bigfish-stage", {
+		      method: "POST",
+		      credentials: "same-origin",
+		      headers: { "content-type": "application/json" },
+		      body: JSON.stringify({ ...input, cwd: this.resolveCwd() })
 		    });
-		    const filesHint = touchedFiles.size > 0 ? `
-		\u524D\u5E8F\u6B65\u9AA4\u6D89\u53CA\u6587\u4EF6\uFF1A${Array.from(touchedFiles).slice(-8).join(", ")}` : "";
-		    const handoffPrompt = [
-		      `\u3010\u602A\u76D7\u56E2 Baton Pass \u6362\u624B\u63A5\u529B\u3011\u4E0A\u4E00\u68D2\u961F\u53CB\u300C${fromShort}\u300D\u5DF2\u5C06\u63A5\u529B\u68D2\u4EA4\u7ED9\u4F60\uFF08${toShort}\uFF09\u3002${filesHint}`,
-		      `\u672C\u68D2\u4EA4\u63A5\u6307\u4EE4\uFF1A${cleanInst || "\u8BF7\u57FA\u4E8E\u4E0A\u65B9\u5BF9\u8BDD\u4E0E\u4EE3\u7801\u6539\u52A8\u4E0A\u4E0B\u6587\uFF0C\u590D\u6838\u4E0A\u4E00\u68D2\u7684\u7ED3\u8BBA\uFF0C\u6307\u51FA\u6F5C\u5728\u95EE\u9898\u6216\u7EE7\u7EED\u63A8\u8FDB\u4E0B\u4E00\u6B65\u5B9E\u73B0\u3002"}`
-		    ].join("\n");
-		    this.send(handoffPrompt);
+		    if (!res.ok) throw new Error(res.status === 404 ? "\u8BF7\u5347\u7EA7 DeepSeek Harness \u5E76\u91CD\u65B0\u542F\u7528\u821E\u53F0\u63D2\u4EF6\uFF0C\u4EE5\u4F7F\u7528\u89D2\u8272\u623F\u95F4\u548C\u4EE3\u7801\u53D8\u66F4\u529F\u80FD" : `\u821E\u53F0\u64CD\u4F5C\u5931\u8D25 (${res.status})`);
+		    const data = await res.json();
+		    if (data.error) throw new Error(data.error);
+		    return data;
+		  }
+		  ensureRooms() {
+		    if (!this.roomsReady) this.roomsReady = (async () => {
+		      this.rooms = await this.stageRequest({ op: "rooms_get" });
+		      const owner = Object.entries(this.rooms).find(([, room]) => room.sessionId === this.sessionId)?.[0];
+		      if (owner) this.activeCharacterId = owner;
+		      else if (!this.rooms[this.activeCharacterId]?.sessionId) {
+		        this.rooms = await this.stageRequest({ op: "rooms_patch", characterId: this.activeCharacterId, sessionId: this.sessionId, ...this.resolveModelName() !== "dsh/default" ? { model: this.resolveModelName() } : {} });
+		      }
+		      this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
+		      this.emitMessage({ type: "session", session: this.buildSessionInfo() });
+		    })().catch((error) => {
+		      this.roomsReady = null;
+		      throw error;
+		    });
+		    return this.roomsReady;
 		  }
 		  switchCharacter(characterId) {
-		    this.activeCharacterId = characterId;
-		    setStoredCharacterId(characterId);
-		    const pack = getCachedCharacterPack(characterId);
-		    const picked = pickReactionForEvent(
-		      pack,
-		      {
-		        at: Date.now(),
-		        type: "session_started",
-		        sessionId: this.sessionId,
-		        model: this.resolveModelName(),
-		        cwd: this.resolveCwd()
-		      },
-		      this.reactionSeed++
-		    );
-		    this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		    if (picked) {
-		      this.emitMessage({
-		        type: "event",
-		        event: {
-		          at: Date.now(),
-		          type: "character_line",
-		          characterId,
-		          emotion: "happy",
-		          text: picked.text,
-		          source: "preset",
-		          lineId: `switch_${Date.now()}_${this.reactionSeed}`
-		        }
-		      });
+		    void this.changeRoom(characterId);
+		  }
+		  batonPass(toCharacterId, instruction) {
+		    const entries = this.ctx.sessions?.binding?.(this.sessionId)?.eventSource?.getSnapshot?.()?.entries ?? [];
+		    const context = [];
+		    for (const item of entries) {
+		      const ev = item?.event;
+		      if (ev?.type === "user/message" || ev?.type === "assistant/message") {
+		        const text = stripPersona(extractContentText(ev.data?.message?.content ?? ev.data?.content));
+		        if (text) context.push(`${ev.type === "user/message" ? "\u7528\u6237" : "\u4E0A\u4E00\u4F4D\u89D2\u8272"}\uFF1A${text.slice(0, 2500)}`);
+		      } else if (ev?.type === "tool/call") {
+		        const d = ev.data ?? {};
+		        const info = summarizeToolCall(String(d.toolName ?? d.name ?? "tool"), parseArgsObject(d.args ?? d.input ?? d.arguments), this.resolveCwd());
+		        if (info.file) context.push(`\u64CD\u4F5C\u6587\u4EF6\uFF1A${info.file}`);
+		      }
 		    }
+		    const handoff = `\u3010\u89D2\u8272\u6362\u624B\u4EA4\u63A5\u3011\u4E0A\u4E00\u4F4D\uFF1A${getCachedCharacterPack(this.activeCharacterId).name}
+		${context.slice(-12).join("\n")}
+		\u672C\u8F6E\u4EFB\u52A1\uFF1A${instruction?.trim() || "\u590D\u6838\u5DF2\u6709\u6539\u52A8\u548C\u7ED3\u8BBA\uFF0C\u7EE7\u7EED\u5B8C\u6210\u4EFB\u52A1\u3002"}`;
+		    void this.changeRoom(toCharacterId, handoff);
+		  }
+		  async changeRoom(characterId, handoff) {
+		    const command = handoff ? "baton_pass" : "switch_character";
+		    if (this.changingRoom || this.isSessionRunning()) {
+		      this.reportError(new Error("\u8BF7\u7B49\u5F85\u672C\u8F6E\u5B8C\u6210\u6216\u5148\u558A\u505C\uFF0C\u518D\u5207\u6362\u89D2\u8272"), command);
+		      return;
+		    }
+		    if (!KNOWN_CHARACTER_IDS.includes(characterId)) {
+		      this.reportError(new Error("\u89D2\u8272\u4E0D\u5B58\u5728"), command);
+		      return;
+		    }
+		    if (characterId === this.activeCharacterId) return;
+		    this.changingRoom = true;
+		    try {
+		      await this.ensureRooms();
+		      await this.refreshModelCatalog(false);
+		      if (this.isSessionRunning()) throw new Error("\u4EFB\u52A1\u5DF2\u5F00\u59CB\uFF0C\u8BF7\u5148\u558A\u505C");
+		      if (!this.ctx.uiWorkspace?.openSession) throw new Error("DSH \u4F1A\u8BDD\u5BFC\u822A\u6682\u4E0D\u53EF\u7528");
+		      this.rooms = await this.stageRequest({ op: "rooms_patch", characterId: this.activeCharacterId, sessionId: this.sessionId, model: this.resolveModelName() });
+		      const room = this.rooms[characterId];
+		      const model = room?.model || getCachedCharacterPack(characterId).recommendedModels?.find((m) => this.catalogModels.includes(m)) || this.defaultModelSelection?.model || this.resolveModelName();
+		      let target = room?.sessionId;
+		      if (!target) {
+		        if (!this.ctx.remote?.session?.create) throw new Error("DSH \u4E0D\u652F\u6301\u521B\u5EFA\u72EC\u7ACB\u89D2\u8272\u4F1A\u8BDD\uFF0C\u8BF7\u5347\u7EA7");
+		        target = this.unwrap(await this.ctx.remote.session.create({ cwd: this.resolveCwd(), agentPreset: this.resolveAgentPreset() }))?.sessionId;
+		        if (!target) throw new Error("\u672A\u80FD\u521B\u5EFA\u89D2\u8272\u4F1A\u8BDD");
+		      }
+		      if (this.ctx.sessions?.binding?.(target)?.session?.getSnapshot?.()?.running || this.ctx.sessions?.list?.getSnapshot?.()?.byId?.[target]?.running) throw new Error("\u76EE\u6807\u89D2\u8272\u6B63\u5728\u6267\u884C\u53E6\u4E00\u9879\u4EFB\u52A1");
+		      await this.selectModelAndEffort(model, void 0, target);
+		      this.rooms = await this.stageRequest({ op: "rooms_patch", characterId, sessionId: target, model });
+		      if (handoff) {
+		        if (!this.ctx.remote?.session?.prompt) throw new Error("DSH \u63A5\u529B\u53D1\u9001\u63A5\u53E3\u4E0D\u53EF\u7528");
+		        this.unwrap(await this.ctx.remote.session.prompt({ sessionId: target, requestId: crypto.randomUUID(), mode: "queue", content: buildPromptParts(buildPersonaPreamble(characterId) + handoff, void 0) }));
+		      }
+		      const fromCharacterId = this.activeCharacterId;
+		      setStoredCharacterId(characterId);
+		      if (handoff) this.emitMessage({ type: "event", event: { at: Date.now(), type: "baton_pass", fromCharacterId, toCharacterId: characterId, summary: "\u5DF2\u5207\u6362\u5230\u76EE\u6807\u89D2\u8272\u7684\u6A21\u578B\u548C\u4F1A\u8BDD\u5E76\u63D0\u4EA4\u4EA4\u63A5\u4EFB\u52A1" } });
+		      this.ctx.uiWorkspace.openSession(target);
+		    } catch (error) {
+		      this.reportError(error, command);
+		    } finally {
+		      this.changingRoom = false;
+		    }
+		  }
+		  requestGitStatus() {
+		    void this.stageRequest({ op: "git_status" }).then((data) => this.emitMessage({ type: "git_status_result", ...data })).catch((error) => this.emitMessage({ type: "git_status_result", isRepo: false, files: [], diff: "", error: error.message }));
+		  }
+		  revertGitFile(path) {
+		    this.gitOperation("revert", { op: "git_revert", path });
+		  }
+		  commitGit(message) {
+		    this.gitOperation("commit", { op: "git_commit", message });
+		  }
+		  gitOperation(op, input) {
+		    if (this.isSessionRunning() || this.changingRoom) {
+		      this.emitMessage({ type: "git_op_result", op, ok: false, message: "\u8BF7\u5148\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210\uFF0C\u907F\u514D\u540C\u65F6\u4FEE\u6539\u6587\u4EF6" });
+		      return;
+		    }
+		    void this.stageRequest(input).then((data) => {
+		      this.emitMessage({ type: "git_op_result", op, ...data });
+		      this.requestGitStatus();
+		    }).catch((error) => this.emitMessage({ type: "git_op_result", op, ok: false, message: error.message }));
 		  }
 		  updateSettings(patch) {
 		    if (patch.activeCharacterId) {
@@ -12362,40 +12388,38 @@ window.__ModuleLoader__.load({
 		      }
 		      this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
 		    }
-		    const brainModel = patch.characterBrains ? Object.values(patch.characterBrains).find((b) => typeof b?.model === "string" && b.model.trim())?.model : void 0;
-		    const requestedModel = patch.worker?.model ?? brainModel;
-		    const requestedEffort = patch.worker?.reasoningEffort;
-		    if (typeof requestedEffort === "string" && !requestedModel) {
-		      this.selectModelAndEffort(this.resolveModelName(), requestedEffort);
-		      return;
-		    }
-		    if (typeof requestedModel === "string" && requestedModel.trim()) {
-		      const model = requestedModel.trim();
-		      const supported = reasoningBridge.efforts(model).map((e) => e.id);
-		      const keep = currentReasoningEffort && supported.includes(currentReasoningEffort) ? currentReasoningEffort : void 0;
-		      this.selectModelAndEffort(model, requestedEffort ?? keep);
-		      return;
+		    void this.updateModelSettings(patch).catch((error) => this.reportError(error, "update_settings"));
+		  }
+		  async updateModelSettings(patch) {
+		    if (!patch.characterBrains && !patch.worker?.model && !patch.worker?.reasoningEffort) return;
+		    if (this.changingRoom || this.isSessionRunning()) throw new Error("\u8BF7\u7B49\u5F85\u672C\u8F6E\u5B8C\u6210\u540E\u518D\u4FEE\u6539\u6A21\u578B");
+		    this.changingRoom = true;
+		    try {
+		      await this.ensureRooms();
+		      if (this.isSessionRunning()) throw new Error("\u4EFB\u52A1\u5DF2\u5F00\u59CB\uFF0C\u8BF7\u5148\u558A\u505C");
+		      for (const [characterId, brain] of Object.entries(patch.characterBrains ?? {})) {
+		        if (!brain?.model?.trim()) continue;
+		        if (characterId === this.activeCharacterId) await this.selectModelAndEffort(brain.model.trim());
+		        this.rooms = await this.stageRequest({ op: "rooms_patch", characterId, model: brain.model.trim() });
+		      }
+		      if (patch.worker?.model || patch.worker?.reasoningEffort) {
+		        const model = patch.worker.model?.trim() || this.resolveModelName();
+		        await this.selectModelAndEffort(model, patch.worker.reasoningEffort);
+		        this.rooms = await this.stageRequest({ op: "rooms_patch", characterId: this.activeCharacterId, model });
+		      }
+		      this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
+		      this.emitMessage({ type: "session", session: this.buildSessionInfo() });
+		    } finally {
+		      this.changingRoom = false;
 		    }
 		  }
-		  selectModelAndEffort(model, effort) {
-		    {
-		      const provider = this.modelProviderMap.get(model) ?? this.defaultModelSelection?.provider ?? "deepseek-account";
-		      if (this.ctx.remote?.session?.selectModel) {
-		        void this.ctx.remote.session.selectModel({
-		          sessionId: this.sessionId,
-		          provider,
-		          model,
-		          ...effort ? { reasoningEffort: effort } : {}
-		        }).then(() => {
-		          if (effort) {
-		            currentReasoningEffort = effort;
-		            notifyReasoning();
-		          }
-		          this.emitMessage({ type: "session", session: this.buildSessionInfo() });
-		          this.emitMessage({ type: "settings", settings: this.buildPublicSettings() });
-		        }).catch(() => {
-		        });
-		      }
+		  async selectModelAndEffort(model, effort, sessionId = this.sessionId) {
+		    const provider = this.modelProviderMap.get(model) ?? this.defaultModelSelection?.provider ?? "deepseek-account";
+		    if (!this.ctx.remote?.session?.selectModel) throw new Error("DSH \u6A21\u578B\u5207\u6362\u63A5\u53E3\u4E0D\u53EF\u7528");
+		    this.unwrap(await this.ctx.remote.session.selectModel({ sessionId, provider, model, ...effort ? { reasoningEffort: effort } : {} }));
+		    if (effort && sessionId === this.sessionId) {
+		      currentReasoningEffort = effort;
+		      notifyReasoning();
 		    }
 		  }
 		  listModels(target) {
@@ -12411,7 +12435,15 @@ window.__ModuleLoader__.load({
 		  }
 		  compactSession() {
 		    const binding = this.ctx.sessions?.binding?.(this.sessionId);
-		    void binding?.session?.command?.("/compact");
+		    if (this.changingRoom || this.isSessionRunning()) {
+		      this.reportError(new Error("\u8BF7\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210\u540E\u518D\u6574\u7406\u8BB0\u5FC6"), "compact_session");
+		      return;
+		    }
+		    if (!binding?.session?.command) {
+		      this.reportError(new Error("\u5F53\u524D\u4F1A\u8BDD\u4E0D\u652F\u6301\u6574\u7406\u8BB0\u5FC6"), "compact_session");
+		      return;
+		    }
+		    void Promise.resolve(binding.session.command("/compact")).then((value) => this.unwrap(value)).catch((error) => this.reportError(error, "compact_session"));
 		  }
 		  testConnection(target) {
 		    this.emitMessage({
@@ -12517,7 +12549,7 @@ window.__ModuleLoader__.load({
 		          playSfx("hover");
 		        },
 		        onMouseLeave: () => setHovered(false),
-		        title: "\u5C55\u5F00\u6F5C\u5165\u6863\u6848\u680F (Cmd/Ctrl+B)",
+		        title: "\u5C55\u5F00\u4F1A\u8BDD\u6863\u6848\u680F (Cmd/Ctrl+B)",
 		        style: {
 		          background: "transparent",
 		          border: "none",
@@ -12723,11 +12755,11 @@ window.__ModuleLoader__.load({
 		            blankAdded = true;
 		          }
 		          const customTitle = localTitleOverrides[sid];
-		          const label = String(customTitle || s.displayTitle || s.title || (s.blank ? "\u65B0\u6F5C\u5165\u884C\u52A8" : sid));
+		          const label = String(customTitle || s.displayTitle || s.title || (s.blank ? "\u65B0\u4F1A\u8BDD" : sid));
 		          if (needle && !label.toLowerCase().includes(needle) && !String(ws.title).toLowerCase().includes(needle)) {
 		            continue;
 		          }
-		          wsSessions.push({ ...s, _label: customTitle || (s.blank ? "\u65B0\u6F5C\u5165\u884C\u52A8 \xB7 \u5F85\u547D" : label) });
+		          wsSessions.push({ ...s, _label: customTitle || (s.blank ? "\u65B0\u4F1A\u8BDD \xB7 \u5F85\u547D" : label) });
 		        }
 		        out.push({
 		          id: ws.workspaceId,
@@ -12744,14 +12776,14 @@ window.__ModuleLoader__.load({
 		        if (!s || s.origin === "subagent") continue;
 		        if (s.blank && sid !== selectedSessionId) continue;
 		        const customTitle = localTitleOverrides[sid];
-		        const label = String(customTitle || s.displayTitle || s.title || (s.blank ? "\u65B0\u6F5C\u5165\u884C\u52A8 \xB7 \u5F85\u547D" : sid));
+		        const label = String(customTitle || s.displayTitle || s.title || (s.blank ? "\u65B0\u4F1A\u8BDD \xB7 \u5F85\u547D" : sid));
 		        if (needle && !label.toLowerCase().includes(needle)) continue;
 		        ungrouped.push({ ...s, _label: label });
 		      }
 		      if (ungrouped.length > 0) {
 		        out.push({
 		          id: "__ungrouped__",
-		          title: "\u72EC\u7ACB\u6F5C\u5165\u8BB0\u5F55",
+		          title: "\u72EC\u7ACB\u4F1A\u8BDD\u8BB0\u5F55",
 		          sessions: ungrouped
 		        });
 		      }
@@ -12800,7 +12832,7 @@ window.__ModuleLoader__.load({
 		      e.stopPropagation();
 		      playSfx("select");
 		      setEditingSessionId(sid);
-		      setEditingDraft(currentLabel === "\u65B0\u6F5C\u5165\u884C\u52A8 \xB7 \u5F85\u547D" ? "" : currentLabel);
+		      setEditingDraft(currentLabel === "\u65B0\u4F1A\u8BDD \xB7 \u5F85\u547D" ? "" : currentLabel);
 		    };
 		    const handleCommitRenameSession = (sid, rawDraft) => {
 		      const trimmed = rawDraft.trim();
@@ -12850,7 +12882,7 @@ window.__ModuleLoader__.load({
 		                    playSfx("select");
 		                    ctx.layout?.toggleSidebar?.();
 		                  },
-		                  title: "\u5C55\u5F00\u6F5C\u5165\u6863\u6848\u680F",
+		                  title: "\u5C55\u5F00\u4F1A\u8BDD\u6863\u6848\u680F",
 		                  style: { background: "transparent", border: "none", padding: 0, cursor: "pointer" },
 		                  children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    P5PolyBox,
@@ -12871,7 +12903,7 @@ window.__ModuleLoader__.load({
 		                {
 		                  type: "button",
 		                  onClick: () => handleNewSession(),
-		                  title: "\u65B0\u5EFA\u6F5C\u5165\u884C\u52A8",
+		                  title: "\u65B0\u5EFA\u821E\u53F0\u4F1A\u8BDD",
 		                  style: { background: "transparent", border: "none", padding: 0, cursor: "pointer" },
 		                  children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		                    P5PolyBox,
@@ -13034,7 +13066,7 @@ window.__ModuleLoader__.load({
 		                pointerEvents: "none",
 		                zIndex: 0
 		              },
-		              children: "PHANTOM LOG"
+		              children: "STAGE LOG"
 		            }
 		          ),
 		          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
@@ -13117,7 +13149,7 @@ window.__ModuleLoader__.load({
 		                              overflow: "hidden",
 		                              textOverflow: "ellipsis"
 		                            },
-		                            children: "\u6F5C\u5165\u884C\u52A8\u6863\u6848"
+		                            children: "\u821E\u53F0\u4F1A\u8BDD\u6863\u6848"
 		                          }
 		                        )
 		                      ] })
@@ -13133,7 +13165,7 @@ window.__ModuleLoader__.load({
 		                      ctx.layout?.toggleSidebar?.();
 		                    },
 		                    onMouseEnter: () => playSfx("hover"),
-		                    title: "\u6536\u8D77\u6F5C\u5165\u6863\u6848\u680F",
+		                    title: "\u6536\u8D77\u4F1A\u8BDD\u6863\u6848\u680F",
 		                    style: {
 		                      background: "transparent",
 		                      border: "none",
@@ -13222,7 +13254,7 @@ window.__ModuleLoader__.load({
 		                                  children: "NEW"
 		                                }
 		                              ),
-		                              "\uFF0B \u65B0\u5EFA\u6F5C\u5165\u884C\u52A8"
+		                              "\uFF0B \u65B0\u5EFA\u821E\u53F0\u4F1A\u8BDD"
 		                            ]
 		                          }
 		                        ),
@@ -13268,7 +13300,7 @@ window.__ModuleLoader__.load({
 		                    "data-testid": `p5-sb-panel-${panel.id}`,
 		                    onClick: () => handleOpenPanel(panel.id),
 		                    onMouseEnter: () => playSfx("hover"),
-		                    title: isActive ? `\u8FD4\u56DE\u6F5C\u5165\u821E\u53F0` : `\u6253\u5F00 ${panel.label}`,
+		                    title: isActive ? `\u8FD4\u56DE\u5927\u80A5\u9C7C\u5DE5\u4F5C\u53F0` : `\u6253\u5F00 ${panel.label}`,
 		                    style: {
 		                      width: "100%",
 		                      background: "transparent",
@@ -13397,7 +13429,7 @@ window.__ModuleLoader__.load({
 		                          type: "text",
 		                          value: query,
 		                          onChange: (e) => setQuery(e.target.value),
-		                          placeholder: "\u68C0\u7D22\u6F5C\u5165\u8BB0\u5F55\u2026",
+		                          placeholder: "\u68C0\u7D22\u4F1A\u8BDD\u8BB0\u5F55\u2026",
 		                          style: {
 		                            width: "100%",
 		                            background: "transparent",
@@ -13587,7 +13619,7 @@ window.__ModuleLoader__.load({
 		                        type: "button",
 		                        onClick: () => handleNewSession(group.workspaceId),
 		                        onMouseEnter: () => playSfx("hover"),
-		                        title: `\u5728 ${group.title} \u65B0\u5EFA\u6F5C\u5165`,
+		                        title: `\u5728 ${group.title} \u65B0\u5EFA\u4F1A\u8BDD`,
 		                        style: {
 		                          background: "transparent",
 		                          border: "none",
@@ -13919,7 +13951,7 @@ window.__ModuleLoader__.load({
 		                                    overflow: "hidden",
 		                                    textOverflow: "ellipsis"
 		                                  },
-		                                  children: "BIG FISH \xD7 DSH CORE"
+		                                  children: "BIGFISH STAGE \xD7 DSH"
 		                                }
 		                              ),
 		                              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
@@ -13999,8 +14031,8 @@ window.__ModuleLoader__.load({
 		  "theme",
 		  "locale"
 		];
-		var PLUGIN_OWNER_ID = "p5-agent-stage" ? "p5-agent-stage" : "@bigfish/dsh-client-ui-p5stage";
-		var STANDALONE_PRODUCT_TITLE = "\u5927\u80A5\u9C7C\u5DE5\u4F5C\u53F0 // P5 AGENT STAGE";
+		var PLUGIN_OWNER_ID = "bigfish-stage" ? "bigfish-stage" : "@bigfish/dsh-client-ui-p5stage";
+		var STANDALONE_PRODUCT_TITLE = "BigFish Stage \xB7 \u5927\u80A5\u9C7C\u5DE5\u4F5C\u53F0";
 		var SIDEBAR_SLOT_CHILDREN = {
 		  "sidebar.brand.mark": { kind: "single", scope: "root" },
 		  "sidebar.brand.name": { kind: "single", scope: "root" },
@@ -14078,9 +14110,7 @@ window.__ModuleLoader__.load({
 		  -webkit-font-smoothing: antialiased;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   STAGE VIEWPORT & P5X GEOMETRIC BACKDROP
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-stage-viewport {
 		  position: relative;
 		  width: 100vw;
@@ -14166,7 +14196,7 @@ window.__ModuleLoader__.load({
 		  pointer-events: none;
 		}
 		
-		/* Electron macOS native window traffic light spacing & drag region */
+		
 		.p5-stage-viewport.is-native-app .p5-brand-strip,
 		.p5-stage-viewport.is-native-app .p5-workspace-header {
 		  -webkit-app-region: drag;
@@ -14188,9 +14218,7 @@ window.__ModuleLoader__.load({
 		  -webkit-app-region: no-drag;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   MAIN 2-ZONE P5X STAGE GRID (Left Character Stage / Right AI Workspace)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-main-grid {
 		  position: relative;
 		  flex: 1;
@@ -14205,9 +14233,7 @@ window.__ModuleLoader__.load({
 		  padding: 0;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   LEFT ZONE: P5X BREAK-THE-FRAME CHARACTER STAGE + INTEGRATED HUD
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-left-column {
 		  position: relative;
 		  display: flex;
@@ -14279,7 +14305,7 @@ window.__ModuleLoader__.load({
 		  box-shadow: 0 0 8px var(--p5-cyan);
 		}
 		
-		/* Break-the-Frame Character Showcase */
+		
 		.p5-portrait-stage {
 		  position: relative;
 		  flex: 1;
@@ -14471,7 +14497,7 @@ window.__ModuleLoader__.load({
 		    );
 		}
 		
-		/* Speaking Energy Halo & Active Aura */
+		
 		.p5-portrait-voice-aura {
 		  position: absolute;
 		  width: 68%;
@@ -14496,7 +14522,7 @@ window.__ModuleLoader__.load({
 		  opacity: calc(0.34 + var(--voice-amp, 0) * 0.66);
 		}
 		
-		/* Ambient Character Sparks */
+		
 		@keyframes p5SparkFloat {
 		  0% {
 		    opacity: 0;
@@ -14531,7 +14557,7 @@ window.__ModuleLoader__.load({
 		  animation: p5SparkFloat 4.2s ease-in-out infinite;
 		}
 		
-		/* Floating Collar/Cheek Soundwave & Star Equalizer Badge */
+		
 		.p5-voice-eq-badge {
 		  position: absolute;
 		  right: 8%;
@@ -14581,7 +14607,7 @@ window.__ModuleLoader__.load({
 		  height: calc(5px + var(--voice-amp, 0.25) * 11px);
 		}
 		
-		/* Hover Hit-Zone Hint Pill */
+		
 		.p5-touch-zone-hint {
 		  position: absolute;
 		  top: 10px;
@@ -14598,7 +14624,7 @@ window.__ModuleLoader__.load({
 		  pointer-events: none;
 		}
 		
-		/* Floating P5 Comic Onomatopoeia Stamp on Click (900ms pop & fade) */
+		
 		@keyframes p5ComicStampPop {
 		  0% {
 		    opacity: 0;
@@ -14668,7 +14694,7 @@ window.__ModuleLoader__.load({
 		  animation: p5PortraitBounce 360ms cubic-bezier(0.22, 1.28, 0.36, 1);
 		}
 		
-		/* P5X Overlapping Nameplate Cluster */
+		
 		.p5-char-info-cluster {
 		  position: relative;
 		  z-index: 40;
@@ -14789,7 +14815,7 @@ window.__ModuleLoader__.load({
 		  text-overflow: ellipsis;
 		}
 		
-		/* P5 Palace Security Level / DSH Context Meter */
+		
 		.p5-context-meter {
 		  width: 94%;
 		  background: rgba(8, 9, 14, 0.92);
@@ -14885,7 +14911,7 @@ window.__ModuleLoader__.load({
 		  );
 		}
 		
-		/* Bottom Left Dock: P5 Tactical Context Radar Dial (Left) + 4 Character Avatars (Right) */
+		
 		.p5-bottom-left-dock {
 		  display: flex;
 		  align-items: center;
@@ -15077,9 +15103,7 @@ window.__ModuleLoader__.load({
 		  border: 1.5px solid var(--p5-yellow);
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   RIGHT ZONE: AI CODING WORKSPACE (TOPBAR + COMIC BUBBLE + ACTION STREAM + INPUT)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-center-stage {
 		  position: relative;
 		  z-index: 20;
@@ -15093,7 +15117,7 @@ window.__ModuleLoader__.load({
 		  height: 100%;
 		}
 		
-		/* 1. Minimal Workspace Header */
+		
 		.p5-workspace-header {
 		  display: flex;
 		  align-items: center;
@@ -15190,7 +15214,7 @@ window.__ModuleLoader__.load({
 		  border-color: var(--p5-black);
 		}
 		
-		/* 2. Authentic P5 Comic Dialogue Bubble with Pointer Tail */
+		
 		.p5-dialogue-section {
 		  display: flex;
 		  flex-direction: column;
@@ -15416,7 +15440,7 @@ window.__ModuleLoader__.load({
 		  height: 0;
 		}
 		
-		/* Lightweight Markdown formatting inside dialogue bubble & conclusion card */
+		
 		.p5-md-para {
 		  display: block;
 		}
@@ -15529,7 +15553,7 @@ window.__ModuleLoader__.load({
 		  max-width: 240px;
 		}
 		
-		/* 3. Unified AI Action & Code Diff Stream */
+		
 		.p5-action-section {
 		  flex: 1;
 		  min-height: 0;
@@ -15638,7 +15662,7 @@ window.__ModuleLoader__.load({
 		  font-size: 11.5px;
 		}
 		
-		/* DSH Memory Compaction Summary Node & Cut-in Banner */
+		
 		.p5-compaction-summary-node {
 		  display: flex;
 		  align-items: center;
@@ -15680,7 +15704,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* Worker Answer Body Card in Trajectory */
+		
 		.p5-worker-answer-card {
 		  background: rgba(12, 15, 23, 0.95);
 		  border: 2.5px solid var(--p5-white);
@@ -15721,7 +15745,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 600;
 		}
 		
-		/* Standby Heist Route Preview when idle */
+		
 		.p5-trajectory-standby {
 		  display: flex;
 		  flex-direction: column;
@@ -15770,7 +15794,7 @@ window.__ModuleLoader__.load({
 		  color: #94a3b8;
 		}
 		
-		/* Full-screen P5 Memory Compaction Cut-in Banner */
+		
 		@keyframes p5CompactionSlash {
 		  0% {
 		    opacity: 0;
@@ -15925,7 +15949,7 @@ window.__ModuleLoader__.load({
 		  color: #f87171;
 		}
 		
-		/* Inline Code Diff Preview Card */
+		
 		.p5-inline-diff-box {
 		  margin: -2px 6px 2px 14px;
 		  background: #090b10;
@@ -15977,7 +16001,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* Steer Strip */
+		
 		.p5-steer-strip {
 		  display: flex;
 		  flex-direction: column;
@@ -16023,7 +16047,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-white);
 		}
 		
-		/* 4. Sleek Slanted Command Input Bar */
+		
 		.p5-command-dock {
 		  display: flex;
 		  flex-direction: column;
@@ -16148,9 +16172,7 @@ window.__ModuleLoader__.load({
 		  cursor: not-allowed;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   PERMISSION CHOICE CUT-IN MODAL (\u6743\u9650\u9009\u62E9\u80A2)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-permission-backdrop {
 		  position: fixed;
 		  inset: 0;
@@ -16319,9 +16341,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 700;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   ARCHIVE DOSSIER MODAL (\u6863\u6848\u5C42) & BACKLOG MODAL (\u56DE\u770B)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-modal-backdrop {
 		  position: fixed;
 		  inset: 0;
@@ -16452,7 +16472,7 @@ window.__ModuleLoader__.load({
 		  user-select: text;
 		}
 		
-		/* \u2500\u2500 DIFF & TERMINAL VIEWERS \u2500\u2500 */
+		
 		.p5-diff-viewer,
 		.p5-terminal-viewer {
 		  font-family: var(--font-mono);
@@ -16528,7 +16548,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 700;
 		}
 		
-		/* \u2500\u2500 BACKLOG LIST \u2500\u2500 */
+		
 		.p5-backlog-list {
 		  flex: 1;
 		  overflow-y: auto;
@@ -16624,9 +16644,7 @@ window.__ModuleLoader__.load({
 		  text-align: right;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   ENGINEERING VIEW (\u6734\u7D20\u5DE5\u7A0B\u89C6\u56FE \u2014 \u53CD\u5F15\u53F7 \` \u5207\u6362)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.eng-view-root {
 		  width: 100vw;
 		  height: 100vh;
@@ -16817,9 +16835,7 @@ window.__ModuleLoader__.load({
 		  border-radius: 4px;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   PHASE 1: DISCONNECT BANNER, PARTY BAR, TURN SUMMARY, SYSTEM MENU & THEMING
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-stage-viewport {
 		  --char-theme-color: #2563eb;
 		  --char-accent-color: #60a5fa;
@@ -16877,7 +16893,7 @@ window.__ModuleLoader__.load({
 		  animation: none;
 		}
 		
-		/* \u2500\u2500 DISCONNECT / RECONNECT TOP BANNER \u2500\u2500 */
+		
 		.p5-disconnect-banner {
 		  position: relative;
 		  z-index: 30;
@@ -16959,7 +16975,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-black);
 		}
 		
-		/* \u2500\u2500 TOPBAR MODE PILL & SYSTEM BUTTON \u2500\u2500 */
+		
 		.p5-cwd-pill {
 		  cursor: pointer;
 		  max-width: 220px;
@@ -16995,7 +17011,7 @@ window.__ModuleLoader__.load({
 		  box-shadow: 3px 3px 0 var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 HUD 15S WAITING ALERT \u2500\u2500 */
+		
 		.p5-hud-wait-alert {
 		  display: flex;
 		  align-items: center;
@@ -17015,7 +17031,7 @@ window.__ModuleLoader__.load({
 		  box-shadow: 0 0 8px var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 PARTY SWITCHER BAR (LEFT COLUMN BELOW HUD) \u2500\u2500 */
+		
 		.p5-party-bar {
 		  background: var(--p5-black);
 		  border: 3px solid var(--p5-white);
@@ -17112,7 +17128,7 @@ window.__ModuleLoader__.load({
 		  background: var(--member-color, var(--p5-blue));
 		}
 		
-		/* \u2500\u2500 DIALOGUE SOURCE TAG & IN-PLACE FADE REPLACEMENT \u2500\u2500 */
+		
 		.speaker-source {
 		  font-family: var(--font-mono);
 		  font-size: 11px;
@@ -17148,7 +17164,7 @@ window.__ModuleLoader__.load({
 		  animation: p5DialogueFadeReplace 320ms ease-out;
 		}
 		
-		/* \u2500\u2500 POST-TURN SUMMARY CARD (Section 6: \u672C\u8F6E\u5C0F\u7ED3\u5361\u7247) \u2500\u2500 */
+		
 		.p5-turn-summary-card {
 		  background: var(--p5-black);
 		  border: 4px solid var(--p5-white);
@@ -17264,7 +17280,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* \u2500\u2500 FRIENDLY NON-SCARY ERROR NOTICE BANNER \u2500\u2500 */
+		
 		.p5-error-notice-card {
 		  background: #1c1917;
 		  border: 3px solid var(--p5-orange);
@@ -17318,7 +17334,7 @@ window.__ModuleLoader__.load({
 		  border-color: var(--p5-white);
 		}
 		
-		/* \u2500\u2500 LIVE2D PLACEHOLDER CARD \u2500\u2500 */
+		
 		.p5-live2d-card {
 		  background: #111827;
 		  border: 3px dashed var(--char-accent-color);
@@ -17351,9 +17367,7 @@ window.__ModuleLoader__.load({
 		  color: #94a3b8;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   SYSTEM MENU FULL-SCREEN MODAL (Section 5: SYSTEM \u8BBE\u7F6E\u754C\u9762)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-system-backdrop {
 		  position: fixed;
 		  inset: 0;
@@ -17512,7 +17526,7 @@ window.__ModuleLoader__.load({
 		  margin-top: 6px;
 		}
 		
-		/* \u2500\u2500 CHARACTER CARDS GRID IN SYSTEM MENU \u2500\u2500 */
+		
 		.p5-char-grid {
 		  display: grid;
 		  grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -17645,7 +17659,7 @@ window.__ModuleLoader__.load({
 		  color: #93c5fd;
 		}
 		
-		/* \u2500\u2500 SYSTEM FORMS (WORKER / VOICE / POND / PERFORMANCE) \u2500\u2500 */
+		
 		.p5-sys-form {
 		  display: flex;
 		  flex-direction: column;
@@ -17910,7 +17924,7 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2500\u2500 Interactive Stage Nameplate Model Selector & Upward P5 Popover \u2500\u2500 */
+		
 		.p5-char-name-pill--interactive {
 		  position: relative;
 		}
@@ -18163,7 +18177,7 @@ window.__ModuleLoader__.load({
 		  border-color: #ffffff;
 		}
 		
-		/* \u2500\u2500 Reasoning effort chip & popover row \u2500\u2500 */
+		
 		.p5-effort-chip {
 		  flex-shrink: 0;
 		  white-space: nowrap;
@@ -18188,7 +18202,7 @@ window.__ModuleLoader__.load({
 		.p5-effort-opt:hover { border-color: #fff; color: #fff; }
 		.p5-effort-opt.is-active { background: #e60012; color: #fff; border-color: #fff; }
 		
-		/* Dialogue box grows with the reply; scrolls inside past ~58vh while keeping left lightning tail visible */
+		
 		.p5-dialogue-box {
 		  max-height: min(58vh, 560px) !important;
 		  overflow: visible !important;
@@ -18198,7 +18212,7 @@ window.__ModuleLoader__.load({
 		  overflow-y: auto !important;
 		}
 		
-		/* \u2500\u2500 \u56FE\u7247\u9644\u4EF6\uFF08\u591A\u6A21\u6001\u8F93\u5165\uFF09 \u2500\u2500 */
+		
 		.p5-attach-btn {
 		  flex-shrink: 0;
 		  margin-right: 10px;
@@ -18267,12 +18281,9 @@ window.__ModuleLoader__.load({
 		  transform: skewX(-8deg);
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   CONTAINER-QUERY RESPONSIVE ADAPTATION (Medium 2-Col & Narrow Half-Screen)
-		   Responds to actual stage width (whether resized window or open sidebars)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 		
-		/* Tier A: Medium-Compact 2-Column Stage (921px ~ 1180px) \u2014 Zero overlap! */
+		
+		
 		@container stage (max-width: 1180px) {
 		  .p5-session-badge,
 		  .p5-workspace-header-right .p5-pill-btn kbd {
@@ -18377,8 +18388,7 @@ window.__ModuleLoader__.load({
 		  }
 		}
 		
-		/* Tier B: Narrow / Half-Screen Split Stage (<= 920px)
-		   Transforms from cramped skinny 2-column into a sleek P5 Top Hero Deck + Full-Width Workspace! */
+		
 		@container stage (max-width: 920px) {
 		  .p5-bg-crimson-wedge {
 		    width: 100%;
@@ -18532,7 +18542,7 @@ window.__ModuleLoader__.load({
 		  }
 		}
 		
-		/* Tier C: Ultra-Narrow Window (<= 620px) */
+		
 		@container stage (max-width: 620px) {
 		  .p5-left-column {
 		    grid-template-columns: 120px minmax(0, 1fr);
@@ -18568,15 +18578,9 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   PERSONA 5 SIGNATURE CUT-IN PRESENTATIONS
-		   1. HOLD UP! Eye Strip Banner (PermissionModal)
-		   2. ALL-OUT FINISH // \u534E\u4E3D\u6536\u5DE5 Shattered Star Overlay
-		   3. BATON PASS // \u6362\u624B\u63A5\u529B Modal & Blazing Relay Cut-in
-		   4. SUB-NAVIGATOR // \u573A\u5916\u652F\u63F4 Diamond Radar Callout
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 		
-		/* \u2500\u2500 1. HOLD UP! EYE CUT-IN BANNER IN PERMISSION MODAL \u2500\u2500 */
+		
+		
 		@keyframes p5HoldUpEyeSlide {
 		  0% {
 		    opacity: 0;
@@ -18715,7 +18719,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 2. ALL-OUT FINISH // \u603B\u653B\u51FB\u4EFB\u52A1\u7ED3\u7B97\u5927\u6F14\u51FA \u2500\u2500 */
+		
 		@keyframes p5AllOutBackdropIn {
 		  0% {
 		    opacity: 0;
@@ -18987,7 +18991,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 800;
 		}
 		
-		/* Replay button next to turn-done stamp */
+		
 		.p5-replay-allout-btn {
 		  background: var(--p5-red);
 		  color: var(--p5-white);
@@ -19008,7 +19012,7 @@ window.__ModuleLoader__.load({
 		  transform: translateY(-1px);
 		}
 		
-		/* \u2500\u2500 3. BATON PASS // \u602A\u76D7\u56E2\u51FB\u638C\u6362\u624B\u63A5\u529B MODAL & CUT-IN \u2500\u2500 */
+		
 		.p5-baton-modal {
 		  width: min(820px, 94vw);
 		  background: var(--p5-black);
@@ -19215,7 +19219,7 @@ window.__ModuleLoader__.load({
 		  transform: skewX(-10deg) translate(-1px, -1px);
 		}
 		
-		/* 1.4s Baton Pass Lightning Cut-in */
+		
 		@keyframes p5BatonRelayCutin {
 		  0% {
 		    opacity: 0;
@@ -19371,7 +19375,7 @@ window.__ModuleLoader__.load({
 		  text-overflow: ellipsis;
 		}
 		
-		/* \u2500\u2500 4. SUB-NAVIGATOR // \u573A\u5916\u961F\u53CB\u83F1\u5F62\u96F7\u8FBE\u63D2\u5634\u7A97 \u2500\u2500 */
+		
 		@keyframes p5NaviSlideIn {
 		  0% {
 		    opacity: 0;
@@ -19504,7 +19508,7 @@ window.__ModuleLoader__.load({
 		  transform: rotate(-45deg);
 		}
 		
-		/* Dock Baton Pass button accent */
+		
 		.p5-mini-chip--btn.is-baton {
 		  background: linear-gradient(90deg, #e60012 0%, #b91c1c 100%);
 		  color: var(--p5-white);
@@ -19524,7 +19528,7 @@ window.__ModuleLoader__.load({
 		  cursor: not-allowed;
 		}
 		
-		/* TTS topbar pill button */
+		
 		.p5-tts-toggle-btn.is-speaking {
 		  border-color: var(--p5-yellow);
 		  box-shadow: 0 0 10px rgba(250, 204, 21, 0.55), 3px 3px 0 var(--p5-red);
@@ -19534,7 +19538,7 @@ window.__ModuleLoader__.load({
 		  opacity: 0.78;
 		}
 		
-		/* Compaction button pulsing state */
+		
 		@keyframes p5CompactingPulse {
 		  0%,
 		  100% {
@@ -19552,9 +19556,7 @@ window.__ModuleLoader__.load({
 		  cursor: wait;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   5. GIT TROPHY DRAWER (\u5DE5\u4F5C\u533A\u603B\u53D8\u66F4\u5BA1\u67E5 & \u5355\u6587\u4EF6\u64A4\u56DE & \u4E00\u952E Commit)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-trophy-drawer {
 		  width: min(1020px, 95vw);
 		  height: min(760px, 88vh);
@@ -19863,9 +19865,9 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* A6 \u6F14\u51FA\u6253\u78E8\uFF1A\u6362\u4EBA\u8FC7\u573A / \u6280\u80FD\u5361 / \u9759\u97F3\u6309\u94AE / \u51CF\u5F31\u52A8\u6548\u3002\u53EA\u8FFD\u52A0\uFF0C\u4E0D\u6539 stage.css\u3002 */
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u6362\u4EBA\u659C\u5207\u8FC7\u573A \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
+		
 		.p5-switch-wipe {
 		  position: fixed;
 		  inset: 0;
@@ -20027,7 +20029,7 @@ window.__ModuleLoader__.load({
 		  transform: translateX(-50%) skewX(-8deg);
 		}
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u884C\u52A8\u884C & \u6280\u80FD\u5361\uFF1A\u659C\u5207\u5165\u573A + \u5206\u7C7B\u5DE6\u8FB9\u6846\u5F3A\u8C03\u8272 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
 		.p5-action-row {
 		  --skill-accent: #38bdf8;
 		  border-left-color: var(--skill-accent);
@@ -20057,7 +20059,7 @@ window.__ModuleLoader__.load({
 		  --skill-accent: #ffe600;
 		  position: relative;
 		  overflow: hidden;
-		  /* \u53EA\u52A8 transform / opacity\uFF0C\u4E0D\u5F71\u54CD\u5E03\u5C40\uFF1B\u4E0D\u53E0\u52A0 filter\uFF0C\u907F\u514D\u8FDE\u7EED\u4E8B\u4EF6\u95EA\u70C1 */
+		  
 		  animation: p5SkillSlashIn 340ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 		  will-change: transform, opacity;
 		}
@@ -20080,7 +20082,7 @@ window.__ModuleLoader__.load({
 		  border-color: var(--skill-accent);
 		}
 		
-		/* \u901F\u5EA6\u7EBF\uFF1A\u5165\u573A\u65F6\u4ECE\u53F3\u5411\u5DE6\u626B\u8FC7\u4E00\u6B21 */
+		
 		.p5-skill-cutin-card::after {
 		  content: '';
 		  position: absolute;
@@ -20107,7 +20109,7 @@ window.__ModuleLoader__.load({
 		  100% { opacity: 0; transform: translateX(-30%); }
 		}
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 HUD \u9759\u97F3\u6309\u94AE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
 		.p5-hud-mute-btn {
 		  display: inline-flex;
 		  align-items: center;
@@ -20125,7 +20127,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 900;
 		}
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u51CF\u5F31\u52A8\u6548 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
 		@media (prefers-reduced-motion: reduce) {
 		  .p5-active-skills-zone .p5-skill-cutin-card,
 		  .p5-action-row {
@@ -20225,9 +20227,7 @@ window.__ModuleLoader__.load({
 		.p5-shortcut-panel small { display: block; margin-top: 3px; color: #94a3b8; font-size: 11px; }
 		
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   FIRST-RUN ONBOARDING CARD (A2 \u2014 \u9996\u6B21\u4F7F\u7528\u5F15\u5BFC\u5361\u7247)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		
 		@keyframes p5OnboardEnter {
 		  0% {
@@ -20325,7 +20325,7 @@ window.__ModuleLoader__.load({
 		  gap: 8px;
 		}
 		
-		/* \u2500\u2500 3-STEP INDICATOR \u2500\u2500 */
+		
 		.p5-onboard-steps {
 		  display: flex;
 		  align-items: stretch;
@@ -20430,7 +20430,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* \u2500\u2500 IN-CHARACTER LINE \u2500\u2500 */
+		
 		.p5-onboard-char-box {
 		  background: #0f1320;
 		  border-left: 4px solid var(--char-theme-color, var(--p5-blue));
@@ -20466,7 +20466,7 @@ window.__ModuleLoader__.load({
 		  flex: 1;
 		}
 		
-		/* \u2500\u2500 PATH INPUT & START BUTTON \u2500\u2500 */
+		
 		.p5-onboard-form {
 		  display: flex;
 		  align-items: stretch;
@@ -20558,7 +20558,7 @@ window.__ModuleLoader__.load({
 		  cursor: not-allowed;
 		}
 		
-		/* \u2500\u2500 VALIDATION HINT, ERROR & RECENT CHIPS \u2500\u2500 */
+		
 		.p5-onboard-meta-row {
 		  display: flex;
 		  align-items: center;
@@ -20641,7 +20641,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 900;
 		}
 		
-		/* \u2500\u2500 DISABLED STAGE INPUT WHEN PROJECT_DIR IS NULL \u2500\u2500 */
+		
 		.p5-input-onboarding-hint {
 		  font-family: var(--font-mono);
 		  font-size: 11px;
@@ -20779,11 +20779,9 @@ window.__ModuleLoader__.load({
 		@media (prefers-reduced-motion: reduce) { .p5-session-row { transition: none; } }
 		
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   SETTINGS UX ENHANCEMENTS (A7: ModelPicker, ConnectionTestResult, RecommendedModelChips)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 		
-		/* Compact modal layout so 1440x900 and 1280x720 fit without overflow */
+		
+		
 		.p5-system-content {
 		  padding: 12px 18px;
 		  overflow-x: hidden;
@@ -20843,7 +20841,7 @@ window.__ModuleLoader__.load({
 		  font-size: 11px;
 		}
 		
-		/* \u2500\u2500 1. SEARCHABLE MODEL PICKER \u2500\u2500 */
+		
 		.p5-model-picker {
 		  gap: 6px;
 		}
@@ -21130,7 +21128,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 2. FRIENDLY CONNECTION TEST RESULT CARD \u2500\u2500 */
+		
 		.p5-conn-test-row {
 		  flex-direction: column;
 		  align-items: stretch;
@@ -21270,7 +21268,7 @@ window.__ModuleLoader__.load({
 		  word-break: break-all;
 		}
 		
-		/* \u2500\u2500 3. RECOMMENDED MODELS ONE-CLICK CHIPS ON CHARACTER TAB \u2500\u2500 */
+		
 		.p5-char-grid {
 		  gap: 12px;
 		}
@@ -21316,7 +21314,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 900;
 		}
 		
-		/* \u2500\u2500 4. GOOGLE CLOUD TTS SETTINGS SECTION \u2500\u2500 */
+		
 		.p5-tts-settings-card {
 		  background: #0d101a;
 		  border: 2px solid rgba(255, 255, 255, 0.4);
@@ -21570,7 +21568,7 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2500\u2500 P5 Agent Preset Irregular Quadrilateral Cards \u2500\u2500 */
+		
 		.p5-preset-lead {
 		  margin: 6px 0 0;
 		  font-size: 12.5px;
@@ -21830,7 +21828,7 @@ window.__ModuleLoader__.load({
 		  background: #090910;
 		}
 		
-		/* \u2500\u2500 \u6A21\u578B\u8F93\u5165\u7C7B\u578B\uFF08\u6587\u672C / \u56FE\u7247\uFF09 \u2500\u2500 */
+		
 		.p5-modality-row {
 		  display: flex;
 		  align-items: center;
@@ -21864,7 +21862,7 @@ window.__ModuleLoader__.load({
 		  accent-color: var(--p5-red);
 		}
 		
-		/* \u2500\u2500 DSH \u5916\u90E8\u5927\u6A21\u578B\u670D\u52A1\u5546\u63A5\u5165\u9762\u677F\uFF08OpenAI GPT / Claude / \u81EA\u5B9A\u4E49\u7F51\u5173\uFF09 \u2500\u2500 */
+		
 		.p5-provider-hub-card {
 		  background: linear-gradient(135deg, #0d101b 0%, #090b12 100%);
 		  border: 2px solid rgba(255, 255, 255, 0.45);
@@ -22030,7 +22028,7 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2500\u2500 P5 Phantom Sidebar & Top Session Header Shell Overrides \u2500\u2500 */
+		
 		[class*="sidebarCol"] {
 		  background-color: #07080e !important;
 		  border-right: none !important;
@@ -22042,22 +22040,22 @@ window.__ModuleLoader__.load({
 		  padding-top: 44px !important;
 		}
 		
-		/* Remove broken double-offset on [data-shell-leading] and align precisely across Windowed vs Fullscreen! */
+		
 		[data-shell-leading] {
 		  margin-left: 0 !important;
 		  z-index: 65 !important;
 		}
 		
-		/* 1) macOS Windowed (traffic lights present at x:16..74px, y:14..28px) when sidebar is collapsed/drawer */
+		
 		html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [data-shell-leading] {
 		  top: 10px !important;
 		  left: 82px !important;
 		}
-		/* Give left stage column clean top clearance below traffic lights + [\u25B6 \u6863\u6848] when no active-session header sits above */
+		
 		html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded .p5-left-column {
 		  padding-top: 44px !important;
 		}
-		/* Preserve top window-drag strip on macOS windowed mode when blank header is hidden */
+		
 		html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded::before {
 		  content: '';
 		  position: absolute;
@@ -22078,8 +22076,7 @@ window.__ModuleLoader__.load({
 		  -webkit-app-region: no-drag;
 		}
 		
-		/* 2) Fullscreen mode OR non-macOS Web (no traffic lights!) when sidebar is collapsed/drawer:
-		      Place [\u25B6 \u6863\u6848] flush inline on the exact same horizontal row as [P5 AGENT STAGE]! */
+		
 		html:is([data-fullscreen], [data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) ~ [data-shell-leading],
 		html:is([data-fullscreen], [data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]):has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) [data-shell-leading],
 		html:not([data-platform="darwin"]):not([data-bigfish-mac-app="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]):has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) [data-shell-leading] {
@@ -22106,20 +22103,20 @@ window.__ModuleLoader__.load({
 		  border-radius: 0;
 		}
 		
-		/* Center column & Top Header irregular quadrilateral tabs */
+		
 		[class*="sidebarCol"] {
 		  z-index: 2 !important;
 		}
 		[class*="_centerCol"] {
 		  background-color: #090910 !important;
 		}
-		/* Ensure full-screen P5 modals (Settings, Backlog, Archive, Permissions, Shortcuts) always stack above the left sidebar! */
+		
 		[class*="_centerCol"]:has([role="dialog"]),
 		[class*="_mainPanel"]:has([role="dialog"]) {
 		  position: relative !important;
 		  z-index: 900 !important;
 		}
-		/* Always hide empty blank header on P5 stage (both sidebar open AND collapsed) so red/black stage fills 100% top-to-bottom! */
+		
 		[class*="_centerCol"]:has(.p5-dsh-host) header[class*="_headerBlank"] {
 		  display: none !important;
 		}
@@ -22180,7 +22177,7 @@ window.__ModuleLoader__.load({
 		  display: none !important;
 		}
 		
-		/* \u2500\u2500 DSH Embedded Host Overrides (STAGE tab + Blank New Session) \u2500\u2500 */
+		
 		[data-conversation-content]:has(.p5-dsh-host) {
 		  padding: 0 !important;
 		  overflow: hidden !important;
@@ -22298,9 +22295,7 @@ window.__ModuleLoader__.load({
 		  -webkit-font-smoothing: antialiased;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   STAGE VIEWPORT & P5X GEOMETRIC BACKDROP
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-stage-viewport {
 		  position: relative;
 		  width: 100vw;
@@ -22386,7 +22381,7 @@ window.__ModuleLoader__.load({
 		  pointer-events: none;
 		}
 		
-		/* Electron macOS native window traffic light spacing & drag region */
+		
 		.p5-stage-viewport.is-native-app .p5-brand-strip,
 		.p5-stage-viewport.is-native-app .p5-workspace-header {
 		  -webkit-app-region: drag;
@@ -22408,9 +22403,7 @@ window.__ModuleLoader__.load({
 		  -webkit-app-region: no-drag;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   MAIN 2-ZONE P5X STAGE GRID (Left Character Stage / Right AI Workspace)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-main-grid {
 		  position: relative;
 		  flex: 1;
@@ -22425,9 +22418,7 @@ window.__ModuleLoader__.load({
 		  padding: 0;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   LEFT ZONE: P5X BREAK-THE-FRAME CHARACTER STAGE + INTEGRATED HUD
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-left-column {
 		  position: relative;
 		  display: flex;
@@ -22499,7 +22490,7 @@ window.__ModuleLoader__.load({
 		  box-shadow: 0 0 8px var(--p5-cyan);
 		}
 		
-		/* Break-the-Frame Character Showcase */
+		
 		.p5-portrait-stage {
 		  position: relative;
 		  flex: 1;
@@ -22691,7 +22682,7 @@ window.__ModuleLoader__.load({
 		    );
 		}
 		
-		/* Speaking Energy Halo & Active Aura */
+		
 		.p5-portrait-voice-aura {
 		  position: absolute;
 		  width: 68%;
@@ -22716,7 +22707,7 @@ window.__ModuleLoader__.load({
 		  opacity: calc(0.34 + var(--voice-amp, 0) * 0.66);
 		}
 		
-		/* Ambient Character Sparks */
+		
 		@keyframes p5SparkFloat {
 		  0% {
 		    opacity: 0;
@@ -22751,7 +22742,7 @@ window.__ModuleLoader__.load({
 		  animation: p5SparkFloat 4.2s ease-in-out infinite;
 		}
 		
-		/* Floating Collar/Cheek Soundwave & Star Equalizer Badge */
+		
 		.p5-voice-eq-badge {
 		  position: absolute;
 		  right: 8%;
@@ -22801,7 +22792,7 @@ window.__ModuleLoader__.load({
 		  height: calc(5px + var(--voice-amp, 0.25) * 11px);
 		}
 		
-		/* Hover Hit-Zone Hint Pill */
+		
 		.p5-touch-zone-hint {
 		  position: absolute;
 		  top: 10px;
@@ -22818,7 +22809,7 @@ window.__ModuleLoader__.load({
 		  pointer-events: none;
 		}
 		
-		/* Floating P5 Comic Onomatopoeia Stamp on Click (900ms pop & fade) */
+		
 		@keyframes p5ComicStampPop {
 		  0% {
 		    opacity: 0;
@@ -22888,7 +22879,7 @@ window.__ModuleLoader__.load({
 		  animation: p5PortraitBounce 360ms cubic-bezier(0.22, 1.28, 0.36, 1);
 		}
 		
-		/* P5X Overlapping Nameplate Cluster */
+		
 		.p5-char-info-cluster {
 		  position: relative;
 		  z-index: 40;
@@ -23009,7 +23000,7 @@ window.__ModuleLoader__.load({
 		  text-overflow: ellipsis;
 		}
 		
-		/* P5 Palace Security Level / DSH Context Meter */
+		
 		.p5-context-meter {
 		  width: 94%;
 		  background: rgba(8, 9, 14, 0.92);
@@ -23105,7 +23096,7 @@ window.__ModuleLoader__.load({
 		  );
 		}
 		
-		/* Bottom Left Dock: P5 Tactical Context Radar Dial (Left) + 4 Character Avatars (Right) */
+		
 		.p5-bottom-left-dock {
 		  display: flex;
 		  align-items: center;
@@ -23297,9 +23288,7 @@ window.__ModuleLoader__.load({
 		  border: 1.5px solid var(--p5-yellow);
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   RIGHT ZONE: AI CODING WORKSPACE (TOPBAR + COMIC BUBBLE + ACTION STREAM + INPUT)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-center-stage {
 		  position: relative;
 		  z-index: 20;
@@ -23313,7 +23302,7 @@ window.__ModuleLoader__.load({
 		  height: 100%;
 		}
 		
-		/* 1. Minimal Workspace Header */
+		
 		.p5-workspace-header {
 		  display: flex;
 		  align-items: center;
@@ -23410,7 +23399,7 @@ window.__ModuleLoader__.load({
 		  border-color: var(--p5-black);
 		}
 		
-		/* 2. Authentic P5 Comic Dialogue Bubble with Pointer Tail */
+		
 		.p5-dialogue-section {
 		  display: flex;
 		  flex-direction: column;
@@ -23636,7 +23625,7 @@ window.__ModuleLoader__.load({
 		  height: 0;
 		}
 		
-		/* Lightweight Markdown formatting inside dialogue bubble & conclusion card */
+		
 		.p5-md-para {
 		  display: block;
 		}
@@ -23749,7 +23738,7 @@ window.__ModuleLoader__.load({
 		  max-width: 240px;
 		}
 		
-		/* 3. Unified AI Action & Code Diff Stream */
+		
 		.p5-action-section {
 		  flex: 1;
 		  min-height: 0;
@@ -23858,7 +23847,7 @@ window.__ModuleLoader__.load({
 		  font-size: 11.5px;
 		}
 		
-		/* DSH Memory Compaction Summary Node & Cut-in Banner */
+		
 		.p5-compaction-summary-node {
 		  display: flex;
 		  align-items: center;
@@ -23900,7 +23889,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* Worker Answer Body Card in Trajectory */
+		
 		.p5-worker-answer-card {
 		  background: rgba(12, 15, 23, 0.95);
 		  border: 2.5px solid var(--p5-white);
@@ -23941,7 +23930,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 600;
 		}
 		
-		/* Standby Heist Route Preview when idle */
+		
 		.p5-trajectory-standby {
 		  display: flex;
 		  flex-direction: column;
@@ -23990,7 +23979,7 @@ window.__ModuleLoader__.load({
 		  color: #94a3b8;
 		}
 		
-		/* Full-screen P5 Memory Compaction Cut-in Banner */
+		
 		@keyframes p5CompactionSlash {
 		  0% {
 		    opacity: 0;
@@ -24145,7 +24134,7 @@ window.__ModuleLoader__.load({
 		  color: #f87171;
 		}
 		
-		/* Inline Code Diff Preview Card */
+		
 		.p5-inline-diff-box {
 		  margin: -2px 6px 2px 14px;
 		  background: #090b10;
@@ -24197,7 +24186,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* Steer Strip */
+		
 		.p5-steer-strip {
 		  display: flex;
 		  flex-direction: column;
@@ -24243,7 +24232,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-white);
 		}
 		
-		/* 4. Sleek Slanted Command Input Bar */
+		
 		.p5-command-dock {
 		  display: flex;
 		  flex-direction: column;
@@ -24368,9 +24357,7 @@ window.__ModuleLoader__.load({
 		  cursor: not-allowed;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   PERMISSION CHOICE CUT-IN MODAL (\u6743\u9650\u9009\u62E9\u80A2)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-permission-backdrop {
 		  position: fixed;
 		  inset: 0;
@@ -24539,9 +24526,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 700;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   ARCHIVE DOSSIER MODAL (\u6863\u6848\u5C42) & BACKLOG MODAL (\u56DE\u770B)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-modal-backdrop {
 		  position: fixed;
 		  inset: 0;
@@ -24672,7 +24657,7 @@ window.__ModuleLoader__.load({
 		  user-select: text;
 		}
 		
-		/* \u2500\u2500 DIFF & TERMINAL VIEWERS \u2500\u2500 */
+		
 		.p5-diff-viewer,
 		.p5-terminal-viewer {
 		  font-family: var(--font-mono);
@@ -24748,7 +24733,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 700;
 		}
 		
-		/* \u2500\u2500 BACKLOG LIST \u2500\u2500 */
+		
 		.p5-backlog-list {
 		  flex: 1;
 		  overflow-y: auto;
@@ -24844,9 +24829,7 @@ window.__ModuleLoader__.load({
 		  text-align: right;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   ENGINEERING VIEW (\u6734\u7D20\u5DE5\u7A0B\u89C6\u56FE \u2014 \u53CD\u5F15\u53F7 \` \u5207\u6362)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.eng-view-root {
 		  width: 100vw;
 		  height: 100vh;
@@ -25037,9 +25020,7 @@ window.__ModuleLoader__.load({
 		  border-radius: 4px;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   PHASE 1: DISCONNECT BANNER, PARTY BAR, TURN SUMMARY, SYSTEM MENU & THEMING
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-stage-viewport {
 		  --char-theme-color: #2563eb;
 		  --char-accent-color: #60a5fa;
@@ -25097,7 +25078,7 @@ window.__ModuleLoader__.load({
 		  animation: none;
 		}
 		
-		/* \u2500\u2500 DISCONNECT / RECONNECT TOP BANNER \u2500\u2500 */
+		
 		.p5-disconnect-banner {
 		  position: relative;
 		  z-index: 30;
@@ -25179,7 +25160,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-black);
 		}
 		
-		/* \u2500\u2500 TOPBAR MODE PILL & SYSTEM BUTTON \u2500\u2500 */
+		
 		.p5-cwd-pill {
 		  cursor: pointer;
 		  max-width: 220px;
@@ -25215,7 +25196,7 @@ window.__ModuleLoader__.load({
 		  box-shadow: 3px 3px 0 var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 HUD 15S WAITING ALERT \u2500\u2500 */
+		
 		.p5-hud-wait-alert {
 		  display: flex;
 		  align-items: center;
@@ -25235,7 +25216,7 @@ window.__ModuleLoader__.load({
 		  box-shadow: 0 0 8px var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 PARTY SWITCHER BAR (LEFT COLUMN BELOW HUD) \u2500\u2500 */
+		
 		.p5-party-bar {
 		  background: var(--p5-black);
 		  border: 3px solid var(--p5-white);
@@ -25332,7 +25313,7 @@ window.__ModuleLoader__.load({
 		  background: var(--member-color, var(--p5-blue));
 		}
 		
-		/* \u2500\u2500 DIALOGUE SOURCE TAG & IN-PLACE FADE REPLACEMENT \u2500\u2500 */
+		
 		.speaker-source {
 		  font-family: var(--font-mono);
 		  font-size: 11px;
@@ -25368,7 +25349,7 @@ window.__ModuleLoader__.load({
 		  animation: p5DialogueFadeReplace 320ms ease-out;
 		}
 		
-		/* \u2500\u2500 POST-TURN SUMMARY CARD (Section 6: \u672C\u8F6E\u5C0F\u7ED3\u5361\u7247) \u2500\u2500 */
+		
 		.p5-turn-summary-card {
 		  background: var(--p5-black);
 		  border: 4px solid var(--p5-white);
@@ -25484,7 +25465,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* \u2500\u2500 FRIENDLY NON-SCARY ERROR NOTICE BANNER \u2500\u2500 */
+		
 		.p5-error-notice-card {
 		  background: #1c1917;
 		  border: 3px solid var(--p5-orange);
@@ -25538,7 +25519,7 @@ window.__ModuleLoader__.load({
 		  border-color: var(--p5-white);
 		}
 		
-		/* \u2500\u2500 LIVE2D PLACEHOLDER CARD \u2500\u2500 */
+		
 		.p5-live2d-card {
 		  background: #111827;
 		  border: 3px dashed var(--char-accent-color);
@@ -25571,9 +25552,7 @@ window.__ModuleLoader__.load({
 		  color: #94a3b8;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   SYSTEM MENU FULL-SCREEN MODAL (Section 5: SYSTEM \u8BBE\u7F6E\u754C\u9762)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-system-backdrop {
 		  position: fixed;
 		  inset: 0;
@@ -25732,7 +25711,7 @@ window.__ModuleLoader__.load({
 		  margin-top: 6px;
 		}
 		
-		/* \u2500\u2500 CHARACTER CARDS GRID IN SYSTEM MENU \u2500\u2500 */
+		
 		.p5-char-grid {
 		  display: grid;
 		  grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -25865,7 +25844,7 @@ window.__ModuleLoader__.load({
 		  color: #93c5fd;
 		}
 		
-		/* \u2500\u2500 SYSTEM FORMS (WORKER / VOICE / POND / PERFORMANCE) \u2500\u2500 */
+		
 		.p5-sys-form {
 		  display: flex;
 		  flex-direction: column;
@@ -26130,7 +26109,7 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2500\u2500 Interactive Stage Nameplate Model Selector & Upward P5 Popover \u2500\u2500 */
+		
 		.p5-char-name-pill--interactive {
 		  position: relative;
 		}
@@ -26383,7 +26362,7 @@ window.__ModuleLoader__.load({
 		  border-color: #ffffff;
 		}
 		
-		/* \u2500\u2500 Reasoning effort chip & popover row \u2500\u2500 */
+		
 		.p5-effort-chip {
 		  flex-shrink: 0;
 		  white-space: nowrap;
@@ -26408,7 +26387,7 @@ window.__ModuleLoader__.load({
 		.p5-effort-opt:hover { border-color: #fff; color: #fff; }
 		.p5-effort-opt.is-active { background: #e60012; color: #fff; border-color: #fff; }
 		
-		/* Dialogue box grows with the reply; scrolls inside past ~58vh while keeping left lightning tail visible */
+		
 		.p5-dialogue-box {
 		  max-height: min(58vh, 560px) !important;
 		  overflow: visible !important;
@@ -26418,7 +26397,7 @@ window.__ModuleLoader__.load({
 		  overflow-y: auto !important;
 		}
 		
-		/* \u2500\u2500 \u56FE\u7247\u9644\u4EF6\uFF08\u591A\u6A21\u6001\u8F93\u5165\uFF09 \u2500\u2500 */
+		
 		.p5-attach-btn {
 		  flex-shrink: 0;
 		  margin-right: 10px;
@@ -26487,12 +26466,9 @@ window.__ModuleLoader__.load({
 		  transform: skewX(-8deg);
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   CONTAINER-QUERY RESPONSIVE ADAPTATION (Medium 2-Col & Narrow Half-Screen)
-		   Responds to actual stage width (whether resized window or open sidebars)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 		
-		/* Tier A: Medium-Compact 2-Column Stage (921px ~ 1180px) \u2014 Zero overlap! */
+		
+		
 		@container stage (max-width: 1180px) {
 		  .p5-session-badge,
 		  .p5-workspace-header-right .p5-pill-btn kbd {
@@ -26597,8 +26573,7 @@ window.__ModuleLoader__.load({
 		  }
 		}
 		
-		/* Tier B: Narrow / Half-Screen Split Stage (<= 920px)
-		   Transforms from cramped skinny 2-column into a sleek P5 Top Hero Deck + Full-Width Workspace! */
+		
 		@container stage (max-width: 920px) {
 		  .p5-bg-crimson-wedge {
 		    width: 100%;
@@ -26752,7 +26727,7 @@ window.__ModuleLoader__.load({
 		  }
 		}
 		
-		/* Tier C: Ultra-Narrow Window (<= 620px) */
+		
 		@container stage (max-width: 620px) {
 		  .p5-left-column {
 		    grid-template-columns: 120px minmax(0, 1fr);
@@ -26788,15 +26763,9 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   PERSONA 5 SIGNATURE CUT-IN PRESENTATIONS
-		   1. HOLD UP! Eye Strip Banner (PermissionModal)
-		   2. ALL-OUT FINISH // \u534E\u4E3D\u6536\u5DE5 Shattered Star Overlay
-		   3. BATON PASS // \u6362\u624B\u63A5\u529B Modal & Blazing Relay Cut-in
-		   4. SUB-NAVIGATOR // \u573A\u5916\u652F\u63F4 Diamond Radar Callout
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 		
-		/* \u2500\u2500 1. HOLD UP! EYE CUT-IN BANNER IN PERMISSION MODAL \u2500\u2500 */
+		
+		
 		@keyframes p5HoldUpEyeSlide {
 		  0% {
 		    opacity: 0;
@@ -26935,7 +26904,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 2. ALL-OUT FINISH // \u603B\u653B\u51FB\u4EFB\u52A1\u7ED3\u7B97\u5927\u6F14\u51FA \u2500\u2500 */
+		
 		@keyframes p5AllOutBackdropIn {
 		  0% {
 		    opacity: 0;
@@ -27207,7 +27176,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 800;
 		}
 		
-		/* Replay button next to turn-done stamp */
+		
 		.p5-replay-allout-btn {
 		  background: var(--p5-red);
 		  color: var(--p5-white);
@@ -27228,7 +27197,7 @@ window.__ModuleLoader__.load({
 		  transform: translateY(-1px);
 		}
 		
-		/* \u2500\u2500 3. BATON PASS // \u602A\u76D7\u56E2\u51FB\u638C\u6362\u624B\u63A5\u529B MODAL & CUT-IN \u2500\u2500 */
+		
 		.p5-baton-modal {
 		  width: min(820px, 94vw);
 		  background: var(--p5-black);
@@ -27435,7 +27404,7 @@ window.__ModuleLoader__.load({
 		  transform: skewX(-10deg) translate(-1px, -1px);
 		}
 		
-		/* 1.4s Baton Pass Lightning Cut-in */
+		
 		@keyframes p5BatonRelayCutin {
 		  0% {
 		    opacity: 0;
@@ -27591,7 +27560,7 @@ window.__ModuleLoader__.load({
 		  text-overflow: ellipsis;
 		}
 		
-		/* \u2500\u2500 4. SUB-NAVIGATOR // \u573A\u5916\u961F\u53CB\u83F1\u5F62\u96F7\u8FBE\u63D2\u5634\u7A97 \u2500\u2500 */
+		
 		@keyframes p5NaviSlideIn {
 		  0% {
 		    opacity: 0;
@@ -27724,7 +27693,7 @@ window.__ModuleLoader__.load({
 		  transform: rotate(-45deg);
 		}
 		
-		/* Dock Baton Pass button accent */
+		
 		.p5-mini-chip--btn.is-baton {
 		  background: linear-gradient(90deg, #e60012 0%, #b91c1c 100%);
 		  color: var(--p5-white);
@@ -27744,7 +27713,7 @@ window.__ModuleLoader__.load({
 		  cursor: not-allowed;
 		}
 		
-		/* TTS topbar pill button */
+		
 		.p5-tts-toggle-btn.is-speaking {
 		  border-color: var(--p5-yellow);
 		  box-shadow: 0 0 10px rgba(250, 204, 21, 0.55), 3px 3px 0 var(--p5-red);
@@ -27754,7 +27723,7 @@ window.__ModuleLoader__.load({
 		  opacity: 0.78;
 		}
 		
-		/* Compaction button pulsing state */
+		
 		@keyframes p5CompactingPulse {
 		  0%,
 		  100% {
@@ -27772,9 +27741,7 @@ window.__ModuleLoader__.load({
 		  cursor: wait;
 		}
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   5. GIT TROPHY DRAWER (\u5DE5\u4F5C\u533A\u603B\u53D8\u66F4\u5BA1\u67E5 & \u5355\u6587\u4EF6\u64A4\u56DE & \u4E00\u952E Commit)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		.p5-trophy-drawer {
 		  width: min(1020px, 95vw);
 		  height: min(760px, 88vh);
@@ -28083,9 +28050,9 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* A6 \u6F14\u51FA\u6253\u78E8\uFF1A\u6362\u4EBA\u8FC7\u573A / \u6280\u80FD\u5361 / \u9759\u97F3\u6309\u94AE / \u51CF\u5F31\u52A8\u6548\u3002\u53EA\u8FFD\u52A0\uFF0C\u4E0D\u6539 stage.css\u3002 */
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u6362\u4EBA\u659C\u5207\u8FC7\u573A \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
+		
 		.p5-switch-wipe {
 		  position: fixed;
 		  inset: 0;
@@ -28247,7 +28214,7 @@ window.__ModuleLoader__.load({
 		  transform: translateX(-50%) skewX(-8deg);
 		}
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u884C\u52A8\u884C & \u6280\u80FD\u5361\uFF1A\u659C\u5207\u5165\u573A + \u5206\u7C7B\u5DE6\u8FB9\u6846\u5F3A\u8C03\u8272 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
 		.p5-action-row {
 		  --skill-accent: #38bdf8;
 		  border-left-color: var(--skill-accent);
@@ -28277,7 +28244,7 @@ window.__ModuleLoader__.load({
 		  --skill-accent: #ffe600;
 		  position: relative;
 		  overflow: hidden;
-		  /* \u53EA\u52A8 transform / opacity\uFF0C\u4E0D\u5F71\u54CD\u5E03\u5C40\uFF1B\u4E0D\u53E0\u52A0 filter\uFF0C\u907F\u514D\u8FDE\u7EED\u4E8B\u4EF6\u95EA\u70C1 */
+		  
 		  animation: p5SkillSlashIn 340ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 		  will-change: transform, opacity;
 		}
@@ -28300,7 +28267,7 @@ window.__ModuleLoader__.load({
 		  border-color: var(--skill-accent);
 		}
 		
-		/* \u901F\u5EA6\u7EBF\uFF1A\u5165\u573A\u65F6\u4ECE\u53F3\u5411\u5DE6\u626B\u8FC7\u4E00\u6B21 */
+		
 		.p5-skill-cutin-card::after {
 		  content: '';
 		  position: absolute;
@@ -28327,7 +28294,7 @@ window.__ModuleLoader__.load({
 		  100% { opacity: 0; transform: translateX(-30%); }
 		}
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 HUD \u9759\u97F3\u6309\u94AE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
 		.p5-hud-mute-btn {
 		  display: inline-flex;
 		  align-items: center;
@@ -28345,7 +28312,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 900;
 		}
 		
-		/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u51CF\u5F31\u52A8\u6548 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		
 		@media (prefers-reduced-motion: reduce) {
 		  .p5-active-skills-zone .p5-skill-cutin-card,
 		  .p5-action-row {
@@ -28445,9 +28412,7 @@ window.__ModuleLoader__.load({
 		.p5-shortcut-panel small { display: block; margin-top: 3px; color: #94a3b8; font-size: 11px; }
 		
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   FIRST-RUN ONBOARDING CARD (A2 \u2014 \u9996\u6B21\u4F7F\u7528\u5F15\u5BFC\u5361\u7247)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+		
 		
 		@keyframes p5OnboardEnter {
 		  0% {
@@ -28545,7 +28510,7 @@ window.__ModuleLoader__.load({
 		  gap: 8px;
 		}
 		
-		/* \u2500\u2500 3-STEP INDICATOR \u2500\u2500 */
+		
 		.p5-onboard-steps {
 		  display: flex;
 		  align-items: stretch;
@@ -28650,7 +28615,7 @@ window.__ModuleLoader__.load({
 		  flex-shrink: 0;
 		}
 		
-		/* \u2500\u2500 IN-CHARACTER LINE \u2500\u2500 */
+		
 		.p5-onboard-char-box {
 		  background: #0f1320;
 		  border-left: 4px solid var(--char-theme-color, var(--p5-blue));
@@ -28686,7 +28651,7 @@ window.__ModuleLoader__.load({
 		  flex: 1;
 		}
 		
-		/* \u2500\u2500 PATH INPUT & START BUTTON \u2500\u2500 */
+		
 		.p5-onboard-form {
 		  display: flex;
 		  align-items: stretch;
@@ -28778,7 +28743,7 @@ window.__ModuleLoader__.load({
 		  cursor: not-allowed;
 		}
 		
-		/* \u2500\u2500 VALIDATION HINT, ERROR & RECENT CHIPS \u2500\u2500 */
+		
 		.p5-onboard-meta-row {
 		  display: flex;
 		  align-items: center;
@@ -28861,7 +28826,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 900;
 		}
 		
-		/* \u2500\u2500 DISABLED STAGE INPUT WHEN PROJECT_DIR IS NULL \u2500\u2500 */
+		
 		.p5-input-onboarding-hint {
 		  font-family: var(--font-mono);
 		  font-size: 11px;
@@ -28999,11 +28964,9 @@ window.__ModuleLoader__.load({
 		@media (prefers-reduced-motion: reduce) { .p5-session-row { transition: none; } }
 		
 		
-		/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-		   SETTINGS UX ENHANCEMENTS (A7: ModelPicker, ConnectionTestResult, RecommendedModelChips)
-		   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 		
-		/* Compact modal layout so 1440x900 and 1280x720 fit without overflow */
+		
+		
 		.p5-system-content {
 		  padding: 12px 18px;
 		  overflow-x: hidden;
@@ -29063,7 +29026,7 @@ window.__ModuleLoader__.load({
 		  font-size: 11px;
 		}
 		
-		/* \u2500\u2500 1. SEARCHABLE MODEL PICKER \u2500\u2500 */
+		
 		.p5-model-picker {
 		  gap: 6px;
 		}
@@ -29350,7 +29313,7 @@ window.__ModuleLoader__.load({
 		  color: var(--p5-yellow);
 		}
 		
-		/* \u2500\u2500 2. FRIENDLY CONNECTION TEST RESULT CARD \u2500\u2500 */
+		
 		.p5-conn-test-row {
 		  flex-direction: column;
 		  align-items: stretch;
@@ -29490,7 +29453,7 @@ window.__ModuleLoader__.load({
 		  word-break: break-all;
 		}
 		
-		/* \u2500\u2500 3. RECOMMENDED MODELS ONE-CLICK CHIPS ON CHARACTER TAB \u2500\u2500 */
+		
 		.p5-char-grid {
 		  gap: 12px;
 		}
@@ -29536,7 +29499,7 @@ window.__ModuleLoader__.load({
 		  font-weight: 900;
 		}
 		
-		/* \u2500\u2500 4. GOOGLE CLOUD TTS SETTINGS SECTION \u2500\u2500 */
+		
 		.p5-tts-settings-card {
 		  background: #0d101a;
 		  border: 2px solid rgba(255, 255, 255, 0.4);
@@ -29790,7 +29753,7 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2500\u2500 P5 Agent Preset Irregular Quadrilateral Cards \u2500\u2500 */
+		
 		.p5-preset-lead {
 		  margin: 6px 0 0;
 		  font-size: 12.5px;
@@ -30050,7 +30013,7 @@ window.__ModuleLoader__.load({
 		  background: #090910;
 		}
 		
-		/* \u2500\u2500 \u6A21\u578B\u8F93\u5165\u7C7B\u578B\uFF08\u6587\u672C / \u56FE\u7247\uFF09 \u2500\u2500 */
+		
 		.p5-modality-row {
 		  display: flex;
 		  align-items: center;
@@ -30084,7 +30047,7 @@ window.__ModuleLoader__.load({
 		  accent-color: var(--p5-red);
 		}
 		
-		/* \u2500\u2500 DSH \u5916\u90E8\u5927\u6A21\u578B\u670D\u52A1\u5546\u63A5\u5165\u9762\u677F\uFF08OpenAI GPT / Claude / \u81EA\u5B9A\u4E49\u7F51\u5173\uFF09 \u2500\u2500 */
+		
 		.p5-provider-hub-card {
 		  background: linear-gradient(135deg, #0d101b 0%, #090b12 100%);
 		  border: 2px solid rgba(255, 255, 255, 0.45);
@@ -30250,7 +30213,7 @@ window.__ModuleLoader__.load({
 		}
 		
 		
-		/* \u2500\u2500 P5 Phantom Sidebar & Top Session Header Shell Overrides \u2500\u2500 */
+		
 		[class*="sidebarCol"] {
 		  background-color: #07080e !important;
 		  border-right: none !important;
@@ -30262,22 +30225,22 @@ window.__ModuleLoader__.load({
 		  padding-top: 44px !important;
 		}
 		
-		/* Remove broken double-offset on [data-shell-leading] and align precisely across Windowed vs Fullscreen! */
+		
 		[data-shell-leading] {
 		  margin-left: 0 !important;
 		  z-index: 65 !important;
 		}
 		
-		/* 1) macOS Windowed (traffic lights present at x:16..74px, y:14..28px) when sidebar is collapsed/drawer */
+		
 		html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [data-shell-leading] {
 		  top: 10px !important;
 		  left: 82px !important;
 		}
-		/* Give left stage column clean top clearance below traffic lights + [\u25B6 \u6863\u6848] when no active-session header sits above */
+		
 		html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded .p5-left-column {
 		  padding-top: 44px !important;
 		}
-		/* Preserve top window-drag strip on macOS windowed mode when blank header is hidden */
+		
 		html:is([data-bigfish-mac-app="1"], [data-platform="darwin"]):not([data-fullscreen]):not([data-bigfish-fullscreen="1"]) [class*="_centerCol"]:not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) .p5-stage-viewport.is-dsh-embedded::before {
 		  content: '';
 		  position: absolute;
@@ -30298,8 +30261,7 @@ window.__ModuleLoader__.load({
 		  -webkit-app-region: no-drag;
 		}
 		
-		/* 2) Fullscreen mode OR non-macOS Web (no traffic lights!) when sidebar is collapsed/drawer:
-		      Place [\u25B6 \u6863\u6848] flush inline on the exact same horizontal row as [P5 AGENT STAGE]! */
+		
 		html:is([data-fullscreen], [data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]) [class*="_centerCol"]:has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) ~ [data-shell-leading],
 		html:is([data-fullscreen], [data-bigfish-fullscreen="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]):has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) [data-shell-leading],
 		html:not([data-platform="darwin"]):not([data-bigfish-mac-app="1"]) :is([data-sidebar-collapsed], [data-sidebar-drawer]):has(.p5-dsh-host):not(:has(header[class*="_header"]:not([class*="_headerBlank"]))) [data-shell-leading] {
@@ -30326,20 +30288,20 @@ window.__ModuleLoader__.load({
 		  border-radius: 0;
 		}
 		
-		/* Center column & Top Header irregular quadrilateral tabs */
+		
 		[class*="sidebarCol"] {
 		  z-index: 2 !important;
 		}
 		[class*="_centerCol"] {
 		  background-color: #090910 !important;
 		}
-		/* Ensure full-screen P5 modals (Settings, Backlog, Archive, Permissions, Shortcuts) always stack above the left sidebar! */
+		
 		[class*="_centerCol"]:has([role="dialog"]),
 		[class*="_mainPanel"]:has([role="dialog"]) {
 		  position: relative !important;
 		  z-index: 900 !important;
 		}
-		/* Always hide empty blank header on P5 stage (both sidebar open AND collapsed) so red/black stage fills 100% top-to-bottom! */
+		
 		[class*="_centerCol"]:has(.p5-dsh-host) header[class*="_headerBlank"] {
 		  display: none !important;
 		}
@@ -30400,7 +30362,7 @@ window.__ModuleLoader__.load({
 		  display: none !important;
 		}
 		
-		/* \u2500\u2500 DSH Embedded Host Overrides (STAGE tab + Blank New Session) \u2500\u2500 */
+		
 		[data-conversation-content]:has(.p5-dsh-host) {
 		  padding: 0 !important;
 		  overflow: hidden !important;

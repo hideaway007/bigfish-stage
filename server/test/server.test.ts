@@ -62,10 +62,13 @@ test('真实 HTTP/WS：握手、设置、动态适配器、停止、重连、历
     assert.equal(adapter.starts[0].connection, 'agent-default');
     assert.deepEqual(adapter.starts[0].endpoint, { baseUrl: 'https://worker.example/v1', apiKey: 'worker-only-on-disk' });
     let from = client.messages.length;
-    client.send({ type: 'update_settings', patch: { worker: { model: 'next' } } }); await client.wait(m => m.type === 'settings', from);
+    client.send({ type: 'update_settings', patch: { worker: { model: 'next' } } });
+    await client.wait(m => m.type === 'command_error' && m.commandType === 'update_settings', from);
     assert.equal(adapter.starts.length, 1); assert.equal(adapter.active, true);
     client.send({ type: 'steer', id: 's', text: '插话' }); await client.wait(m => m.type === 'event' && m.event.type === 'steer_acked');
     client.send({ type: 'stop' }); await client.wait(m => m.type === 'event' && m.event.type === 'turn_done');
+    from = client.messages.length;
+    client.send({ type: 'update_settings', patch: { worker: { model: 'next' } } }); await client.wait(m => m.type === 'settings', from);
     from = client.messages.length; client.send({ type: 'new_session' }); await client.wait(m => m.type === 'session' && m.session !== null, from); assert.equal(adapter.starts[1].model, 'next');
     client.send({ type: 'resume_session', sessionId: 'resume-id' }); await client.wait(m => m.type === 'session' && m.session?.sessionId === 'resume-id');
     for (let i = 0; i < 2010; i++) adapter.starts.at(-1)!.onEvent({ type: 'worker_text', at: 0, text: String(i) });

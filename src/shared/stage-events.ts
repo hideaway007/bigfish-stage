@@ -28,6 +28,8 @@ export type StageEvent = Base &
     | { type: 'steer_queued'; id: string; text: string }
     /** Worker 真正读到了这条插话 */
     | { type: 'steer_acked'; id: string }
+    | { type: 'steer_submitted'; id: string }
+    | { type: 'steer_failed'; id: string; message: string }
     | { type: 'interrupted'; reason?: string }
 
     // ── Worker（DeepSeek Harness / Direct API）原始活动 ──

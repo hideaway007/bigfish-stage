@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import { createStageApi } from './stage-api';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -79,27 +81,20 @@ function createStaticPrefixResource(mountPrefix: string, rootDir: string) {
   };
 }
 
-/**
- * 兼容两代 DSH webServer 路由契约：
- * - 新版（host-webserver ≥0.2.2，dsh CLI）：`resource(request: Request) => Response`
- * - 旧版（0.2.1，DSH 桌面版内置）：`handler(req: IncomingMessage, res: ServerResponse)`
- * 旧版只调 handler；缺了它会抛错并被转成 400，导致立绘/音效全部加载失败。
- */
-function dualRoute(path: string, resource: (request: Request) => Promise<Response>) {
-  const handler = async (req: any, res: any) => {
-    const request = new Request(new URL(req.url ?? '/', 'http://127.0.0.1'), { method: req.method ?? 'GET' });
-    const response = await resource(request);
-    const headers: Record<string, string> = {};
-    response.headers.forEach((v, k) => { headers[k] = v; });
-    res.writeHead(response.status, headers);
-    if (request.method === 'HEAD' || !response.body) { res.end(); return; }
-    res.end(Buffer.from(await response.arrayBuffer()));
+export function dualRoute(path: string, resource: (request: Request) => Promise<Response>) {
+  return { kind: 'prefix' as const, path, resource,
+    async handler(req: IncomingMessage, res: ServerResponse) {
+      try {
+        const response = await resource(new Request(new URL(req.url ?? '/', 'http://localhost'), { method: req.method ?? 'GET' }));
+        res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+        res.end(Buffer.from(await response.arrayBuffer()));
+      } catch { res.writeHead(400); res.end(); }
+    },
   };
-  return { kind: 'prefix' as const, path, resource, handler };
 }
 
 export const name = 'ui-p5stage-host';
-export const inject = ['webServer'];
+export const inject = ['webServer', 'connection'];
 
 const HEAD_FONT_LINKS = [
   '<link rel="preconnect" href="https://fonts.googleapis.com" />',
@@ -110,15 +105,21 @@ const HEAD_FONT_LINKS = [
 export function apply(ctx: any): void {
   if (!ctx.webServer) return;
 
+  // DSH admits only authenticated owner requests to registered Fetch routes.
+  // Never put mutations on an unauthenticated webServer route.
+  if (ctx.connection?.fetch?.register) {
+    ctx.connection.fetch.register({ path: '/api/bigfish-stage', methods: ['POST'], requestBody: 'buffered', fetch: createStageApi() });
+  }
+
   const charactersDir = join(repoPublicDir, 'characters');
   const sfxDir = join(repoPublicDir, 'sfx');
 
   ctx.effect(() =>
-    ctx.webServer.register(dualRoute('/characters', createStaticPrefixResource('/characters', charactersDir)) as any)
+    ctx.webServer.register(dualRoute('/characters', createStaticPrefixResource('/characters', charactersDir)))
   );
 
   ctx.effect(() =>
-    ctx.webServer.register(dualRoute('/sfx', createStaticPrefixResource('/sfx', sfxDir)) as any)
+    ctx.webServer.register(dualRoute('/sfx', createStaticPrefixResource('/sfx', sfxDir)))
   );
 
   ctx.on('webserver/index-inject', (table: Array<Record<string, unknown>>) => {

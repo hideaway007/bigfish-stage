@@ -1,8 +1,8 @@
 {
-  "name": "p5-agent-stage",
+  "name": "bigfish-stage",
   "version": "0.2.0",
   "private": true,
-  "description": "Big Fish Stage: a Persona 5 styled stage for DeepSeek Harness & AI character agents",
+  "description": "BigFish Stage · 大肥鱼工作台 — High-contrast pop-art comic stage for DeepSeek Harness & AI character agents",
   "type": "module",
   "main": "electron/main.cjs",
   "icon": "./dsh-bundle/icon.svg",
@@ -19,6 +19,7 @@
     "cordis.patch.yml",
     "public/characters/**/*",
     "public/sfx/**/*",
+    "docs/screenshots/*.webp",
     "README.md"
   ],
   "dsh": {
@@ -51,30 +52,40 @@
   },
   "scripts": {
     "build:engine": "esbuild server/src/session.ts server/src/settings-store.ts server/src/characters.ts server/src/git-ops.ts server/src/adapters/registry.ts --bundle --platform=node --format=esm --outdir=electron/engine --external:electron --external:ws",
+    "build:server": "esbuild server/src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=server/dist/index.js --external:ws",
     "build:stage": "node packages/dsh-client-ui-p5stage/build.mjs",
-    "build:all": "npm run build && npm run build:engine && npm run build:stage",
+    "build:all": "npm run build && npm run build:server && npm run build:engine && npm run build:stage",
     "app": "npm run build:stage && electron electron/main.cjs",
     "app:build": "npm run build:all && electron electron/main.cjs",
-    "dist:mac": "npm run build:all && npx electron-builder --mac --dir",
-    "dist:dmg": "npm run build:all && npx electron-builder --mac dmg",
+    "dist:mac": "npm run build:all && electron-builder --mac --dir --publish never",
+    "dist:dmg": "npm run build:all && electron-builder --mac dmg --publish never",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "check:characters": "node scripts/check-characters.mjs",
+    "test:runtime": "node --test electron/runtime.test.cjs",
     "mock:server": "node scripts/mock-server.mjs",
     "preview": "vite preview",
-    "start": "vite build && npm --prefix server run start",
+    "start": "node server/dist/index.js",
     "dev:server": "npm --prefix server run dev",
-    "dsh": "npm run build:stage && dsh --profile bigfish",
-    "dsh:web": "npm run build:stage && dsh --profile bigfish --no-open --port 62000"
+    "dsh": "npm run build:stage && node scripts/run-dsh.cjs",
+    "dsh:web": "npm run build:stage && node scripts/run-dsh.cjs --no-open --port 62000"
   },
   "build": {
-    "appId": "com.bigfish.p5agentstage",
-    "productName": "P5 Agent Stage",
+    "appId": "com.bigfish.stage",
+    "productName": "BigFish Stage",
+    "asar": false,
+    "directories": {
+      "output": "output"
+    },
     "files": [
       "dist/**/*",
+      "dsh-bundle/**/*",
+      "cordis.patch.yml",
       "electron/**/*",
-      "packages/dsh-client-ui-p5stage/**/*",
+      "!electron/**/*.test.*",
+      "packages/dsh-client-ui-p5stage/package.json",
+      "packages/dsh-client-ui-p5stage/lib/**/*",
       "public/characters/**/*",
       "public/sfx/**/*",
       "package.json"
@@ -84,6 +95,12 @@
       "target": [
         "dmg",
         "zip"
+      ]
+    },
+    "linux": {
+      "category": "Development",
+      "target": [
+        "dir"
       ]
     }
   },
@@ -96,6 +113,8 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^45.2.3",
+    "electron-builder": "26.18.0",
+    "esbuild": "^0.25.12",
     "typescript": "^5.6.3",
     "vite": "^6.0.3"
   }

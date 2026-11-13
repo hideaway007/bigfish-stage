@@ -9,7 +9,7 @@ import { homedir } from 'node:os';
 import { approvalPresentation, displayCommand, displayPath, fileKey, uncoveredGitDiff } from './presentation';
 import type { StageEvent, ToolKind } from '../../../src/shared/stage-events';
 import { DEFAULT_SETTINGS, type WorkerSettings } from '../../../src/shared/settings';
-import type { ModelList, StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
+import type { CompactionResult, ModelList, StartSessionOptions, WorkerAdapter, WorkerSession } from './types';
 import { SentenceBuffer } from '../text-buffer';
 import { listEndpointModels, testEndpoint } from '../voice/endpoint';
 
@@ -279,6 +279,9 @@ class CodexSession implements WorkerSession {
     this.sendWire({ id: request.id, result: { decision: allowed ? 'accept' : 'decline' } });
     this.resolvePermission(requestId, allowed);
   }
+  async compact(): Promise<CompactionResult> {
+    throw new Error('当前执行器 (Codex CLI) 不支持手动上下文压缩，未修改任何会话历史');
+  }
   async close() {
     clearTimeout(this.interruptTimer);
     if (this.turnActive && !this.completing) this.completing = this.finish(false, '会话已关闭', true);
@@ -297,24 +300,21 @@ export class DirectEndpointSession implements WorkerSession {
   private closed = false;
   private controller?: AbortController;
   private readonly emit: (event: StageEvent) => void;
-  private history: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    {
-      role: 'system',
-      content:
-        '你是 P5 舞台上的 AI 编程搭档（大肥鱼 / 哈基米 / Claude 娘 / Codex 娘）。请直接、自然、专业地用中文回答店长（用户）的问题或完成任务。',
-    },
-  ];
+  private readonly baseSystemPrompt: string;
+  private priorSummary = '';
+  private history: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 
   constructor(private options: StartSessionOptions) {
     this.sessionId = options.resumeId || `ses_${randomUUID().slice(0, 8)}`;
-    if (options.rolePrompt?.trim()) {
-      this.history = [
-        {
-          role: 'system',
-          content: `${options.rolePrompt.trim()}\n请直接、自然、专业地用简体中文回应用户的问题或协助推进编程任务。`,
-        },
-      ];
+    this.baseSystemPrompt = options.rolePrompt?.trim()
+      ? `${options.rolePrompt.trim()}\n请直接、自然、专业地用简体中文回应用户的问题或协助推进编程任务。`
+      : '你是 P5 舞台上的 AI 编程搭档（大肥鱼 / 哈基米 / Claude 娘 / Codex 娘）。请直接、自然、专业地用中文回答店长（用户）的问题或完成任务。';
+    this.history = [{ role: 'system', content: this.baseSystemPrompt }];
+
+    if (options.restoredEvents?.length) {
+      this.restoreFromStageEvents(options.restoredEvents);
     }
+
     const key = options.connection === 'endpoint' ? options.endpoint.apiKey : undefined;
     const redact = (value: unknown): unknown =>
       typeof value === 'string' && key
@@ -325,6 +325,54 @@ export class DirectEndpointSession implements WorkerSession {
             ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redact(v)]))
             : value;
     this.emit = key ? (event) => options.onEvent(redact(event) as StageEvent) : options.onEvent;
+  }
+
+  private buildSystemContent(): string {
+    return this.priorSummary
+      ? `${this.baseSystemPrompt}\n\n【前序对话压缩摘要】\n${this.priorSummary}`
+      : this.baseSystemPrompt;
+  }
+
+  private restoreFromStageEvents(events: StageEvent[]) {
+    let startIdx = 0;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (ev.type === 'context_compacted') {
+        if (ev.summary?.trim()) {
+          this.priorSummary = ev.summary.trim().slice(0, 600);
+        }
+        startIdx = i + 1;
+        break;
+      }
+    }
+    this.history = [{ role: 'system', content: this.buildSystemContent() }];
+    let pendingAssistant = '';
+    for (let i = startIdx; i < events.length; i += 1) {
+      const ev = events[i];
+      if (ev.type === 'user_message') {
+        if (pendingAssistant.trim()) {
+          this.history.push({ role: 'assistant', content: pendingAssistant.trim() });
+          pendingAssistant = '';
+        }
+        this.history.push({ role: 'user', content: ev.text });
+      } else if (ev.type === 'worker_text') {
+        pendingAssistant += ev.text;
+        if (ev.final && pendingAssistant.trim()) {
+          this.history.push({ role: 'assistant', content: pendingAssistant.trim() });
+          pendingAssistant = '';
+        }
+      } else if (ev.type === 'turn_done' && pendingAssistant.trim()) {
+        this.history.push({ role: 'assistant', content: pendingAssistant.trim() });
+        pendingAssistant = '';
+      }
+    }
+    if (pendingAssistant.trim()) {
+      this.history.push({ role: 'assistant', content: pendingAssistant.trim() });
+    }
+  }
+
+  getMessagesSnapshot(): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+    return structuredClone(this.history);
   }
 
   async initialize() {
@@ -355,13 +403,16 @@ export class DirectEndpointSession implements WorkerSession {
         headers.Authorization = `Bearer ${this.options.endpoint.apiKey}`;
       }
 
+      const outboundMessages =
+        this.history.length > 15 ? [this.history[0], ...this.history.slice(-14)] : this.history;
+
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           model: this.options.model,
           stream: false,
-          messages: this.history.slice(-14),
+          messages: outboundMessages,
         }),
         signal: this.controller.signal,
       });
@@ -453,6 +504,35 @@ export class DirectEndpointSession implements WorkerSession {
     });
   }
 
+  async compact(): Promise<CompactionResult> {
+    if (this.closed) throw new Error('连接已关闭，请新建会话');
+    if (this.turnActive) throw new Error('任务运行中无法执行记忆凝炼，请等待本轮完成');
+
+    const dialog = this.history.slice(1);
+    if (dialog.length === 0) {
+      throw new Error('当前会话暂无可压缩的对话消息');
+    }
+
+    const keepTail = dialog.length > 2 ? dialog.slice(-2) : [];
+    const older = dialog.length > 2 ? dialog.slice(0, -2) : dialog;
+    const lines = older.map((msg) => {
+      const roleLabel = msg.role === 'user' ? '用户' : '助手';
+      const compactText = msg.content.trim().replace(/\s+/g, ' ').slice(0, 90);
+      return `- ${roleLabel}: ${compactText}`;
+    });
+    const mergedSummary = [this.priorSummary, ...lines].filter(Boolean).join('\n');
+    this.priorSummary = mergedSummary.length > 600 ? mergedSummary.slice(-600) : mergedSummary;
+    this.history = [{ role: 'system', content: this.buildSystemContent() }, ...keepTail];
+
+    const userCount = older.filter((m) => m.role === 'user').length;
+    const turnsCompacted = Math.max(1, userCount);
+    return {
+      turnsCompacted,
+      freedTokens: 0,
+      summary: `已压缩 ${turnsCompacted} 轮直连对话消息（折叠 ${older.length} 条历史消息；直连模式未提供释放 Token 统计）。`,
+    };
+  }
+
   async close() {
     this.closed = true;
     this.controller?.abort();
@@ -461,6 +541,7 @@ export class DirectEndpointSession implements WorkerSession {
 
 export class DirectChatAdapter implements WorkerAdapter {
   readonly id = 'direct-chat';
+  readonly supportsCompact = true;
   async info() {
     return { id: this.id, name: 'OpenAI 兼容直连对话 (无工具)', available: true };
   }
@@ -480,6 +561,7 @@ export class DirectChatAdapter implements WorkerAdapter {
 
 export class CodexAdapter implements WorkerAdapter {
   readonly id = 'codex';
+  readonly supportsCompact = false;
   constructor(private home: string) {}
   async info(settings?: WorkerSettings) {
     try {

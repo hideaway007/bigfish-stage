@@ -1,8 +1,8 @@
-# P5 Agent Stage — Full-app Persona-5 skin & Live stage bundle for DeepSeek Harness
+# BigFish Stage · 大肥鱼工作台 — Full-app pop-art crimson stage bundle for DeepSeek Harness
 - id: ui-chat
   disabled: true
 - id: ui-brand-official
   disabled: true
 - insert:
     - id: ui-p5stage
-      name: 'p5-agent-stage'
+      name: 'bigfish-stage'

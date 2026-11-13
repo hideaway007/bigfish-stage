@@ -279,8 +279,8 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                 description:
                   r.description || '自定义组合的工具集与角色指令预设模式。',
                 modeDetails:
-                  '由用户或创造模式定义的专属预设组合，新建潜入任务时自动挂载对应工具与提示词。',
-                howToUse: '点选设为默认后，新建潜入行动即按该自定义模式运行。',
+                  '由用户或创造模式定义的专属预设组合，新建舞台会话时自动挂载对应工具与提示词。',
+                howToUse: '点选设为默认后，新建舞台会话即按该自定义模式运行。',
               }));
             setCustomPresets(extras);
           })
@@ -511,7 +511,7 @@ export const SystemMenuModal: React.FC<SystemMenuModalProps> = ({
                 data-testid="system-panel-presets"
               >
                 <div className="p5-sys-panel-head">
-                  <h3>Agent 潜入预设模式</h3>
+                  <h3>Agent 工作预设模式</h3>
                   <p className="p5-preset-lead">
                     选择角色调用工具与推进任务的方式。日常开发推荐「标准模式」，批量数据处理选「PTC 模式」，扩展新工具与自定义模式选「创造模式」。
                   </p>

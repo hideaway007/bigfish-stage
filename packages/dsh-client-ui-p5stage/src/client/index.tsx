@@ -32,7 +32,7 @@ const PLUGIN_OWNER_ID =
     ? __P5_PACKAGE_ID__
     : '@bigfish/dsh-client-ui-p5stage';
 
-const STANDALONE_PRODUCT_TITLE = '大肥鱼工作台 // P5 AGENT STAGE';
+const STANDALONE_PRODUCT_TITLE = 'BigFish Stage · 大肥鱼工作台';
 
 const SIDEBAR_SLOT_CHILDREN = {
   'sidebar.brand.mark': { kind: 'single', scope: 'root' },

@@ -117,7 +117,7 @@ export function createP5SidebarComponents(ctx: any) {
           playSfx('hover');
         }}
         onMouseLeave={() => setHovered(false)}
-        title="展开潜入档案栏 (Cmd/Ctrl+B)"
+        title="展开会话档案栏 (Cmd/Ctrl+B)"
         style={{
           background: 'transparent',
           border: 'none',
@@ -343,11 +343,11 @@ export function createP5SidebarComponents(ctx: any) {
             blankAdded = true;
           }
           const customTitle = localTitleOverrides[sid];
-          const label = String(customTitle || s.displayTitle || s.title || (s.blank ? '新潜入行动' : sid));
+          const label = String(customTitle || s.displayTitle || s.title || (s.blank ? '新会话' : sid));
           if (needle && !label.toLowerCase().includes(needle) && !String(ws.title).toLowerCase().includes(needle)) {
             continue;
           }
-          wsSessions.push({ ...s, _label: customTitle || (s.blank ? '新潜入行动 · 待命' : label) });
+          wsSessions.push({ ...s, _label: customTitle || (s.blank ? '新会话 · 待命' : label) });
         }
         out.push({
           id: ws.workspaceId,
@@ -365,14 +365,14 @@ export function createP5SidebarComponents(ctx: any) {
         if (!s || s.origin === 'subagent') continue;
         if (s.blank && sid !== selectedSessionId) continue;
         const customTitle = localTitleOverrides[sid];
-        const label = String(customTitle || s.displayTitle || s.title || (s.blank ? '新潜入行动 · 待命' : sid));
+        const label = String(customTitle || s.displayTitle || s.title || (s.blank ? '新会话 · 待命' : sid));
         if (needle && !label.toLowerCase().includes(needle)) continue;
         ungrouped.push({ ...s, _label: label });
       }
       if (ungrouped.length > 0) {
         out.push({
           id: '__ungrouped__',
-          title: '独立潜入记录',
+          title: '独立会话记录',
           sessions: ungrouped,
         });
       }
@@ -428,7 +428,7 @@ export function createP5SidebarComponents(ctx: any) {
       e.stopPropagation();
       playSfx('select');
       setEditingSessionId(sid);
-      setEditingDraft(currentLabel === '新潜入行动 · 待命' ? '' : currentLabel);
+      setEditingDraft(currentLabel === '新会话 · 待命' ? '' : currentLabel);
     };
 
     const handleCommitRenameSession = (sid: string, rawDraft: string) => {
@@ -476,7 +476,7 @@ export function createP5SidebarComponents(ctx: any) {
                 playSfx('select');
                 ctx.layout?.toggleSidebar?.();
               }}
-              title="展开潜入档案栏"
+              title="展开会话档案栏"
               style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
             >
               <P5PolyBox
@@ -494,7 +494,7 @@ export function createP5SidebarComponents(ctx: any) {
             <button
               type="button"
               onClick={() => handleNewSession()}
-              title="新建潜入行动"
+              title="新建舞台会话"
               style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
             >
               <P5PolyBox
@@ -655,7 +655,7 @@ export function createP5SidebarComponents(ctx: any) {
             zIndex: 0,
           }}
         >
-          PHANTOM LOG
+          STAGE LOG
         </div>
 
 
@@ -733,7 +733,7 @@ export function createP5SidebarComponents(ctx: any) {
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  潜入行动档案
+                  舞台会话档案
                 </span>
               </div>
             </P5PolyBox>
@@ -747,7 +747,7 @@ export function createP5SidebarComponents(ctx: any) {
               ctx.layout?.toggleSidebar?.();
             }}
             onMouseEnter={() => playSfx('hover')}
-            title="收起潜入档案栏"
+            title="收起会话档案栏"
             style={{
               background: 'transparent',
               border: 'none',
@@ -827,7 +827,7 @@ export function createP5SidebarComponents(ctx: any) {
                   >
                     NEW
                   </span>
-                  ＋ 新建潜入行动
+                  ＋ 新建舞台会话
                 </span>
                 <span
                   style={{
@@ -877,7 +877,7 @@ export function createP5SidebarComponents(ctx: any) {
                   data-testid={`p5-sb-panel-${panel.id}`}
                   onClick={() => handleOpenPanel(panel.id)}
                   onMouseEnter={() => playSfx('hover')}
-                  title={isActive ? `返回潜入舞台` : `打开 ${panel.label}`}
+                  title={isActive ? `返回大肥鱼工作台` : `打开 ${panel.label}`}
                   style={{
                     width: '100%',
                     background: 'transparent',
@@ -989,7 +989,7 @@ export function createP5SidebarComponents(ctx: any) {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="检索潜入记录…"
+                placeholder="检索会话记录…"
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -1162,7 +1162,7 @@ export function createP5SidebarComponents(ctx: any) {
                       type="button"
                       onClick={() => handleNewSession(group.workspaceId)}
                       onMouseEnter={() => playSfx('hover')}
-                      title={`在 ${group.title} 新建潜入`}
+                      title={`在 ${group.title} 新建会话`}
                       style={{
                         background: 'transparent',
                         border: 'none',
@@ -1501,7 +1501,7 @@ export function createP5SidebarComponents(ctx: any) {
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  BIG FISH × DSH CORE
+                  BIGFISH STAGE × DSH
                 </span>
                 <span
                   style={{
